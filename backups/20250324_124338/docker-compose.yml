@@ -1,0 +1,34 @@
+
+
+services:
+  mongo:
+    image: mongo:6
+    container_name: hexforge-mongo
+    ports:
+      - '27017:27017'
+    volumes:
+      - mongo_data:/data/db
+
+  backend:
+    build: ./backend
+    container_name: hexforge-backend
+    ports:
+      - '8000:8000'
+    depends_on:
+      - mongo
+    environment:
+      - MONGO_URI=mongodb://mongo:27017/hexforge
+      - PORT=8000
+
+  frontend:
+    build: ./frontend
+    container_name: hexforge-frontend
+    ports:
+      - '3000:3000'
+    depends_on:
+      - backend
+    stdin_open: true
+    tty: true
+
+volumes:
+  mongo_data:
