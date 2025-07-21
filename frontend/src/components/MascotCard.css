@@ -1,0 +1,55 @@
+/* MascotCard.css */
+
+.mascot-card {
+    background: rgba(0, 0, 0, 0.75);
+    border-radius: 16px;
+    padding: 2rem;
+    max-width: 450px;
+    text-align: center;
+    box-shadow: 0 0 20px rgba(0, 255, 200, 0.2);
+    animation: fadeInUp 0.8s ease-out;
+  }
+  
+  .mascot-image {
+    width: 120px;
+    margin-bottom: 1rem;
+  }
+  
+  .mascot-text h1 {
+    color: #00ffc8;
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+  }
+  
+  .mascot-text p {
+    color: #ccc;
+    font-size: 1rem;
+    margin-bottom: 1.5rem;
+  }
+  
+  .mascot-button {
+    display: inline-block;
+    background-color: #00ffc8;
+    color: #111;
+    padding: 0.5rem 1.2rem;
+    border-radius: 8px;
+    font-weight: bold;
+    text-decoration: none;
+    transition: background-color 0.3s ease;
+  }
+  
+  .mascot-button:hover {
+    background-color: #00cc9f;
+  }
+  
+  @keyframes fadeInUp {
+    from {
+      transform: translateY(20px);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+  

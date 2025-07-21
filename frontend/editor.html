@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>HexForge Code Editor</title>
+  <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.34.1/min/vs/loader.js"></script>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      overflow: hidden;
+      background: #1e1e1e;
+      color: #fff;
+    }
+    #editor {
+      width: 100%;
+      height: calc(100% - 40px);
+    }
+    #toolbar {
+      padding: 8px;
+      background: #333;
+    }
+    #toolbar input, #toolbar button {
+      margin-right: 6px;
+    }
+  </style>
+</head>
+<body>
+  <div id="editor"></div>
+  <div id="toolbar">
+    <input type="text" id="filePath" placeholder="/mnt/hdd-storage/test.py" />
+    <button onclick="openFile()">Open</button>
+    <button onclick="saveFile()">Save</button>
+    <span id="status" style="margin-left: 10px;"></span>
+  </div>
+
+  <script>
+    let editorRef;
+
+    require.config({ paths: { 'vs': 'https://cdn.jsdelivr.net/npm/monaco-editor@0.34.1/min/vs' }});
+    require(['vs/editor/editor.main'], function () {
+      editorRef = monaco.editor.create(document.getElementById('editor'), {
+        value: '# HexForge Online Lab Editor\n\ndef hello():\n    print("Hello, world!")',
+        language: 'python',
+        theme: 'vs-dark',
+        automaticLayout: true
+      });
+    });
+
+    function openFile() {
+      const path = document.getElementById("filePath").value;
+      fetch("/api/editor/open", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path })
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.content) {
+          editorRef.setValue(data.content);
+          setStatus("✅ File loaded");
+        } else {
+          setStatus("❌ " + (data.detail || "Failed to open file"));
+        }
+      });
+    }
+
+    function saveFile() {
+      const path = document.getElementById("filePath").value;
+      const content = editorRef.getValue();
+      fetch("/api/editor/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path, content })
+      })
+      .then(res => res.json())
+      .then(data => {
+        setStatus(data.status || "❌ Failed to save");
+      });
+    }
+
+    function setStatus(message) {
+      document.getElementById("status").innerText = message;
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,71 @@
+.blog-card {
+    background: #111;
+    border: 1px solid #333;
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 2rem;
+    box-shadow: 0 4px 10px rgba(0, 255, 200, 0.1);
+    transition: transform 0.3s ease;
+  }
+  
+  .blog-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 6px 15px rgba(0, 255, 200, 0.15);
+  }
+  
+  .blog-cover {
+    width: 100%;
+    height: 200px;
+    object-fit: cover;
+    border-bottom: 1px solid #222;
+  }
+  
+  .blog-content {
+    padding: 1rem;
+    color: #ccc;
+  }
+  
+  .blog-snippet {
+    margin-top: 0.5rem;
+    margin-bottom: 1rem;
+    color: #aaa;
+    font-size: 0.9rem;
+    line-height: 1.5;
+  }
+  
+  .blog-meta {
+    font-size: 0.75rem;
+    color: #888;
+  }
+  
+  .blog-readmore {
+    display: inline-block;
+    margin-top: 1rem;
+    color: #00ffc8;
+    text-decoration: none;
+    font-weight: bold;
+    transition: color 0.2s ease;
+  }
+  
+  .blog-readmore:hover {
+    color: #00e6b2;
+  }
+  
+  .blog-video {
+    margin-top: 1rem;
+  }
+  
+  .affiliate-links {
+    margin-top: 0.5rem;
+  }
+  
+  .affiliate-button {
+    display: inline-block;
+    background: #00ffc8;
+    color: #000;
+    padding: 6px 12px;
+    border-radius: 4px;
+    text-decoration: none;
+    font-weight: bold;
+  }
+  

@@ -1,0 +1,68 @@
+import React from 'react'; 
+import '../pages/ChatPage.css';
+
+const ChatPage = () => {
+  return (
+    <div className="chat-container">
+      {/* === Header === */}
+      <header className="chat-header">
+        <img
+          src={`${process.env.PUBLIC_URL}/images/hexforge-logo-full.png`}
+          alt="HexForge Labs"
+          className="chat-logo"
+        />
+        <strong>HexForge Assistant</strong>
+      </header>
+
+      {/* === Main Section === */}
+      <div className="chat-main">
+        {/* Sidebar */}
+        <aside className="chat-history">
+          <h4>🧠 History</h4>
+          {/* Add history buttons or list here */}
+        </aside>
+
+        {/* Main Chat Area */}
+        <div className="chat-body">
+          {/* Messages */}
+          <div className="chat-messages">
+            {/* Messages will appear here */}
+          </div>
+
+          {/* Tool Panel */}
+          <div className="tool-panel-container">
+            <div className="chat-agent-select">
+              <label htmlFor="agent">Agent:</label>
+              <select id="agent">
+                <option value="default">🧠 Default (Local)</option>
+                <option value="mistral">🔮 Mistral</option>
+                <option value="ollama">🦙 Ollama</option>
+                <option value="phi3">📘 Phi-3</option>
+              </select>
+            </div>
+            <div className="tool-panel-wrapper">
+              <h3>🧰 Quick Tools</h3>
+              {/* Insert <ToolPanel /> here in final integration */}
+            </div>
+          </div>
+
+          {/* Input Bar */}
+          <div className="chat-input">
+            <input
+              type="text"
+              placeholder="Ask or command..."
+            />
+            <button className="chat-send-button">
+              <img
+                src={`${process.env.PUBLIC_URL}/images/hexforge-logo-removebg.png`}
+                alt="Send"
+              />
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default ChatPage;
