@@ -1,0 +1,114 @@
+[
+  {
+    "tool": "test-tool",
+    "result": {
+      "message": "This is a test memory entry from !memory test-entry"
+    },
+    "timestamp": "2025-05-19T03:49:45.511Z"
+  },
+  {
+    "tool": "test-tool",
+    "result": {
+      "message": "This is a test memory entry from !memory test-entry"
+    },
+    "timestamp": "2025-05-19T03:58:02.664Z"
+  },
+  {
+    "tool": "test-tool",
+    "result": {
+      "message": "This is a test memory entry from !memory test-entry"
+    },
+    "timestamp": "2025-05-19T04:08:06.247Z"
+  },
+  {
+    "tool": "test-tool",
+    "result": {
+      "message": "This is a test memory entry from !memory test-entry"
+    },
+    "timestamp": "2025-05-19T04:16:28.591Z"
+  },
+  {
+    "tool": "test-sync",
+    "result": "Memory sync to Notion",
+    "timestamp": "2025-05-19T21:21:07.747Z"
+  },
+  {
+    "tool": "test-fixed-sync",
+    "result": "should work now",
+    "timestamp": "2025-05-19T21:27:19.494Z"
+  },
+  {
+    "tool": "final-sync-test",
+    "result": "If this appears in Notion, it worked!",
+    "timestamp": "2025-05-19T21:36:25.560Z"
+  },
+  {
+    "tool": "sync-check-pass",
+    "result": "This should now appear in Notion",
+    "timestamp": "2025-05-19T21:45:58.569Z"
+  },
+  {
+    "tool": "auto-tag-test",
+    "result": "This entry should have a Synced tag.",
+    "timestamp": "2025-05-19T22:03:14.993Z"
+  },
+  {
+    "tool": "auto-tag-test",
+    "result": "This entry should have a Synced tag.",
+    "timestamp": "2025-05-19T22:06:15.339Z"
+  },
+  {
+    "tool": "final-sync-confirm",
+    "result": "ID + Tag should appear in Notion",
+    "id": "HEX-1",
+    "timestamp": "2025-05-19T22:24:19.978Z"
+  },
+  {
+    "tool": "auto-tag-test",
+    "result": "This entry should have a Synced tag.",
+    "id": "HEX-2",
+    "timestamp": "2025-05-19T22:27:31.774Z"
+  },
+  {
+    "tool": "sync-verification",
+    "result": "This should land in Notion",
+    "id": "HEX-3",
+    "timestamp": "2025-05-20T02:14:58.767Z"
+  },
+  {
+    "tool": "test-tool",
+    "result": {
+      "message": "This is a test memory entry from script."
+    },
+    "id": "HEX-4",
+    "timestamp": "2025-05-20T02:14:58.933Z"
+  },
+  {
+    "tool": "sync-verification",
+    "result": "This should land in Notion",
+    "id": "HEX-5",
+    "timestamp": "2025-05-20T03:31:28.079Z"
+  },
+  {
+    "tool": "test-tool",
+    "result": {
+      "message": "This is a test memory entry from script."
+    },
+    "id": "HEX-6",
+    "timestamp": "2025-05-20T03:31:28.898Z"
+  },
+  {
+    "tool": "sync-verification",
+    "result": "This should land in Notion",
+    "id": "HEX-7",
+    "timestamp": "2025-05-20T03:55:40.363Z"
+  },
+  {
+    "tool": "test-tool",
+    "result": {
+      "message": "This is a test memory entry from script."
+    },
+    "id": "HEX-8",
+    "timestamp": "2025-05-20T03:55:40.604Z"
+  }
+]

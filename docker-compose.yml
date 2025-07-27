@@ -1,0 +1,124 @@
+services:
+  mongo:
+    image: mongo:6.0
+    container_name: hexforge-mongo
+    ports:
+      - '27017:27017'
+    volumes:
+      - mongo_data:/data/db
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+    networks:
+      - hexforge-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+   
+   
+  nginx:
+    image: nginx:stable
+    container_name: hexforge-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./frontend/build:/usr/share/nginx/html
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/assistant.conf:/etc/nginx/conf.d/assistant.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - ./uploads:/app/uploads
+    networks:
+      hexforge-network:
+        aliases:
+          - hexforge-backend
+          - hexforge-assistant
+    depends_on:
+      - backend
+      - assistant
+
+
+
+
+  backend:
+    build:
+      context: ./backend
+    env_file: ./backend/.env.production
+    container_name: hexforge-backend
+    ports:
+      - '8000:8000'
+    depends_on:
+      mongo:
+        condition: service_healthy
+    networks:
+      - hexforge-network
+    volumes:
+      - ./backend:/app
+      - /mnt/hdd-storage:/mnt/hdd-storage
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  ollama:
+    build:
+      context: .
+      dockerfile: ollama.Dockerfile
+
+    container_name: ollama
+    ports:
+      - "11435:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    restart: unless-stopped
+    networks:
+      - hexforge-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:11434/api/tags || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+
+
+
+
+  assistant:
+      build:
+        context: ./assistant
+      container_name: hexforge-assistant
+      environment:
+        - OLLAMA_MODEL=mistral
+        - OLLAMA_URL=http://host.docker.internal:11434
+      depends_on:
+        backend:
+          condition: service_healthy
+        ollama:
+          condition: service_healthy
+      networks:
+        - hexforge-network
+      volumes:
+        - /var/run/docker.sock:/var/run/docker.sock
+        - /home/devuser/.ssh/hexforge_sandbox:/root/.ssh/hexforge_sandbox:ro
+      privileged: true
+
+
+
+ 
+ 
+  
+volumes:
+  mongo_data:
+  ollama-data:
+    driver: local
+
+networks:
+  hexforge-network:
+    driver: bridge
+

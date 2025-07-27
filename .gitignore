@@ -1,0 +1,21 @@
+# Node.js
+node_modules/
+backend/node_modules/
+
+# Env files
+*.env*
+!backend/.env.example
+
+# Logs
+*.log
+
+# Runtime data
+mongo_data/
+backups/
+
+# Archives
+*.zip
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+requests
+pydantic
+paramiko
+psutil
+chardet
+python-magic
+GPUtil
+httpx
+sse-starlette
