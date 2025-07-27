@@ -1,0 +1,104 @@
+import React, { useState, useEffect } from 'react';
+import './ChatPage.css';
+
+const ASSISTANT_URL = 'https://assistant.hexforgelabs.com';
+
+
+const ChatPage = () => {
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState('offline');
+
+  useEffect(() => {
+    const checkPing = async () => {
+      try {
+        const res = await fetch(`${ASSISTANT_URL}/health`);
+        if (!res.ok) throw new Error('Ping failed');
+        const data = await res.json();
+        if (data.status !== 'ok') throw new Error('Service not ok');  
+
+        setStatus(res.ok ? 'online' : 'offline');
+      } catch {
+        setStatus('offline');
+      }
+    };
+    checkPing();
+  }, []);
+
+  const sendMessage = async () => {
+    if (!input.trim()) return;
+    const newMessages = [...messages, { from: 'user', text: input }];
+    setMessages(newMessages);
+    setInput('');
+    setLoading(true);
+
+    try {
+      const res = await fetch(`${ASSISTANT_URL}/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: input })
+      });
+      const data = await res.json();
+      const output = data.response || data.uptime || data.logs || data.docker_ps || data.disk_usage || data.usb_devices?.join('\n') || JSON.stringify(data);
+      setMessages([...newMessages, { from: 'assistant', text: output }]);
+    } catch {
+      setMessages([...newMessages, { from: 'assistant', text: '(Error connecting to assistant)' }]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter') sendMessage();
+  };
+
+  return (
+    <div
+      className="chat-container"
+      style={{
+        background: `url(${process.env.PUBLIC_URL}/images/hero-background.png) no-repeat center center fixed`,
+        backgroundSize: 'cover',
+      }}
+    >
+      <div className="chat-header">
+        <img
+          src={`${process.env.PUBLIC_URL}/images/hexforge-logo-full.png`}
+          alt="HexForge Labs"
+          className="chat-logo"
+        />
+        <strong>HexForge Assistant</strong>
+        <span className={`status-dot ${status}`} />
+      </div>
+
+      <div className="chat-messages">
+        {messages.map((msg, i) => (
+          <div key={i} className={`chat-msg ${msg.from}`}>
+            {msg.from === 'assistant' && (
+              <img
+                src={`${process.env.PUBLIC_URL}/images/hexforge-logo.png`}
+                alt="Assistant Icon"
+                className="chat-avatar"
+              />
+            )}
+            <pre>{msg.text}</pre>
+          </div>
+        ))}
+        {loading && <div className="chat-msg assistant loading">...</div>}
+      </div>
+
+      <div className="chat-input">
+        <input
+          type="text"
+          placeholder="Ask or command..."
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={handleKeyDown}
+        />
+        <button onClick={sendMessage}>➤</button>
+      </div>
+    </div>
+  );
+};
+
+export default ChatPage;

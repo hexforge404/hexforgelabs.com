@@ -1,0 +1,31 @@
+/* HomePage.css */
+
+.homepage-hero {
+    background-size: cover;
+    background-position: center;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 2rem;
+    overflow: hidden;
+    position: relative;
+  }
+  
+  /* Optional: subtle dark overlay for readability */
+  .homepage-hero::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 0;
+  }
+  
+  /* Ensure mascot card stays above the overlay */
+  .mascot-card {
+    position: relative;
+    z-index: 1;
+  }
+  

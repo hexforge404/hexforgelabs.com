@@ -1,0 +1,79 @@
+/* BlogPage.css */
+
+.blog-page {
+    padding: 2rem;
+    background-color: #0a192f;
+    color: #ccc;
+    min-height: 100vh;
+  }
+  
+  .blog-header {
+    text-align: center;
+    font-size: 2.5rem;
+    margin-bottom: 2rem;
+    color: #00ffc8;
+  }
+  
+  .blog-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2rem;
+    justify-content: center;
+  }
+  
+  .blog-card {
+    background: #111;
+    border-radius: 12px;
+    max-width: 400px;
+    width: 100%;
+    box-shadow: 0 4px 12px rgba(0, 255, 200, 0.1);
+    overflow: hidden;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+  
+  .blog-card:hover {
+    transform: translateY(-6px);
+    box-shadow: 0 8px 24px rgba(0, 255, 200, 0.2);
+  }
+  
+  .blog-image {
+    width: 100%;
+    height: auto;
+    object-fit: cover;
+  }
+  
+  .blog-content {
+    padding: 1rem 1.25rem;
+  }
+  
+  .blog-content h2 {
+    font-size: 1.5rem;
+    color: #00ffc8;
+    margin-bottom: 0.5rem;
+  }
+  
+  .blog-meta {
+    font-size: 0.85rem;
+    color: #999;
+    margin-bottom: 1rem;
+  }
+  
+  .blog-snippet {
+    font-size: 1rem;
+    line-height: 1.5;
+    margin-bottom: 1.5rem;
+  }
+  
+  .blog-readmore {
+    display: inline-block;
+    color: #00ffc8;
+    font-weight: bold;
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+    transition: all 0.2s ease-in-out;
+  }
+  
+  .blog-readmore:hover {
+    border-color: #00ffc8;
+  }
+  

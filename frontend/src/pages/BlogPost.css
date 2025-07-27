@@ -1,0 +1,57 @@
+.blog-post {
+    padding: 2rem;
+    color: #e0e0e0;
+    max-width: 800px;
+    margin: auto;
+  }
+  
+  .post-image {
+    width: 100%;
+    max-height: 400px;
+    object-fit: cover;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+  }
+  
+  .post-meta {
+    font-size: 0.9rem;
+    color: #999;
+    margin-bottom: 1rem;
+  }
+  
+  .post-content {
+    line-height: 1.7;
+    font-size: 1rem;
+    margin-bottom: 2rem;
+  }
+  
+  .post-video iframe {
+    width: 100%;
+    border-radius: 8px;
+    margin: 2rem 0;
+  }
+  
+  .affiliate-links {
+    margin-top: 2rem;
+  }
+  
+  .affiliate-button {
+    display: inline-block;
+    padding: 0.6rem 1.2rem;
+    background: #00ffc8;
+    color: #111;
+    font-weight: bold;
+    border-radius: 6px;
+    text-decoration: none;
+    transition: background 0.2s;
+  }
+  
+  .affiliate-button:hover {
+    background: #00e6b8;
+  }
+  
+  .post-tags {
+    font-size: 0.85rem;
+    color: #aaa;
+  }
+  

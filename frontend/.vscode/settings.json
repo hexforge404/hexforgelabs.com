@@ -1,0 +1,10 @@
+{
+  "chat.promptFilesLocations": [
+    "./.vscode/prompts"
+  ],
+  "chat.instructionsFilesLocations": [
+    "./.vscode/instructions"
+  ],
+  "github.copilot.chat.agent.autoFix": true,
+  "inlineChat.enableV2": true
+}
