@@ -2,7 +2,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import './ChatAssistant.css';
 import PromptPicker from './PromptPicker';
-
+import { parseSSEStream } from '../utils/parseSSEStream';
+import { addUserMessage, addAssistantMessage, updateLastAssistantMessage } from '../utils/chatHelpers';
 const ASSISTANT_URL = '/assistant';
 
 
@@ -48,106 +49,59 @@ const ChatAssistant = ({ onClose }) => {
     checkPing();
   }, []);
 
-  const sendMessage = async () => {
-    if (!input.trim()) return;
+const sendMessage = async () => {
+  if (!input.trim()) return;
 
-    const now = new Date().toLocaleTimeString();
-    const isCommand = input.startsWith('!');
-    const userMessage = {
-      from: 'user',
-      text: input,
-      time: now,
-      tag: isCommand ? input.split(' ')[0] : ''
-    };
-    setMessages((prev) => [...prev, userMessage]);
-    setInput('');
-    setLoading(true);
+  const userMessage = addUserMessage(input);
+  setMessages(prev => [...prev, userMessage]);
+  setInput('');
+  setLoading(true);
 
-    try {
-      const res = await fetch(`/assistant/mcp/${isCommand ? 'chat' : 'stream'}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: input })
+  const isCommand = input.trim().startsWith('!');
+  const responseTime = new Date().toLocaleTimeString();
 
-      });
+  try {
+    const res = await fetch(`/assistant/mcp/${isCommand ? 'chat' : 'stream'}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: input })
+    });
 
-      if (isCommand) {
-        const json = await res.json();
-        const commandTime = new Date().toLocaleTimeString();
-        setMessages((prev) => [...prev, {
-          from: 'assistant',
-          text: json.output || '(No output)',
-          time: commandTime
-        }]);
-      } else {
-        const reader = res.body.getReader();
-const decoder = new TextDecoder('utf-8');
-let fullMessage = '';
-const responseTime = new Date().toLocaleTimeString();
-
-setMessages((prev) => [...prev, {
-  from: 'assistant',
-  text: '',
-  time: responseTime
-}]);
-
-let buffer = '';
-
-while (true) {
-  const { value, done } = await reader.read();
-  if (done) break;
-  buffer += decoder.decode(value, { stream: true });
-
-  let lines = buffer.split('\n');
-  buffer = lines.pop(); // save partial line for next chunk
-
-  for (const line of lines) {
-    if (!line.startsWith('data:')) continue;
-
-    const payload = line.slice(5).trim();
-    try {
-      const json = JSON.parse(payload);
-      const piece = typeof json.response === 'string'
-        ? json.response
-        : JSON.stringify(json.response);
-
-      fullMessage += piece;
-
-      setMessages((prev) => {
-        const updated = [...prev];
-        updated[updated.length - 1] = {
-          ...updated[updated.length - 1],
-          text: fullMessage
-        };
-        return updated;
-      });
-    } catch (err) {
-      console.warn('Could not parse SSE line:', payload);
-    }
-  }
-}
-
-      } // <-- Add this closing brace for the 'else' block
-
-    } catch (err) {
-      console.error('Assistant error:', err);
-      setMessages((prev) => [...prev, {
+    if (isCommand) {
+      const json = await res.json();
+      setMessages(prev => [...prev, {
         from: 'assistant',
-        text: '(Error connecting to assistant)',
-        time: new Date().toLocaleTimeString()
+        text: json.output || '(No output)',
+        time: responseTime
       }]);
-    } finally {
-      setLoading(false);
-      setTimeout(() => {
-        if (chatRef.current) {
-          chatRef.current.scrollTo({
-            top: chatRef.current.scrollHeight,
-            behavior: 'smooth'
-          });
-        }
-      }, 100);
+    } else {
+      setMessages(prev => [...prev, {
+        from: 'assistant',
+        text: '',
+        time: responseTime
+      }]);
+
+      await parseSSEStream(res, (chunk) => {
+        setMessages(prev => updateLastAssistantMessage(prev, chunk));
+      });
     }
-  };
+  } catch (err) {
+    console.error('Assistant error:', err);
+    setMessages(prev => [...prev, {
+      from: 'assistant',
+      text: '(Error connecting to assistant)',
+      time: new Date().toLocaleTimeString()
+    }]);
+  } finally {
+    setLoading(false);
+    setTimeout(() => {
+      chatRef.current?.scrollTo({
+        top: chatRef.current.scrollHeight,
+        behavior: 'smooth'
+      });
+    }, 100);
+  }
+};
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter') sendMessage();
