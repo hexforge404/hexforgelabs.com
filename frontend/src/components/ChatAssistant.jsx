@@ -81,49 +81,53 @@ const ChatAssistant = ({ onClose }) => {
         }]);
       } else {
         const reader = res.body.getReader();
-        const decoder = new TextDecoder('utf-8');
-        let fullMessage = '';
-        const responseTime = new Date().toLocaleTimeString();
+const decoder = new TextDecoder('utf-8');
+let fullMessage = '';
+const responseTime = new Date().toLocaleTimeString();
 
-        setMessages((prev) => [...prev, {
-          from: 'assistant',
-          text: '',
-          time: responseTime
-        }]);
+setMessages((prev) => [...prev, {
+  from: 'assistant',
+  text: '',
+  time: responseTime
+}]);
 
-        while (true) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split('\n').filter(Boolean);
+let buffer = '';
 
-          for (const line of lines) {
-            try {
-              const json = JSON.parse(line);
-              const piece = typeof json.response === 'string'
-                ? json.response
-                : JSON.stringify(json.response);
-              fullMessage += piece;
+while (true) {
+  const { value, done } = await reader.read();
+  if (done) break;
+  buffer += decoder.decode(value, { stream: true });
 
-              setMessages((prev) => {
-                const updated = [...prev];
-                updated[updated.length - 1] = {
-                  ...updated[updated.length - 1],
-                  text: fullMessage
-                };
-                return updated;
-              });
-            } catch (err) {
-              if (line.trim().startsWith('<')) {
-                console.warn('Ignored HTML line in stream:', line);
-                continue; // skip HTML
-              } else {
-                console.warn('Unparsable JSON stream line:', line);
-              }
-            }
-          }
-        }
-      }
+  let lines = buffer.split('\n');
+  buffer = lines.pop(); // save partial line for next chunk
+
+  for (const line of lines) {
+    if (!line.startsWith('data:')) continue;
+
+    const payload = line.slice(5).trim();
+    try {
+      const json = JSON.parse(payload);
+      const piece = typeof json.response === 'string'
+        ? json.response
+        : JSON.stringify(json.response);
+
+      fullMessage += piece;
+
+      setMessages((prev) => {
+        const updated = [...prev];
+        updated[updated.length - 1] = {
+          ...updated[updated.length - 1],
+          text: fullMessage
+        };
+        return updated;
+      });
+    } catch (err) {
+      console.warn('Could not parse SSE line:', payload);
+    }
+  }
+}
+
+      } // <-- Add this closing brace for the 'else' block
 
     } catch (err) {
       console.error('Assistant error:', err);
