@@ -47,7 +47,9 @@ services:
   backend:
     build:
       context: ./backend
-    env_file: ./backend/.env.production
+    env_file:
+      - .env
+      - ./backend/.env.production
     container_name: hexforge-backend
     ports:
       - '8000:8000'
@@ -69,7 +71,6 @@ services:
     build:
       context: .
       dockerfile: ollama.Dockerfile
-
     container_name: ollama
     ports:
       - "11435:11434"
@@ -85,28 +86,26 @@ services:
       retries: 5
       start_period: 20s
 
-
-
-
-
   assistant:
-      build:
-        context: ./assistant
-      container_name: hexforge-assistant
-      environment:
-        - OLLAMA_MODEL=mistral
-        - OLLAMA_URL=http://host.docker.internal:11434
-      depends_on:
-        backend:
-          condition: service_healthy
-        ollama:
-          condition: service_healthy
-      networks:
-        - hexforge-network
-      volumes:
-        - /var/run/docker.sock:/var/run/docker.sock
-        - /home/devuser/.ssh/hexforge_sandbox:/root/.ssh/hexforge_sandbox:ro
-      privileged: true
+    build:
+      context: ./assistant
+    env_file:
+      - .env
+    container_name: hexforge-assistant
+    environment:
+      - OLLAMA_MODEL=mistral
+      - OLLAMA_URL=http://host.docker.internal:11434
+    depends_on:
+      backend:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    networks:
+      - hexforge-network
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /home/devuser/.ssh/hexforge_sandbox:/root/.ssh/hexforge_sandbox:ro
+    privileged: true
 
 
 
