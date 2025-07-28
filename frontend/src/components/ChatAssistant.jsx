@@ -4,6 +4,8 @@ import './ChatAssistant.css';
 import PromptPicker from './PromptPicker';
 import { parseSSEStream } from '../utils/parseSSEStream';
 import { addUserMessage, addAssistantMessage, updateLastAssistantMessage } from '../utils/chatHelpers';
+import { checkPing } from '../utils/assistant';
+
 const ASSISTANT_URL = '/assistant';
 
 
@@ -36,18 +38,8 @@ const ChatAssistant = ({ onClose }) => {
   }, []);
 
   useEffect(() => {
-    const checkPing = async () => {
-      try {
-        const res = await fetch(`/assistant/health`)
-        const data = await res.json();
-        if (!res.ok || data.status !== 'ok') throw new Error();
-        setStatus('online');
-      } catch {
-        setStatus('offline');
-      }
-    };
-    checkPing();
-  }, []);
+  checkPing().then((ok) => setStatus(ok ? 'online' : 'offline'));
+}, []);
 
 const sendMessage = async () => {
   if (!input.trim()) return;
