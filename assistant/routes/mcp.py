@@ -64,10 +64,8 @@ async def mcp_chat(req: MCPChatRequest):
             result = await tool_dispatcher("agent", {"prompt": prompt})
 
         if not prompt.startswith("!"):
-            await save_memory_entry("agent", {
-                "prompt": prompt,
-                "response": result
-            })
+            summary = f"Prompt: {prompt[:100]}... | Response: {str(result)[:100]}..."
+            await save_memory_entry("agent", summary)
 
         return JSONResponse(content={
             "status": "success",
