@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from tools.dispatcher import tool_dispatcher  
 from sse_starlette.sse import EventSourceResponse
 from starlette.responses import StreamingResponse
+from fastapi.responses import JSONResponse
 import httpx
 import json
 import os
@@ -38,19 +39,48 @@ class MCPChatRequest(BaseModel):
 
 @router.post("/mcp/chat")
 async def mcp_chat(req: MCPChatRequest):
+    from tools.core import save_memory_entry
     prompt = req.prompt.strip()
 
-    if prompt.startswith("!usb"):
-        return await mcp_invoke(MCPInvokeRequest(tool="usb-list", input={}))
-    elif prompt.startswith("!os"):
-        return await mcp_invoke(MCPInvokeRequest(tool="os-info", input={}))
+    try:
+        # Dispatch tool commands
+        if prompt.startswith("!usb"):
+            result = await tool_dispatcher("usb-list", {})
+        elif prompt.startswith("!os"):
+            result = await tool_dispatcher("os-info", {})
+        elif prompt.startswith("!uptime"):
+            result = await tool_dispatcher("uptime", {})
+        elif prompt.startswith("!df"):
+            result = await tool_dispatcher("disk-usage", {})
+        elif prompt.startswith("!logs"):
+            result = await tool_dispatcher("logs", {})
+        elif prompt.startswith("!docker"):
+            result = await tool_dispatcher("docker", {})
+        elif prompt.startswith("!ping"):
+            target = prompt.split(" ", 1)[1] if " " in prompt else "8.8.8.8"
+            result = await tool_dispatcher("ping", {"target": target})
+        else:
+            # LLM agent fallback
+            result = await tool_dispatcher("agent", {"prompt": prompt})
 
-    result = await tool_dispatcher("agent", {"prompt": prompt})
-    return {
-        "status": "success",
-        "tool": "agent",
-        "output": result
-    }
+        if not prompt.startswith("!"):
+            await save_memory_entry("agent", {
+                "prompt": prompt,
+                "response": result
+            })
+
+        return JSONResponse(content={
+            "status": "success",
+            "tool": prompt,
+            "output": result
+        })
+
+    except Exception as e:
+        return JSONResponse(content={
+            "status": "error",
+            "tool": prompt,
+            "output": f"(error) {str(e)}"
+        }, status_code=500)
 
 @router.post("/mcp/stream")
 async def mcp_stream(req: MCPChatRequest):

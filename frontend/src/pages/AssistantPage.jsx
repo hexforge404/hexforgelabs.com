@@ -8,8 +8,6 @@ import { checkPing } from '../utils/assistant';
 
 const ASSISTANT_URL = '/assistant';
 
-
-
 const AssistantPage = () => {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
@@ -30,63 +28,78 @@ const AssistantPage = () => {
   }, [messages]);
 
   useEffect(() => {
-  checkPing().then((ok) => setStatus(ok ? 'online' : 'offline'));
-}, []);
+    checkPing().then((ok) => setStatus(ok ? 'online' : 'offline'));
+  }, []);
 
-const sendMessage = async () => {
-  if (!input.trim()) return;
+  const sendMessage = async () => {
+    if (!input.trim()) return;
 
-  const userMessage = addUserMessage(input);
-  setMessages(prev => [...prev, userMessage]);
-  setInput('');
-  setLoading(true);
+    const userMessage = addUserMessage(input);
+    setMessages(prev => [...prev, userMessage]);
+    setInput('');
+    setLoading(true);
 
-  const isCommand = input.trim().startsWith('!');
-  const responseTime = new Date().toLocaleTimeString();
+    const isCommand = input.trim().startsWith('!');
+    const responseTime = new Date().toLocaleTimeString();
 
-  try {
-    const res = await fetch(`/assistant/mcp/${isCommand ? 'chat' : 'stream'}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: input })
-    });
-
-    if (isCommand) {
-      const json = await res.json();
-      setMessages(prev => [...prev, {
-        from: 'assistant',
-        text: json.output || '(No output)',
-        time: responseTime
-      }]);
-    } else {
-      setMessages(prev => [...prev, {
-        from: 'assistant',
-        text: '',
-        time: responseTime
-      }]);
-
-      await parseSSEStream(res, (chunk) => {
-        setMessages(prev => updateLastAssistantMessage(prev, chunk));
+    try {
+      const res = await fetch(`/assistant/mcp/${isCommand ? 'chat' : 'stream'}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: input })
       });
+
+      if (isCommand) {
+        const text = await res.text();
+        let output;
+
+        try {
+          const json = JSON.parse(text);
+          output = json.output || '(No output)';
+        } catch (e) {
+          output = text;
+        }
+
+        setMessages(prev => [...prev, {
+          from: 'assistant',
+          text: output,
+          time: responseTime
+        }]);
+      } else {
+        setMessages(prev => [...prev, {
+          from: 'assistant',
+          text: '',
+          time: responseTime
+        }]);
+
+        const reader = res.body.getReader();
+        for await (const chunk of parseSSEStream(reader)) {
+          setMessages(prev =>
+            updateLastAssistantMessage(prev, prev[prev.length - 1].text + chunk)
+          );
+        }
+      }
+    } catch (err) {
+      console.error('Assistant error:', err);
+      setMessages(prev => [...prev, {
+        from: 'assistant',
+        text: '(Error connecting to assistant)',
+        time: new Date().toLocaleTimeString()
+      }]);
+    } finally {
+      setLoading(false);
+      setTimeout(() => {
+        chatRef.current?.scrollTo({
+          top: chatRef.current.scrollHeight,
+          behavior: 'smooth'
+        });
+      }, 100);
     }
-  } catch (err) {
-    console.error('Assistant error:', err);
-    setMessages(prev => [...prev, {
-      from: 'assistant',
-      text: '(Error connecting to assistant)',
-      time: new Date().toLocaleTimeString()
-    }]);
-  } finally {
-    setLoading(false);
-    setTimeout(() => {
-      chatRef.current?.scrollTo({
-        top: chatRef.current.scrollHeight,
-        behavior: 'smooth'
-      });
-    }, 100);
-  }
-};
+  };
 
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter') sendMessage();
+  };
 
   return (
     <div className="assistant-page">
