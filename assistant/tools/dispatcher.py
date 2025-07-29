@@ -5,6 +5,14 @@ from tools.docker import get_docker_info
 from tools.agent import call_agent
 from tools.core import save_memory_entry
 
+import logging
+logger = logging.getLogger(__name__)
+logger.info("🚀 Dispatcher version: 61a47b15 loaded")
+
+
+from tools.network import ping_host, get_uptime, get_disk_usage
+
+
 tool_map = {
     "os-info": get_os_info,
     "user": get_user,
@@ -12,7 +20,11 @@ tool_map = {
     "logs": get_logs,
     "docker": get_docker_info,
     "agent": call_agent,
+    "ping": ping_host,
+    "uptime": get_uptime,
+    "disk-usage": get_disk_usage,
 }
+
 
 async def tool_dispatcher(tool_name, input_data):
     if tool_name not in tool_map:
@@ -31,5 +43,8 @@ async def tool_dispatcher(tool_name, input_data):
 
     # ✅ Correctly call memory save
     await save_memory_entry(tool_name, result, extra_tags=["tool-dispatch"])
+
+   
+
 
     return result

@@ -14,10 +14,31 @@ AGENT_API_URL = os.getenv("AGENT_API_URL", "https://agent.hexforgelabs.com")
 
 router = APIRouter()
 
+# === 🧠 Chat tool aliases ===
+command_aliases = {
+    "usb": "usb-list",
+    "os": "os-info",
+    "logs": "logs",
+    "df": "disk-usage",
+    "uptime": "uptime",
+    "docker": "docker",
+    "user": "user",
+    "ping": "ping",  # ping still needs special handling
+}
+
+# === 📦 Request models ===
 class MCPInvokeRequest(BaseModel):
     tool: str
     input: dict = {}
 
+class MCPChatRequest(BaseModel):
+    prompt: str
+
+class MCPAgentRequest(BaseModel):
+    agent: str
+    prompt: str
+
+# === 📡 POST /mcp/invoke ===
 @router.post("/mcp/invoke")
 async def mcp_invoke(request: MCPInvokeRequest):
     try:
@@ -34,42 +55,33 @@ async def mcp_invoke(request: MCPInvokeRequest):
             "error": str(e)
         }
 
-class MCPChatRequest(BaseModel):
-    prompt: str
-
+# === 💬 POST /mcp/chat ===
 @router.post("/mcp/chat")
 async def mcp_chat(req: MCPChatRequest):
     from tools.core import save_memory_entry
     prompt = req.prompt.strip()
 
     try:
-        # Dispatch tool commands
-        if prompt.startswith("!usb"):
-            result = await tool_dispatcher("usb-list", {})
-        elif prompt.startswith("!os"):
-            result = await tool_dispatcher("os-info", {})
-        elif prompt.startswith("!uptime"):
-            result = await tool_dispatcher("uptime", {})
-        elif prompt.startswith("!df"):
-            result = await tool_dispatcher("disk-usage", {})
-        elif prompt.startswith("!logs"):
-            result = await tool_dispatcher("logs", {})
-        elif prompt.startswith("!docker"):
-            result = await tool_dispatcher("docker", {})
-        elif prompt.startswith("!ping"):
-            target = prompt.split(" ", 1)[1] if " " in prompt else "8.8.8.8"
-            result = await tool_dispatcher("ping", {"target": target})
+        result = None
+
+        if prompt.startswith("!"):
+            cmd = prompt[1:].split(" ")[0]
+            arg = prompt[len(cmd)+2:].strip()  # after !cmd and space
+
+            if cmd == "ping":
+                result = await tool_dispatcher("ping", {"target": arg or "8.8.8.8"})
+            elif cmd in command_aliases:
+                tool = command_aliases[cmd]
+                result = await tool_dispatcher(tool, {})
+            else:
+                result = {"error": f"Unknown command: {cmd}"}
         else:
-            # LLM agent fallback
             result = await tool_dispatcher("agent", {"prompt": prompt})
-
-        if not prompt.startswith("!"):
             await save_memory_entry("agent", result, extra_tags=["chat"])
-
 
         return JSONResponse(content={
             "status": "success",
-            "tool": prompt,
+            "tool": cmd if prompt.startswith("!") else "agent",
             "output": result
         })
 
@@ -80,6 +92,7 @@ async def mcp_chat(req: MCPChatRequest):
             "output": f"(error) {str(e)}"
         }, status_code=500)
 
+# === 🧠 POST /mcp/stream ===
 @router.post("/mcp/stream")
 async def mcp_stream(req: MCPChatRequest):
     from tools.core import save_memory_entry
@@ -95,7 +108,6 @@ async def mcp_stream(req: MCPChatRequest):
                         full_output += line + "\n"
                         yield f"event: message\ndata: {line}\n\n"
 
-
     async def generator_with_memory():
         async for line in stream_gen():
             yield line
@@ -106,10 +118,7 @@ async def mcp_stream(req: MCPChatRequest):
 
     return StreamingResponse(generator_with_memory(), media_type="text/event-stream")
 
-class MCPAgentRequest(BaseModel):
-    agent: str
-    prompt: str
-
+# === 🤖 POST /mcp/invoke/agent ===
 @router.post("/mcp/invoke/agent")
 async def mcp_invoke_agent(req: MCPAgentRequest):
     from tools.agent import call_agent
@@ -128,6 +137,7 @@ async def mcp_invoke_agent(req: MCPAgentRequest):
             "error": str(e)
         }
 
+# === 🤖 POST /mcp/invoke/agent/stream ===
 @router.post("/mcp/invoke/agent/stream")
 async def mcp_invoke_agent_stream(req: MCPAgentRequest):
     prompt = req.prompt
@@ -144,10 +154,12 @@ async def mcp_invoke_agent_stream(req: MCPAgentRequest):
 
     return EventSourceResponse(stream_gen())
 
+# === 🛑 POST /mcp/invoke/agent/stream/stop ===
 @router.post("/mcp/invoke/agent/stream/stop")
 async def mcp_invoke_agent_stream_stop(req: MCPAgentRequest):
     return {"status": "success", "message": "Stream stopped"}
 
+# === 📜 GET /mcp/agents ===
 @router.get("/mcp/agents")
 async def list_agents():
     from tools.agent import AGENTS
