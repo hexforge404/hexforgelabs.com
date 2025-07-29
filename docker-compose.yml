@@ -94,7 +94,7 @@ services:
     container_name: hexforge-assistant
     environment:
       - OLLAMA_MODEL=mistral
-      - OLLAMA_URL=http://host.docker.internal:11434
+      - OLLAMA_URL=http://ollama:11434
     depends_on:
       backend:
         condition: service_healthy
@@ -102,6 +102,8 @@ services:
         condition: service_healthy
     networks:
       - hexforge-network
+    ports:
+      - "11436:11435"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /home/devuser/.ssh/hexforge_sandbox:/root/.ssh/hexforge_sandbox:ro

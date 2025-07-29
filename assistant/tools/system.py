@@ -5,6 +5,8 @@ import time
 import getpass
 import psutil
 from datetime import datetime
+import asyncio
+import shutil
 
 async def get_os_info():
     return {
@@ -125,3 +127,30 @@ async def get_system_power():
         return {"info": "No battery found"}
     except Exception as e:
         return {"error": str(e)}
+
+async def ping_host(target: str = "8.8.8.8"):
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "ping", "-c", "3", target,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await proc.communicate()
+        return {
+            "target": target,
+            "stdout": stdout.decode().strip(),
+            "stderr": stderr.decode().strip(),
+            "exit_code": proc.returncode
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+async def get_disk_usage():
+    total, used, free = shutil.disk_usage("/")
+    return {
+        "total": f"{total // (2**30)} GB",
+        "used": f"{used // (2**30)} GB",
+        "free": f"{free // (2**30)} GB"
+    }
+
+get_uptime = get_system_uptime
