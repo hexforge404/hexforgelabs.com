@@ -25,11 +25,11 @@ async def tool_dispatcher(tool_name, input_data):
     except Exception as e:
         result = {"error": str(e)}
 
-    # 🧠 Save memory
-    await save_memory_entry({
-        "tool": tool_name,
-        "input": input_data,
-        "result": result
-    })
+    # Attach input to result for reference
+    if isinstance(result, dict):
+        result["input"] = input_data
+
+    # ✅ Correctly call memory save
+    await save_memory_entry(tool_name, result, extra_tags=["tool-dispatch"])
 
     return result
