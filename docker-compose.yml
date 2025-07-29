@@ -89,6 +89,7 @@ services:
   assistant:
     build:
       context: ./assistant
+      dockerfile: Dockerfile
     env_file:
       - .env
     container_name: hexforge-assistant
