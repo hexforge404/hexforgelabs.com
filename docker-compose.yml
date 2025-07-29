@@ -88,7 +88,7 @@ services:
 
   assistant:
     build:
-      context: ./assistant
+      context: .
       dockerfile: Dockerfile
     env_file:
       - .env
