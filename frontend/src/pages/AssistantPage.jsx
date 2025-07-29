@@ -65,20 +65,25 @@ const AssistantPage = () => {
           text: output,
           time: responseTime
         }]);
-      } else {
-        setMessages(prev => [...prev, {
-          from: 'assistant',
-          text: '',
-          time: responseTime
-        }]);
-
-        const reader = res.body.getReader();
-        for await (const chunk of parseSSEStream(reader)) {
-          setMessages(prev =>
-            updateLastAssistantMessage(prev, prev[prev.length - 1].text + chunk)
-          );
-        }
+          } else {
+      if (!res.ok || !res.body) {
+        throw new Error(`Failed to connect: ${res.status}`);
       }
+
+      setMessages(prev => [...prev, {
+        from: 'assistant',
+        text: '',
+        time: responseTime
+      }]);
+
+      const reader = res.body.getReader();
+      for await (const chunk of parseSSEStream(reader)) {
+        setMessages(prev =>
+          updateLastAssistantMessage(prev, prev[prev.length - 1].text + chunk)
+        );
+      }
+    }
+
     } catch (err) {
       console.error('Assistant error:', err);
       setMessages(prev => [...prev, {
