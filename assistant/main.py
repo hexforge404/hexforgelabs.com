@@ -10,7 +10,7 @@ import psutil
 from starlette.middleware.cors import ALL_METHODS
 from fastapi import Request
 from fastapi.responses import Response
-from routes import mcp
+from assistant.routes import mcp
 from contextlib import asynccontextmanager
 
 from tool_registry import TOOL_REGISTRY, register_tool
