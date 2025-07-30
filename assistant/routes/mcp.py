@@ -1,12 +1,15 @@
+import os
+import json
+import httpx
+
 from fastapi import APIRouter
 from pydantic import BaseModel
-from tools.dispatcher import tool_dispatcher  
-from sse_starlette.sse import EventSourceResponse
-from starlette.responses import StreamingResponse
 from fastapi.responses import JSONResponse
-import httpx
-import json
-import os
+from starlette.responses import StreamingResponse
+from starlette.responses import EventSourceResponse
+
+# ✅ Assistant-aware imports
+from assistant.tools.dispatcher import tool_dispatcher
 
 # Optional model name for Ollama agent fallback
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "mistral")
