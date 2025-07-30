@@ -16,6 +16,7 @@ router = APIRouter()
 
 # === 🧠 Chat tool aliases ===
 command_aliases = {
+    # Core
     "usb": "usb-list",
     "os": "os-info",
     "logs": "logs",
@@ -23,8 +24,45 @@ command_aliases = {
     "uptime": "uptime",
     "docker": "docker",
     "user": "user",
-    "ping": "ping",  # ping still needs special handling
+    "ping": "ping",
+
+    # Launchers
+    "freecad": "launch-freecad",
+    "open": "launch-app",
+    "openfile": "launch-file",
+
+    # Dev tools
+    "btop": "run-btop",
+    "neofetch": "run-neofetch",
+    "status": "check-all-tools",
+
+    # Archive
+    "archive": "archive-files",
+    "extract": "extract-archive",
+
+    # Packages
+    "packages": "list-packages",
+
+    # Processes
+    "ps": "list-processes",
+    "kill": "kill-process",
+
+    # Security
+    "ports": "check-ports",
+    "scan": "scan-services",
+
+    # Scheduler
+    "cron": "list-cron-jobs",
+
+    # Monitoring
+    "cpu": "get-cpu-info",
+    "mem": "get-mem-info",
+
+    # File I/O
+    "read": "read-file",
+    "write": "write-file",
 }
+
 
 # === 📦 Request models ===
 class MCPInvokeRequest(BaseModel):
