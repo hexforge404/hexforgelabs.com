@@ -3,12 +3,7 @@ FROM python:3.11-slim
 WORKDIR /app
 ENV PYTHONPATH=/app
 
-COPY ./assistant /app/assistant
-COPY ./backend /app/backend
-COPY ./assistant/requirements.txt /app/
-
-
-
+COPY . /app
 
 RUN apt-get update && apt-get install -y \
     docker.io \
@@ -17,7 +12,7 @@ RUN apt-get update && apt-get install -y \
     procps \
     curl \
  && pip install --upgrade pip \
- && pip install --no-cache-dir -r requirements.txt \
+ && pip install --no-cache-dir -r assistant/requirements.txt \
  && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 EXPOSE 11435
