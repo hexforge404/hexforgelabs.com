@@ -6,10 +6,12 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 from fastapi.responses import JSONResponse
 from starlette.responses import StreamingResponse
-from starlette.responses import EventSourceResponse
+from sse_starlette.sse import EventSourceResponse
 
 # ✅ Assistant-aware imports
 from assistant.tools.dispatcher import tool_dispatcher
+from assistant.tools.core import save_memory_entry
+from assistant.tools.agent import call_agent, AGENTS
 
 # Optional model name for Ollama agent fallback
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "mistral")
@@ -19,7 +21,6 @@ router = APIRouter()
 
 # === 🧠 Chat tool aliases ===
 command_aliases = {
-    # Core
     "usb": "usb-list",
     "os": "os-info",
     "logs": "logs",
@@ -28,44 +29,25 @@ command_aliases = {
     "docker": "docker",
     "user": "user",
     "ping": "ping",
-
-    # Launchers
     "freecad": "launch-freecad",
     "open": "launch-app",
     "openfile": "launch-file",
-
-    # Dev tools
     "btop": "run-btop",
     "neofetch": "run-neofetch",
     "status": "check-all-tools",
-
-    # Archive
     "archive": "archive-files",
     "extract": "extract-archive",
-
-    # Packages
     "packages": "list-packages",
-
-    # Processes
     "ps": "list-processes",
     "kill": "kill-process",
-
-    # Security
     "ports": "check-ports",
     "scan": "scan-services",
-
-    # Scheduler
     "cron": "list-cron-jobs",
-
-    # Monitoring
     "cpu": "get-cpu-info",
     "mem": "get-mem-info",
-
-    # File I/O
     "read": "read-file",
     "write": "write-file",
 }
-
 
 # === 📦 Request models ===
 class MCPInvokeRequest(BaseModel):
@@ -99,16 +81,12 @@ async def mcp_invoke(request: MCPInvokeRequest):
 # === 💬 POST /mcp/chat ===
 @router.post("/mcp/chat")
 async def mcp_chat(req: MCPChatRequest):
-    from tools.core import save_memory_entry
     prompt = req.prompt.strip()
-
     try:
         result = None
-
         if prompt.startswith("!"):
             cmd = prompt[1:].split(" ")[0]
-            arg = prompt[len(cmd)+2:].strip()  # after !cmd and space
-
+            arg = prompt[len(cmd) + 2:].strip()
             if cmd == "ping":
                 result = await tool_dispatcher("ping", {"target": arg or "8.8.8.8"})
             elif cmd in command_aliases:
@@ -136,14 +114,13 @@ async def mcp_chat(req: MCPChatRequest):
 # === 🧠 POST /mcp/stream ===
 @router.post("/mcp/stream")
 async def mcp_stream(req: MCPChatRequest):
-    from tools.core import save_memory_entry
     prompt = req.prompt
     full_output = ""
 
     async def stream_gen():
         nonlocal full_output
         async with httpx.AsyncClient(timeout=None) as client:
-            async with client.stream("POST", f"http://ollama:11434/api/generate", json={"model": OLLAMA_MODEL, "prompt": prompt}) as response:
+            async with client.stream("POST", "http://ollama:11434/api/generate", json={"model": OLLAMA_MODEL, "prompt": prompt}) as response:
                 async for line in response.aiter_lines():
                     if line.strip():
                         full_output += line + "\n"
@@ -162,7 +139,6 @@ async def mcp_stream(req: MCPChatRequest):
 # === 🤖 POST /mcp/invoke/agent ===
 @router.post("/mcp/invoke/agent")
 async def mcp_invoke_agent(req: MCPAgentRequest):
-    from tools.agent import call_agent
     try:
         output = await call_agent(prompt=req.prompt, agent=req.agent)
         return {
@@ -203,5 +179,4 @@ async def mcp_invoke_agent_stream_stop(req: MCPAgentRequest):
 # === 📜 GET /mcp/agents ===
 @router.get("/mcp/agents")
 async def list_agents():
-    from tools.agent import AGENTS
     return {"agents": list(AGENTS.keys())}
