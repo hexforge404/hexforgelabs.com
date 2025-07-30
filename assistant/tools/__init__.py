@@ -1,21 +1,15 @@
 # Unified entry point for all assistant tools
 
-# Core Tool Utilities
-from tools.core import *
-
-# System Tools
-from tools.system import *
-from tools.fileops import *
-from tools.process import *
-from tools.monitor import *
-from tools.logs import *
-from tools.archive import *
-from tools.packages import *
-from tools.scheduler import *
-from tools.security import *
-from tools.launchers import *
-from tools.devtools import *
-from tools.usb import *
-
-from tools.monitor import *
-
+from assistant.tools.core import *
+from assistant.tools.system import *
+from assistant.tools.fileops import *
+from assistant.tools.process import *
+from assistant.tools.monitor import *
+from assistant.tools.logs import *
+from assistant.tools.archive import *
+from assistant.tools.packages import *
+from assistant.tools.scheduler import *
+from assistant.tools.security import *
+from assistant.tools.launchers import *
+from assistant.tools.devtools import *
+from assistant.tools.usb import *

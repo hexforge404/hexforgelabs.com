@@ -21,6 +21,9 @@ from assistant.tools import (
     launch_freecad, launch_app, launch_file,
     run_btop, run_neofetch, check_all_tools, get_user
 )
+from fastapi import FastAPI
+
+app = FastAPI()
 
 
 # 🌍 Environment
