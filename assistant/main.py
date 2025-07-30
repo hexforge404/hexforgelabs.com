@@ -1,30 +1,27 @@
 import os
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-import paramiko
-import requests
-import subprocess
 import socket
 import psutil
-from starlette.middleware.cors import ALL_METHODS
-from fastapi import Request
-from fastapi.responses import Response
-from assistant.routes import mcp
+import paramiko
+import subprocess
+import requests
+
 from contextlib import asynccontextmanager
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
+from pydantic import BaseModel
+from starlette.middleware.cors import ALL_METHODS
 
-from tool_registry import TOOL_REGISTRY, register_tool
-
-
-
-# 🔧 Tool Imports
-from tools.core import save_memory_entry
-
-from tools import (
+# ✅ Fixed assistant-prefixed imports
+from assistant.routes import mcp
+from assistant.tool_registry import TOOL_REGISTRY, register_tool
+from assistant.tools.core import save_memory_entry
+from assistant.tools import (
     get_os_info, list_usb_devices, get_logs,
     launch_freecad, launch_app, launch_file,
     run_btop, run_neofetch, check_all_tools, get_user
 )
+
 
 # 🌍 Environment
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "mistral")

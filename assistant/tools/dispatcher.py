@@ -1,26 +1,28 @@
 import logging
+
 logger = logging.getLogger(__name__)
-logger.info("🚀 Dispatcher version: unified full tool map loaded")
+logger.info("🧩 Dispatcher version: unified full tool map loaded")
 
 # --- Tool imports ---
-from tools.system import get_os_info, get_user, get_uptime, get_disk_usage
-from tools.usb import list_usb_devices
-from tools.logs import get_logs
-from tools.docker import get_docker_info
-from tools.network import ping_host
-from tools.agent import call_agent
+from assistant.tools.system import get_os_info, get_user, get_uptime, get_disk_usage
+from assistant.tools.usb import list_usb_devices
+from assistant.tools.logs import get_logs
+from assistant.tools.docker import get_docker_info
+from assistant.tools.network import ping_host
+from assistant.tools.agent import call_agent
 
-from tools.launchers import launch_freecad, launch_app, launch_file
-from tools.devtools import run_btop, run_neofetch, check_all_tools
-from tools.archive import archive_files, extract_archive
-from tools.packages import list_packages
-from tools.process import list_processes, kill_process
-from tools.security import check_ports, scan_services
-from tools.scheduler import list_cron_jobs
-from tools.monitor import get_cpu_info, get_mem_info
-from tools.fileops import read_file, write_file
+from assistant.tools.launchers import launch_freecad, launch_app, launch_file
+from assistant.tools.devtools import run_btop, run_neofetch, check_all_tools
+from assistant.tools.archive import archive_files, extract_archive
+from assistant.tools.packages import list_packages
+from assistant.tools.process import list_processes, kill_process
+from assistant.tools.security import check_ports, scan_services
+from assistant.tools.scheduler import list_cron_jobs
+from assistant.tools.monitor import get_cpu_info, get_mem_info
+from assistant.tools.fileops import read_file, write_file
 
-from tools.core import save_memory_entry
+from assistant.tools.core import save_memory_entry
+
 
 # --- Tool registry ---
 tool_map = {
