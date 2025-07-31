@@ -18,7 +18,7 @@ RUN npm run build
 FROM nginx:stable
 COPY --from=builder /app/build /usr/share/nginx/html
 # REMOVE this line to avoid double-mounting:
-# COPY nginx/default.conf /etc/nginx/conf.d/default.conf
+COPY nginx/default.conf /etc/nginx/conf.d/default.conf
 COPY public/images /usr/share/nginx/html/images
 
 EXPOSE 80
