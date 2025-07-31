@@ -4,29 +4,46 @@ logger = logging.getLogger(__name__)
 logger.info("🧩 Dispatcher version: unified full tool map loaded")
 
 # --- Tool imports ---
+
+
+# assistant/tools/dispatcher.py
+
+# Tool imports
 from assistant.tools.system import get_os_info, get_user, get_uptime, get_disk_usage
 from assistant.tools.usb import list_usb_devices
 from assistant.tools.logs import get_logs
 from assistant.tools.docker import get_docker_info
-from assistant.tools.network import ping_host
+from assistant.tools.network import ping_host  # OK
 from assistant.tools.agent import call_agent
 
 from assistant.tools.launchers import launch_freecad, launch_app, launch_file
-from assistant.tools.devtools import run_btop, run_neofetch, check_all_tools
-from assistant.tools.archive import archive_files, extract_archive
-from assistant.tools.packages import list_packages
-from assistant.tools.process import list_processes, kill_process
-from assistant.tools.security import check_ports, scan_services
-from assistant.tools.scheduler import list_cron_jobs
-from assistant.tools.monitor import get_cpu_info, get_mem_info
-from assistant.tools.fileops import read_file, write_file
 
+# ✅ Import run_btop and run_neofetch from monitor, not devtools
+from assistant.tools.monitor import run_btop, run_neofetch
+# ✅ check_all_tools stays in devtools
+from assistant.tools.devtools import check_all_tools
+
+# ✅ Archive functions: use zip_folder and auto_extract
+from assistant.tools.archive import zip_folder as archive_files, auto_extract as extract_archive
+
+# ✅ Packages: use list_installed_packages and alias it
+from assistant.tools.packages import list_installed_packages as list_packages
+
+# ✅ Process functions
+from assistant.tools.process import list_processes, kill_process
+
+# ❌ Security: remove or replace invalid imports
+from assistant.tools.security import scan_setuid_binaries, check_firewall_rules
+
+# Remove list_cron_jobs; scheduler has no such function
+# For monitoring, use existing functions in monitor
+from assistant.tools.monitor import detailed_cpu as get_cpu_info, system_metrics as get_mem_info
+
+from assistant.tools.fileops import read_file, write_file
 from assistant.tools.core import save_memory_entry
 
-
-# --- Tool registry ---
+# Tool registry
 tool_map = {
-    # System & basic
     "os-info": get_os_info,
     "user": get_user,
     "usb-list": list_usb_devices,
@@ -59,11 +76,8 @@ tool_map = {
     "kill-process": kill_process,
 
     # Security
-    "check-ports": check_ports,
-    "scan-services": scan_services,
-
-    # Scheduler
-    "list-cron-jobs": list_cron_jobs,
+    "scan-setuid-binaries": scan_setuid_binaries,
+    "check-firewall-rules": check_firewall_rules,
 
     # Monitoring
     "get-cpu-info": get_cpu_info,
@@ -73,6 +87,7 @@ tool_map = {
     "read-file": read_file,
     "write-file": write_file,
 }
+
 
 # --- Dispatcher core ---
 async def tool_dispatcher(tool_name, input_data):

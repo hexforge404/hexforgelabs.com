@@ -13,18 +13,21 @@ from pydantic import BaseModel
 from starlette.middleware.cors import ALL_METHODS
 
 # ✅ Fixed assistant-prefixed imports
-from assistant.routes import mcp
-from assistant.tool_registry import TOOL_REGISTRY, register_tool
-from assistant.tools.core import save_memory_entry
-from assistant.tools import (
+# assistant/main.py
+from .routes import mcp
+from .tool_registry import TOOL_REGISTRY, register_tool
+from .tools.core import save_memory_entry
+from .tools import (
     get_os_info, list_usb_devices, get_logs,
     launch_freecad, launch_app, launch_file,
     run_btop, run_neofetch, check_all_tools, get_user
 )
+
 from fastapi import FastAPI
 
 app = FastAPI()
 
+app.include_router(mcp.router)
 
 # 🌍 Environment
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "mistral")

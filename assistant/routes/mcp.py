@@ -5,11 +5,11 @@ import httpx
 from fastapi import APIRouter
 from pydantic import BaseModel
 from fastapi.responses import JSONResponse
-from starlette.responses import StreamingResponse
 from sse_starlette.sse import EventSourceResponse
+from starlette.responses import StreamingResponse
 
 # ✅ Assistant-aware imports
-from assistant.tools.dispatcher import tool_dispatcher
+from ..tools.dispatcher import tool_dispatcher
 from assistant.tools.core import save_memory_entry
 from assistant.tools.agent import call_agent, AGENTS
 
@@ -40,14 +40,25 @@ command_aliases = {
     "packages": "list-packages",
     "ps": "list-processes",
     "kill": "kill-process",
-    "ports": "check-ports",
-    "scan": "scan-services",
-    "cron": "list-cron-jobs",
+    # Updated security and monitoring aliases
+    "setuid": "scan-setuid-binaries",
+    "firewall": "check-firewall-rules",
     "cpu": "get-cpu-info",
     "mem": "get-mem-info",
+    # Removed cron since no list_cron_jobs
     "read": "read-file",
     "write": "write-file",
 }
+
+
+from fastapi import APIRouter
+
+router = APIRouter()
+
+@router.get("/mcp/health")
+async def mcp_health():
+    return {"status": "mcp ok"}
+
 
 # === 📦 Request models ===
 class MCPInvokeRequest(BaseModel):
@@ -82,11 +93,16 @@ async def mcp_invoke(request: MCPInvokeRequest):
 @router.post("/mcp/chat")
 async def mcp_chat(req: MCPChatRequest):
     prompt = req.prompt.strip()
+    print(f"[DEBUG] Incoming prompt: {prompt}")
+    
     try:
         result = None
         if prompt.startswith("!"):
             cmd = prompt[1:].split(" ")[0]
             arg = prompt[len(cmd) + 2:].strip()
+
+            print(f"[DEBUG] Command mode: {cmd} | Arg: {arg}")
+
             if cmd == "ping":
                 result = await tool_dispatcher("ping", {"target": arg or "8.8.8.8"})
             elif cmd in command_aliases:
@@ -98,6 +114,8 @@ async def mcp_chat(req: MCPChatRequest):
             result = await tool_dispatcher("agent", {"prompt": prompt})
             await save_memory_entry("agent", result, extra_tags=["chat"])
 
+        print(f"[DEBUG] Chat result: {result}")
+
         return JSONResponse(content={
             "status": "success",
             "tool": cmd if prompt.startswith("!") else "agent",
@@ -105,11 +123,15 @@ async def mcp_chat(req: MCPChatRequest):
         })
 
     except Exception as e:
+        import traceback
+        print(f"[ERROR] Exception in /mcp/chat:\n{traceback.format_exc()}")
+
         return JSONResponse(content={
             "status": "error",
             "tool": prompt,
-            "output": f"(error) {str(e)}"
+            "output": f"(internal error) {str(e)}"
         }, status_code=500)
+
 
 # === 🧠 POST /mcp/stream ===
 @router.post("/mcp/stream")
