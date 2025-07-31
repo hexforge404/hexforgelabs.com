@@ -50,11 +50,11 @@ const MonacoEditorPage = () => {
     inputRef.current?.focus();
     try {
       if (terminalMode === 'ai') {
-        const res = await axios.post('/chat', { message: terminalInput });
-        setTerminalOutput(res.data.response ?? '(No response)');
+        const res = await axios.post('/assistant/mcp/chat', { prompt: terminalInput });
+        setTerminalOutput(res.data.output ?? JSON.stringify(res.data, null, 2));
       } else {
         const res = await axios.post('/api/editor/terminal', { command: terminalInput });
-        setTerminalOutput(res.data.output ?? '(No output)');
+        setTerminalOutput(res.data.output ?? JSON.stringify(res.data, null, 2));
       }
     } catch {
       setTerminalOutput('❌ Command failed');
