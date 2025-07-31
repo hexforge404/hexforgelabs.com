@@ -34,7 +34,8 @@ const ChatPage = () => {
     const responseTime = new Date().toLocaleTimeString();
 
     try {
-      const res = await fetch(`/assistant/mcp/${isCommand ? 'chat' : 'stream'}`, {
+      const res = await fetch(`https://assistant.hexforgelabs.com/mcp/${isCommand ? 'chat' : 'stream'}`, {
+
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt: input })

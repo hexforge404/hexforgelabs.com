@@ -6,7 +6,8 @@ import { parseSSEStream } from '../utils/parseSSEStream';
 import { addUserMessage, addAssistantMessage, updateLastAssistantMessage } from '../utils/chatHelpers';
 import { checkPing } from '../utils/assistant';
 
-const ASSISTANT_URL = '/assistant';
+const ASSISTANT_URL = 'https://assistant.hexforgelabs.com';
+
 
 const AssistantPage = () => {
   const [messages, setMessages] = useState([]);
@@ -43,7 +44,7 @@ const AssistantPage = () => {
     const responseTime = new Date().toLocaleTimeString();
 
     try {
-      const res = await fetch(`/assistant/mcp/${isCommand ? 'chat' : 'stream'}`, {
+      const res = await fetch(`${ASSISTANT_URL}/mcp/${isCommand ? 'chat' : 'stream'}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt: input })
