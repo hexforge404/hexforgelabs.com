@@ -1,7 +1,7 @@
 import subprocess
 import socket
 import psutil
-from tools.core import save_memory_entry
+from .core import save_memory_entry
 
 async def ping_host(host="8.8.8.8", count=3):
     """Pings a host and returns latency output."""
