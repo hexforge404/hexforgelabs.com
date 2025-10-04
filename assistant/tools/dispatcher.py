@@ -13,7 +13,7 @@ from assistant.tools.system import get_os_info, get_user, get_uptime, get_disk_u
 from assistant.tools.usb import list_usb_devices
 from assistant.tools.logs import get_logs
 from assistant.tools.docker import get_docker_info
-from assistant.tools.network import ping_host  # OK
+from assistant.tools.system import ping_host  # OK
 from assistant.tools.agent import call_agent
 
 from assistant.tools.launchers import launch_freecad, launch_app, launch_file
@@ -91,6 +91,8 @@ tool_map = {
 
 # --- Dispatcher core ---
 async def tool_dispatcher(tool_name, input_data):
+    print(f"[DISPATCH] tool: {tool_name} | input: {input_data}")
+
     if tool_name not in tool_map:
         raise ValueError(f"Unknown tool: {tool_name}")
 

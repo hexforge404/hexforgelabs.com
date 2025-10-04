@@ -94,7 +94,7 @@ services:
       - .env
     container_name: hexforge-assistant
     environment:
-      - OLLAMA_MODEL=mistral
+      - OLLAMA_MODEL=mistral:latest
       - OLLAMA_URL=http://ollama:11434
     depends_on:
       backend:

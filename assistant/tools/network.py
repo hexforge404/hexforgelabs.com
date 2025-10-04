@@ -3,11 +3,13 @@ import socket
 import psutil
 from .core import save_memory_entry
 
-async def ping_host(host="8.8.8.8", count=3):
+async def ping_host(target="8.8.8.8", count=3):
+    host = target  # alias
+
     """Pings a host and returns latency output."""
     try:
         output = subprocess.check_output(["ping", "-c", str(count), host], text=True)
-        result = {"host": host, "output": output}
+        result = {"target": target, "output": output}
     except subprocess.CalledProcessError as e:
         result = {"error": e.output, "returncode": e.returncode}
     except Exception as e:

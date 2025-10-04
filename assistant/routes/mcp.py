@@ -105,6 +105,7 @@ async def mcp_chat(req: MCPChatRequest):
 
             if cmd == "ping":
                 result = await tool_dispatcher("ping", {"target": arg or "8.8.8.8"})
+                print(f"[DEBUG] Ping raw result: {json.dumps(result, indent=2)}")
             elif cmd in command_aliases:
                 tool = command_aliases[cmd]
                 result = await tool_dispatcher(tool, {})
@@ -115,12 +116,18 @@ async def mcp_chat(req: MCPChatRequest):
             await save_memory_entry("agent", result, extra_tags=["chat"])
 
         print(f"[DEBUG] Chat result: {result}")
+        print(f"[DEBUG] Type of result: {type(result)}")
+        print(f"[DEBUG] Ping Result Full Object: {json.dumps(result, indent=2) if isinstance(result, dict) else str(result)}")
 
-        return JSONResponse(content={
-            "status": "success",
-            "tool": cmd if prompt.startswith("!") else "agent",
-            "output": result
-        })
+        if prompt.startswith("!"):
+            if cmd == "ping":
+                ping_response = result.get("stdout") or result.get("output") or str(result)
+                return JSONResponse(content={"response": ping_response})
+
+            else:
+                return JSONResponse(content={"response": json.dumps(result, indent=2)})
+        else:
+            return JSONResponse(content={"response": result.get("response") or str(result)})
 
     except Exception as e:
         import traceback

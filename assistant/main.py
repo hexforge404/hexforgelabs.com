@@ -35,54 +35,8 @@ OLLAMA_URL = os.getenv("OLLAMA_URL", "http://ollama:11434")
 
 
 
-async def list_open_ports():
-    """Lists all open TCP and UDP ports using `ss` or fallback to `netstat`."""
-    try:
-        try:
-            output = subprocess.check_output(["ss", "-tuln"], text=True)
-        except FileNotFoundError:
-            output = subprocess.check_output(["netstat", "-tuln"], text=True)
-        result = {"ports": output, "retry": False}
-    except Exception as e:
-        result = {"error": str(e), "retry": True}
-    await save_memory_entry("list-open-ports", result)
-    return result
 
-async def get_hostname():
-    """Returns the system's hostname."""
-    try:
-        hostname = socket.gethostname()
-        result = {"hostname": hostname}
-    except Exception as e:
-        result = {"error": str(e)}
-    await save_memory_entry("get-hostname", result)
-    return result
 
-async def get_ip_addresses():
-    """Returns a list of IP addresses assigned to this machine."""
-    try:
-        ip_addrs = []
-        for interface, snics in psutil.net_if_addrs().items():
-            for snic in snics:
-                if snic.family == socket.AF_INET:
-                    ip_addrs.append({"interface": interface, "ip": snic.address})
-        result = {"ips": ip_addrs}
-    except Exception as e:
-        result = {"error": str(e)}
-    await save_memory_entry("get-ip-addresses", result)
-    return result
-
-async def ping_host(host="8.8.8.8", count=3):
-    """Pings a host and returns latency output."""
-    try:
-        output = subprocess.check_output(["ping", "-c", str(count), host], text=True)
-        result = {"host": host, "output": output}
-    except subprocess.CalledProcessError as e:
-        result = {"error": e.output, "returncode": e.returncode}
-    except Exception as e:
-        result = {"error": str(e)}
-    await save_memory_entry("ping-host", result)
-    return result
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
