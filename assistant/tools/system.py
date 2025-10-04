@@ -129,6 +129,8 @@ async def get_system_power():
         return {"error": str(e)}
 
 async def ping_host(target: str = "8.8.8.8"):
+    print(f"[DEBUG] ping_host used from: {ping_host.__module__}")
+
     try:
         proc = await asyncio.create_subprocess_exec(
             "ping", "-c", "3", target,
@@ -136,6 +138,14 @@ async def ping_host(target: str = "8.8.8.8"):
             stderr=asyncio.subprocess.PIPE
         )
         stdout, stderr = await proc.communicate()
+
+        print("[DEBUG] ping_host() returned:", {
+            "target": target,
+            "stdout": stdout.decode().strip(),
+            "stderr": stderr.decode().strip(),
+            "exit_code": proc.returncode
+        })
+
         return {
             "target": target,
             "stdout": stdout.decode().strip(),
