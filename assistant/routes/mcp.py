@@ -66,7 +66,13 @@ class MCPInvokeRequest(BaseModel):
     input: dict = {}
 
 class MCPChatRequest(BaseModel):
-    prompt: str
+    prompt: str | None = None
+    message: str | None = None
+
+    def text(self) -> str:
+        """Unify prompt/message into one text field."""
+        return (self.prompt or self.message or "").strip()
+
 
 class MCPAgentRequest(BaseModel):
     agent: str
@@ -92,7 +98,13 @@ async def mcp_invoke(request: MCPInvokeRequest):
 # === 💬 POST /mcp/chat ===
 @router.post("/mcp/chat")
 async def mcp_chat(req: MCPChatRequest):
-    prompt = req.prompt.strip()
+    prompt = req.text()
+    if not prompt:
+        return JSONResponse(
+            content={"detail": "Missing 'prompt' or 'message' field."},
+            status_code=422
+        )
+
     print(f"[DEBUG] Incoming prompt: {prompt}")
     
     try:
@@ -143,7 +155,13 @@ async def mcp_chat(req: MCPChatRequest):
 # === 🧠 POST /mcp/stream ===
 @router.post("/mcp/stream")
 async def mcp_stream(req: MCPChatRequest):
-    prompt = req.prompt
+    prompt = req.text()
+    if not prompt:
+        return JSONResponse(
+            content={"detail": "Missing 'prompt' or 'message' field."},
+            status_code=422
+        )
+    print(f"[DEBUG] Incoming stream prompt: {prompt}")
     full_output = ""
 
     async def stream_gen():
