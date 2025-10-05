@@ -15,6 +15,7 @@ from starlette.middleware.cors import ALL_METHODS
 # ✅ Fixed assistant-prefixed imports
 # assistant/main.py
 from .routes import mcp
+#from assistant.routes import tools
 from .tool_registry import TOOL_REGISTRY, register_tool
 from .tools.core import save_memory_entry
 from .tools import (
@@ -22,12 +23,8 @@ from .tools import (
     launch_freecad, launch_app, launch_file,
     run_btop, run_neofetch, check_all_tools, get_user
 )
+from .tools.system import ping_host, get_hostname, get_ip_addresses
 
-from fastapi import FastAPI
-
-app = FastAPI()
-
-app.include_router(mcp.router)
 
 # 🌍 Environment
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "mistral")
