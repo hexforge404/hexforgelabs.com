@@ -1,0 +1,49 @@
+diff --git a/assistant/main.py b/assistant/main.py
+index 1111111..2222222 100644
+--- a/assistant/main.py
++++ b/assistant/main.py
+@@
+-from fastapi import FastAPI
+-
+-app = FastAPI()
+-
+-app.include_router(mcp.router)
+-app.include_router(tools.router)
++from fastapi import FastAPI
++# Keep a single FastAPI instance (we'll create it once below)
+@@
+-from .routes import mcp
+-from assistant.routes import tools
++from .routes import mcp
++# If you define /tool/* endpoints in this file, don't also include a tools router:
++# from .routes import tools  # <-- REMOVE/COMMENT to avoid route collisions
+ from .tool_registry import TOOL_REGISTRY, register_tool
+ from .tools.core import save_memory_entry
+ from .tools import (
+     get_os_info, list_usb_devices, get_logs,
+     launch_freecad, launch_app, launch_file,
+     run_btop, run_neofetch, check_all_tools, get_user
+ )
++from .tools.system import ping_host, get_hostname, get_ip_addresses
+@@
+-# 🚀 FastAPI Init
+-app = FastAPI(title="HexForge Lab Assistant API", lifespan=lifespan)
+-
+-# Include router after app initialization
+-app.include_router(mcp.router)
++# 🚀 FastAPI Init (single instance)
++app = FastAPI(title="HexForge Lab Assistant API", lifespan=lifespan)
++app.include_router(mcp.router)  # legacy MCP/command routes only
++# Do NOT include tools.router since /tool/* endpoints are defined below in this file
++# app.include_router(tools.router)
+@@
+ app.add_middleware(
+     CORSMiddleware,
+     allow_origins=[
+         "https://hexforgelabs.com",
+         "https://assistant.hexforgelabs.com"
+     ],
+     allow_credentials=True,
+     allow_methods=["*"],
+     allow_headers=["*"]
+ )
