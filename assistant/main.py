@@ -23,7 +23,7 @@ from .tools import (
     launch_freecad, launch_app, launch_file,
     run_btop, run_neofetch, check_all_tools, get_user
 )
-from .tools.system import ping_host, get_hostname, get_ip_addresses
+from .tools.system import ping_host
 
 
 # 🌍 Environment
@@ -89,6 +89,16 @@ async def try_subprocess(cmd, tool_name):
 
 
 
+def _get_ip_addresses():
+    addrs = []
+    try:
+        for ifname, ifaddrs in psutil.net_if_addrs().items():
+            for a in ifaddrs:
+                if a.family == socket.AF_INET and not str(a.address).startswith("127."):
+                    addrs.append({"iface": ifname, "ip": a.address})
+    except Exception as e:
+        addrs.append({"error": str(e)})
+    return addrs
 
 
 
@@ -466,9 +476,10 @@ async def tool_debug():
     return {
         "os": await get_os_info(),
         "user": await get_user(),
-        "hostname": await get_hostname(),
-        "ip": await get_ip_addresses()
+        "hostname": socket.gethostname(),
+        "ip": _get_ip_addresses()
     }
+
 
 @app.get("/tool/list")
 async def list_all_tools():
