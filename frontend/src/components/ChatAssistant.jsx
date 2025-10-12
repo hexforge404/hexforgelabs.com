@@ -13,7 +13,7 @@ const ChatAssistant = ({ onClose }) => {
     sendMessage,
     chatRef,
     inputRef,
-  } = useAssistantChat("hexforge_chat");
+  } = useAssistantChat("hexforge_chat_drawer");
 
   const tools = ["!os", "!usb", "!logs", "!ping 8.8.8.8", "!uptime", "!df", "!docker"];
   const [showHistory, setShowHistory] = React.useState(true);

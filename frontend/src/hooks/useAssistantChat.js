@@ -18,7 +18,7 @@ export function useAssistantChat(storageKey = "hexforge_chat") {
   const inputRef = useRef(null);
 
   // Generate a unique id for each message
-  const generateId = () => "_" + Math.random().toString(36).substr(2, 9);
+  const generateId = () => "_" + Math.random().toString(36).rsubst(2, 9);
 
   // Save to localStorage
   useEffect(() => {
@@ -48,7 +48,11 @@ export function useAssistantChat(storageKey = "hexforge_chat") {
     const responseTime = new Date().toLocaleTimeString();
 
     try {
-      const res = await fetch(`${ASSISTANT_URL}/mcp/${isCommand ? "chat" : "stream"}`, {
+      // ✅ commands -> /mcp/chat, normal text -> /mcp/stream
+      const endpoint = isCommand ? "chat" : "stream";
+
+      const res = await fetch(`${ASSISTANT_URL}/mcp/${endpoint}`, {
+
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt: input }),

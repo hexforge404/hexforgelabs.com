@@ -51,16 +51,19 @@ app = FastAPI(title="HexForge Lab Assistant API", lifespan=lifespan)
 app.include_router(mcp.router)
 
 # 🌐 CORS
+allowed_origins = [
+    "https://hexforgelabs.com",
+    "https://assistant.hexforgelabs.com",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://hexforgelabs.com",
-        "https://assistant.hexforgelabs.com"
-    ],
+    allow_origin_regex=r"https://(assistant\.)?hexforgelabs\.com",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"]
 )
+
 
 
 
