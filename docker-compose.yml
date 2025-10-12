@@ -30,6 +30,7 @@ services:
       - ./frontend/build:/usr/share/nginx/html
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
       - ./nginx/assistant.conf:/etc/nginx/conf.d/assistant.conf:ro
+      - ./nginx/snippets:/etc/nginx/snippets:ro   # ✅ Add this line
       - /etc/letsencrypt:/etc/letsencrypt:ro
       - ./uploads:/app/uploads
     networks:
@@ -89,13 +90,11 @@ services:
   assistant:
     build:
       context: .
-      dockerfile: Dockerfile
-    env_file:
-      - .env
+      dockerfile: ./assistant/Dockerfile
     container_name: hexforge-assistant
     environment:
-      - OLLAMA_MODEL=mistral:latest
-      - OLLAMA_URL=http://ollama:11434
+      OLLAMA_MODEL: mistral:latest
+      OLLAMA_URL: http://ollama:11434
     depends_on:
       backend:
         condition: service_healthy
@@ -104,11 +103,20 @@ services:
     networks:
       - hexforge-network
     ports:
-      - "11436:11435"
+      - "11436:11435"  # host:container
+    expose:
+      - "11435"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - /home/devuser/.ssh/hexforge_sandbox:/root/.ssh/hexforge_sandbox:ro
+      - /home/deuvuser/.ssh/hexforge_sandbox:/root/.ssh/hexforge_sandbox:ro
     privileged: true
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11435/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
 
 
 
