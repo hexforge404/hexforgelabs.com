@@ -13,7 +13,7 @@ const AssistantPage = () => {
     sendMessage,
     chatRef,
     inputRef,
-  } = useAssistantChat("hexforge_chat");
+  } = useAssistantChat("hexforge_chat_full");
 
   const [showHistory, setShowHistory] = useState(true);
   const tools = ["!os", "!usb", "!logs", "!ping 8.8.8.8", "!uptime", "!df", "!docker"];
