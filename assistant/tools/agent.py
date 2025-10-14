@@ -27,3 +27,9 @@ async def call_agent(prompt: str, agent: str = "default"):
                 return text_output.strip() or "(no response)"
     except Exception as e:
         return f"(agent error: {e})"
+
+AGENTS = {
+    "default": "mistral:latest",
+    "analysis": "mistral-7b",
+    "coding": "codellama:latest"
+}

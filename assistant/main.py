@@ -4,18 +4,16 @@ import psutil
 import paramiko
 import subprocess
 import requests
+import json
+import traceback
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import Response, JSONResponse
 from pydantic import BaseModel
-from starlette.middleware.cors import ALL_METHODS
 
-# ✅ Fixed assistant-prefixed imports
-# assistant/main.py
+# ✅ Assistant imports
 from .routes import mcp
-#from assistant.routes import tools
 from .tool_registry import TOOL_REGISTRY, register_tool
 from .tools.core import save_memory_entry
 from .tools import (
@@ -25,16 +23,11 @@ from .tools import (
 )
 from .tools.system import ping_host
 
-
 # 🌍 Environment
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "mistral")
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://ollama:11434")
 
-
-
-
-
-
+# === Lifespan ===
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from fastapi.routing import APIRoute
@@ -42,33 +35,13 @@ async def lifespan(app: FastAPI):
     for route in app.routes:
         if isinstance(route, APIRoute):
             print(f"{route.path} ({', '.join(route.methods)})")
-    yield  # Lifespan continues here
+    yield
 
 # 🚀 FastAPI Init
 app = FastAPI(title="HexForge Lab Assistant API", lifespan=lifespan)
-
-# Include router after app initialization
 app.include_router(mcp.router)
 
-# 🌐 CORS
-allowed_origins = [
-    "https://hexforgelabs.com",
-    "https://assistant.hexforgelabs.com",
-]
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origin_regex=r"https://(assistant\.)?hexforgelabs\.com",
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"]
-)
-
-
-
-
-
-# 🧾 Schemas
+# === Schemas ===
 class ChatRequest(BaseModel):
     message: str
 
@@ -78,6 +51,7 @@ class PingRequest(BaseModel):
 class CommandRequest(BaseModel):
     command: str
 
+# === Helpers ===
 async def try_subprocess(cmd, tool_name):
     try:
         output = subprocess.check_output(cmd, text=True)
@@ -88,9 +62,6 @@ async def try_subprocess(cmd, tool_name):
         result = {"error": str(e)}
     await save_memory_entry(tool_name, result)
     return result
-
-
-
 
 def _get_ip_addresses():
     addrs = []
@@ -103,255 +74,117 @@ def _get_ip_addresses():
         addrs.append({"error": str(e)})
     return addrs
 
-
-
-# 💬 /chat POST endpoint
+# === Chat Endpoint ===
 @app.api_route("/chat", methods=["POST", "OPTIONS"])
 async def assistant_chat(req: Request):
     if req.method == "OPTIONS":
-        return {"status": "ok"}
+        return JSONResponse({"status": "ok"})
 
-    body = await req.json()
-    message = body.get("message", "").strip()
-
-    # === COMMANDS ===
-    if message == "!os":
-        return await get_os_info()
-
-    elif message == "!usb":
-        return await list_usb_devices()
-
-    elif message == "!logs":
-        return await get_logs()
-
-    elif message.startswith("!ping "):
-        return await ping_host(message.split(" ", 1)[1])
-
-    elif message == "!uptime":
-        return await try_subprocess(["uptime"], "uptime")
-
-    elif message == "!df":
-        return await try_subprocess(["df", "-h"], "disk_usage")
-
-    elif message == "!docker":
-        return await try_subprocess(["docker", "ps"], "docker_ps")
-
-    elif message == "!freecad":
-        return await launch_freecad()
-
-    elif message == "!blender":
-        return await launch_app("blender")
-
-    elif message == "!firefox":
-        return await launch_app("firefox")
-
-    elif message == "!inkscape":
-        return await launch_app("inkscape")
-
-    elif message == "!gimp":
-        return await launch_app("gimp")
-
-    elif message == "!fritzing":
-        return await launch_app("fritzing")
-
-    elif message == "!kicad":
-        return await launch_app("kicad")
-
-    elif message == "!btop":
-        return await run_btop()
-
-    elif message == "!neofetch":
-        return await run_neofetch()
-
-    elif message == "!status":
-        return await check_all_tools()
-
-    elif message == "!whoami":
-        return await get_user()
-
-    elif message.startswith("!open "):
-        return await launch_file(message.split(" ", 1)[1])
-
-    elif message == "!help":
-        return {
-            "response": (
-                "**🧠 HexForge Lab Assistant Help**\n\n"
-                "🧰 **System Tools**\n"
-                "`!os` `!usb` `!logs` `!ping <host>` `!uptime` `!df` `!docker` `!whoami`\n\n"
-                "🖥️ **Launch Apps**\n"
-                "`!freecad` `!blender` `!inkscape` `!gimp` `!fritzing` `!kicad` `!firefox`\n\n"
-                "📊 **Status & Monitoring**\n"
-                "`!status` — check installed tools\n"
-                "`!btop` `!neofetch`\n\n"
-                "🗂️ **Files**\n"
-                "`!open /path/to/file`\n\n"
-                "🧠 **Memory**\n"
-                "`!memory`, `!memory summary`, `!memory last <tool>`\n"
-                "`!memory search <term>`, `!memory delete <tool>`, `!memory clear <tool>`"
-            )
-        }
-
-    # === MEMORY BASED COMMANDS ===
-    elif message == "!memory":
-        try:
-            res = requests.get("http://hexforge-backend:8000/api/memory/all", timeout=5)
-            data = res.json()
-            if isinstance(data, list):
-                entries = data[-10:]
-            elif isinstance(data, dict) and "entries" in data:
-                entries = data["entries"][-10:]
-            else:
-                return {"error": "Unexpected memory format"}
-            
-            if not entries:
-                return {"response": "🧠 No memory entries found yet."}
-            
-            return {
-                "response": "\n\n".join(
-                    f"[{e['timestamp']}] {e['tool']} → {str(e['result'])[:300]}" for e in entries
-                )
-            }
-        except Exception as e:
-            return {"error": f"Memory fetch failed: {str(e)}"}
-
-    elif message == "!memory summary":
-        try:
-            res = requests.get("http://hexforge-backend:8000/api/memory/all", timeout=5)
-            data = res.json()
-            entries = data.get("entries", []) if isinstance(data, dict) else data
-            tool_counts = {}
-            errors = []
-            recent = []
-            for e in entries[-20:]:
-                tool = e.get("tool", "unknown")
-                tool_counts[tool] = tool_counts.get(tool, 0) + 1
-                if isinstance(e.get("result"), dict) and "error" in e["result"]:
-                    errors.append(f"{tool} → {e['result']['error']}")
-                recent.append(tool)
-            most_common = max(tool_counts, key=tool_counts.get, default="None")
-            summary = (
-                f"🧠 Memory Summary:\n"
-                f"- Unique tools used: {len(tool_counts)}\n"
-                f"- Most used tool: {most_common} ({tool_counts.get(most_common)}x)\n"
-                f"- Recent tools: {', '.join(recent[-5:])}\n"
-                f"- Errors found: {len(errors)}\n"
-            )
-            if errors:
-                summary += "\n❌ Last Errors:\n" + "\n".join(errors[-3:])
-            return {"response": summary}
-        except Exception as e:
-            return {"error": f"Summary fetch failed: {str(e)}"}
-
-    elif message.startswith("!memory last "):
-        tool_name = message.split(" ", 2)[2]
-        try:
-            res = requests.get("http://hexforge-backend:8000/api/memory/all", timeout=5)
-            data = res.json()
-            entries = data.get("entries", []) if isinstance(data, dict) else data
-            for e in reversed(entries):
-                if e.get("tool") == tool_name:
-                    return {"response": f"[{e['timestamp']}] {tool_name} → {str(e['result'])[:300]}"}
-            return {"response": f"No memory found for tool: {tool_name}"}
-        except Exception as e:
-            return {"error": f"Fetch failed: {str(e)}"}
-
-    elif message.startswith("!memory search "):
-        keyword = message.split(" ", 2)[2].lower()
-        try:
-            res = requests.get("http://hexforge-backend:8000/api/memory/all", timeout=5)
-            data = res.json()
-            entries = data.get("entries", []) if isinstance(data, dict) else data
-            results = [
-                f"[{e['timestamp']}] {e['tool']} → {str(e['result'])[:200]}"
-                for e in entries
-                if keyword in str(e.get("tool", "")).lower() or keyword in str(e.get("result", "")).lower()
-            ]
-            return {"response": "\n\n".join(results[:5]) or f"No results for '{keyword}'"}
-        except Exception as e:
-            return {"error": f"Search failed: {str(e)}"}
-
-    elif message.startswith("!memory delete "):
-        tool_name = message.split(" ", 2)[2]
-        try:
-            res = requests.get("http://hexforge-backend:8000/api/memory/all", timeout=5)
-            data = res.json()
-            entries = data.get("entries", []) if isinstance(data, dict) else data
-            for e in reversed(entries):
-                if e.get("tool") == tool_name:
-                    requests.delete(f"http://hexforge-backend:8000/api/memory/{e['id']}")
-                    return {"response": f"Deleted memory entry for {tool_name}"}
-            return {"response": f"No memory found for tool: {tool_name}"}
-        except Exception as e:
-            return {"error": f"Delete failed: {str(e)}"}
-
-    elif message.startswith("!memory clear "):
-        tool_name = message.split(" ", 2)[2]
-        try:
-            res = requests.get("http://hexforge-backend:8000/api/memory/all", timeout=5)
-            data = res.json()
-            entries = data.get("entries", []) if isinstance(data, dict) else data
-            count = 0
-            for e in entries:
-                if e.get("tool") == tool_name:
-                    requests.delete(f"http://hexforge-backend:8000/api/memory/{e['id']}")
-                    count += 1
-            return {"response": f"Cleared {count} entries for {tool_name}" if count else f"No memory found for {tool_name}"}
-        except Exception as e:
-            return {"error": f"Clear failed: {str(e)}"}
-
-    elif message == "!memory test-entry":
-        try:
-            test_entry = {
-                "tool": "test-tool",
-                "result": {"message": "This is a test memory entry from !memory test-entry"}
-            }
-            res = requests.post("http://hexforge-backend:8000/api/memory/add", json=test_entry, timeout=5)
-            if res.status_code == 200:
-                return {"response": "✅ Test memory entry created successfully."}
-            return {"error": f"Backend responded with status code {res.status_code}"}
-        except Exception as e:
-            return {"error": f"Test entry failed: {str(e)}"}
-
-    elif message == "!memory help":
-        return {
-            "response": (
-                "**🧠 Memory Commands Help**\n"
-                "`!memory` — View last 10 memory entries\n"
-                "`!memory summary` — Summary of memory usage\n"
-                "`!memory last <tool>` — Show last entry for tool\n"
-                "`!memory search <keyword>` — Find keyword in memory\n"
-                "`!memory delete <tool>` — Delete most recent for tool\n"
-                "`!memory clear <tool>` — Delete all entries for tool\n"
-                "`!memory test-entry` — Insert a test entry\n"
-            )
-        }
-
-    # === FALLBACK TO OLLAMA ===
     try:
-        res = requests.post(
-            f"{OLLAMA_URL}/api/generate",
-            json={"model": OLLAMA_MODEL, "prompt": message, "stream": False},
-            timeout=30
-        )
-        return {"response": res.json().get("response", "(No reply)")}
+        body = await req.json()
+        message = str(body.get("message", "")).strip()
+    except Exception:
+        return JSONResponse({"response": "⚠️ Invalid request body"})
+
+    if not message:
+        return JSONResponse({"response": "(empty message)"})
+
+    async def safe_wrap(result, label=None):
+        """Guarantee valid JSON."""
+        try:
+            if isinstance(result, dict) and "response" in result:
+                return JSONResponse(result)
+            if isinstance(result, dict) or isinstance(result, list):
+                return JSONResponse({"response": json.dumps(result, ensure_ascii=False)})
+            return JSONResponse({"response": str(result)})
+        except Exception as e:
+            print(f"[wrap:{label}] error:", e)
+            return JSONResponse({"response": f"❌ wrap error: {e}"})
+
+    try:
+        # === BASIC COMMANDS ===
+        if message == "!os":
+            return await safe_wrap(await get_os_info(), "os")
+
+        elif message == "!usb":
+            return await safe_wrap(await list_usb_devices(), "usb")
+
+        elif message == "!logs":
+            return await safe_wrap(await get_logs(), "logs")
+
+        elif message.startswith("!ping "):
+            target = message.split(" ", 1)[1]
+            return await safe_wrap(await ping_host(target), "ping")
+
+        elif message == "!uptime":
+            return await safe_wrap(await try_subprocess(["uptime"], "uptime"))
+
+        elif message == "!df":
+            return await safe_wrap(await try_subprocess(["df", "-h"], "disk_usage"))
+
+        elif message == "!docker":
+            return await safe_wrap(await try_subprocess(["docker", "ps"], "docker_ps"))
+
+        elif message == "!whoami":
+            return await safe_wrap(await get_user(), "whoami")
+
+        elif message == "!status":
+            return await safe_wrap(await check_all_tools(), "status")
+
+        elif message.startswith("!memory"):
+            try:
+                r = requests.get("http://hexforge-backend:8000/api/memory/all", timeout=5)
+                data = r.json()
+                return await safe_wrap({"response": json.dumps(data, ensure_ascii=False)}, "memory")
+            except Exception as e:
+                return JSONResponse({"response": f"⚠️ Memory API error: {e}"})
+
+        elif message == "!help":
+            return JSONResponse({
+                "response": (
+                    "🧠 **HexForge Assistant Commands**\n"
+                    "`!os`, `!usb`, `!logs`, `!ping <host>`, `!uptime`, `!df`, "
+                    "`!docker`, `!status`, `!whoami`, `!memory`"
+                )
+            })
+
+        # === FALLBACK TO OLLAMA ===
+        try:
+            res = requests.post(
+                f"{OLLAMA_URL}/api/generate",
+                json={"model": OLLAMA_MODEL, "prompt": message, "stream": False},
+                timeout=20,
+            )
+            if not res.text:
+                return JSONResponse({"response": "(empty Ollama reply)"})
+            data = res.json()
+            reply = data.get("response") or data.get("message") or "(empty Ollama reply)"
+            return JSONResponse({"response": reply})
+        except Exception as e:
+            print("Ollama error:", e)
+            traceback.print_exc()
+            return JSONResponse({"response": f"⚠️ Ollama connection failed: {e}"})
+
     except Exception as e:
-        return {"error": str(e)}
+        print("Chat handler crash:", e)
+        traceback.print_exc()
+        return JSONResponse({"response": f"❌ Internal error: {e}"})
 
 
-# === ENDPOINTS ===
-
+# === Health & Core Routes ===
 @app.get("/")
 async def root():
     return {"message": "HexForge Assistant is running"}
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    return {"status": "ok", "uptime": psutil.boot_time()}
 
 @app.options("/health", include_in_schema=False)
 async def health_options():
     return Response(status_code=204)
 
+# === Registered Tools ===
 @app.get("/tool/os-info")
 @register_tool("os-info", "OS Info", category="System")
 async def tool_os():
@@ -483,7 +316,13 @@ async def tool_debug():
         "ip": _get_ip_addresses()
     }
 
-
 @app.get("/tool/list")
 async def list_all_tools():
     return {"tools": TOOL_REGISTRY}
+
+# === Main Entrypoint ===
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.getenv("PORT", 11435))
+    print(f"🚀 Starting HexForge Assistant on 0.0.0.0:{port}")
+    uvicorn.run("assistant.main:app", host="0.0.0.0", port=port, reload=False)

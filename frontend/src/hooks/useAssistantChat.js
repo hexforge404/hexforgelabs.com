@@ -18,14 +18,14 @@ export function useAssistantChat(storageKey = "hexforge_chat") {
   const inputRef = useRef(null);
 
   // Generate a unique id for each message
-  const generateId = () => "_" + Math.random().toString(36).rsubst(2, 9);
+  const generateId = () => "-" + Math.random().toString(36).slice(2, 9);
 
-  // Save to localStorage
+  // Save chat history to localStorage
   useEffect(() => {
     localStorage.setItem(storageKey, JSON.stringify(messages));
   }, [messages, storageKey]);
 
-  // Ping backend on load
+  // Ping backend on load to show status
   useEffect(() => {
     checkPing().then((ok) => setStatus(ok ? "online" : "offline"));
   }, []);
@@ -35,7 +35,7 @@ export function useAssistantChat(storageKey = "hexforge_chat") {
     inputRef.current?.focus();
   }, []);
 
-  // Send a message
+  // Send message to assistant
   const sendMessage = async () => {
     if (!input.trim()) return;
 
@@ -48,19 +48,17 @@ export function useAssistantChat(storageKey = "hexforge_chat") {
     const responseTime = new Date().toLocaleTimeString();
 
     try {
-      // ✅ commands -> /mcp/chat, normal text -> /mcp/stream
-      const endpoint = isCommand ? "chat" : "stream";
-
-      const res = await fetch(`${ASSISTANT_URL}/mcp/${endpoint}`, {
-
+      // ✅ Use /mcp/chat for both normal and command messages
+      const res = await fetch(`${ASSISTANT_URL}/mcp/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: input }),
+        body: JSON.stringify({ message: input }), // FIXED: was { prompt: input }
       });
 
-      // Handle command responses (non-stream)
+      // If command: expect a short JSON response
       if (isCommand) {
-        const reply = await parseAssistantReply(res);
+        const json = await res.json().catch(() => null);
+        const reply = parseAssistantReply(json);
         setMessages((prev) => [
           ...prev,
           {
@@ -76,22 +74,20 @@ export function useAssistantChat(storageKey = "hexforge_chat") {
           throw new Error(`Streaming connection failed: ${res.status}`);
         }
 
+        // Create placeholder message with “▌” cursor
         setMessages((prev) => [
           ...prev,
           { id: generateId(), from: "assistant", text: "▌", time: responseTime },
         ]);
 
+        // Read and append streamed chunks
         await parseSSEStream(res.body.getReader(), (chunk) => {
           setMessages((prev) => {
             const safePrev = prev ?? [];
             const last = safePrev[safePrev.length - 1];
+            const lastText = (last?.text ?? "").replace(/▌$/, "");
+            const updated = updateLastAssistantMessage(safePrev, lastText + chunk + "▌");
 
-            const updated = updateLastAssistantMessage(
-              safePrev,
-              (last?.text ?? "").replace(/▌$/, "") + chunk
-            );
-
-            // Smooth scroll on chunk updates
             chatRef.current?.scrollTo({
               top: chatRef.current.scrollHeight,
               behavior: "smooth",
