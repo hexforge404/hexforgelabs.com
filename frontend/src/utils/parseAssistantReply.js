@@ -1,26 +1,22 @@
 export async function parseAssistantReply(res) {
   try {
     if (!res.ok) {
-      return `(Error ${res.status})`;
+      const errText = await res.text();
+      return { response: `Error ${res.status}: ${errText}` };
+    }
+
+    const ct = res.headers.get("content-type") || "";
+    if (ct.includes("application/json")) {
+      const json = await res.json();
+      return json?.response
+        ? json
+        : { response: JSON.stringify(json, null, 2) };
     }
 
     const text = await res.text();
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch {
-      // Sometimes backend returns plain text or malformed JSON
-      return text || "(empty response)";
-    }
-
-    // Always fall back to readable text
-    if (typeof data === "string") return data;
-    if (data && typeof data.response === "string") return data.response;
-
-    // Fallback: stringify entire object
-    return JSON.stringify(data, null, 2);
+    return { response: text };
   } catch (err) {
-    console.error("parseAssistantReply failed:", err);
-    return "(Error parsing response)";
+    console.error("parseAssistantReply error:", err);
+    return { response: `(Parse error: ${err.message})` };
   }
 }

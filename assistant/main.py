@@ -1,11 +1,10 @@
 import os
 import socket
 import psutil
-import paramiko
 import subprocess
-import requests
 import json
 import traceback
+import httpx
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
@@ -23,9 +22,11 @@ from .tools import (
 )
 from .tools.system import ping_host
 
+
 # 🌍 Environment
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "mistral")
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://ollama:11434")
+
 
 # === Lifespan ===
 @asynccontextmanager
@@ -37,19 +38,24 @@ async def lifespan(app: FastAPI):
             print(f"{route.path} ({', '.join(route.methods)})")
     yield
 
+
 # 🚀 FastAPI Init
 app = FastAPI(title="HexForge Lab Assistant API", lifespan=lifespan)
 app.include_router(mcp.router)
+
 
 # === Schemas ===
 class ChatRequest(BaseModel):
     message: str
 
+
 class PingRequest(BaseModel):
     target: str
 
+
 class CommandRequest(BaseModel):
     command: str
+
 
 # === Helpers ===
 async def try_subprocess(cmd, tool_name):
@@ -63,6 +69,7 @@ async def try_subprocess(cmd, tool_name):
     await save_memory_entry(tool_name, result)
     return result
 
+
 def _get_ip_addresses():
     addrs = []
     try:
@@ -73,6 +80,7 @@ def _get_ip_addresses():
     except Exception as e:
         addrs.append({"error": str(e)})
     return addrs
+
 
 # === Chat Endpoint ===
 @app.api_route("/chat", methods=["POST", "OPTIONS"])
@@ -94,7 +102,7 @@ async def assistant_chat(req: Request):
         try:
             if isinstance(result, dict) and "response" in result:
                 return JSONResponse(result)
-            if isinstance(result, dict) or isinstance(result, list):
+            if isinstance(result, (dict, list)):
                 return JSONResponse({"response": json.dumps(result, ensure_ascii=False)})
             return JSONResponse({"response": str(result)})
         except Exception as e:
@@ -133,8 +141,9 @@ async def assistant_chat(req: Request):
 
         elif message.startswith("!memory"):
             try:
-                r = requests.get("http://hexforge-backend:8000/api/memory/all", timeout=5)
-                data = r.json()
+                async with httpx.AsyncClient(timeout=5.0) as client:
+                    r = await client.get("http://hexforge-backend:8000/api/memory/all")
+                    data = r.json()
                 return await safe_wrap({"response": json.dumps(data, ensure_ascii=False)}, "memory")
             except Exception as e:
                 return JSONResponse({"response": f"⚠️ Memory API error: {e}"})
@@ -150,13 +159,15 @@ async def assistant_chat(req: Request):
 
         # === FALLBACK TO OLLAMA ===
         try:
-            res = requests.post(
-                f"{OLLAMA_URL}/api/generate",
-                json={"model": OLLAMA_MODEL, "prompt": message, "stream": False},
-                timeout=20,
-            )
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                res = await client.post(
+                    f"{OLLAMA_URL}/api/generate",
+                    json={"model": OLLAMA_MODEL, "prompt": message, "stream": False},
+                )
+
             if not res.text:
                 return JSONResponse({"response": "(empty Ollama reply)"})
+
             data = res.json()
             reply = data.get("response") or data.get("message") or "(empty Ollama reply)"
             return JSONResponse({"response": reply})
@@ -176,13 +187,16 @@ async def assistant_chat(req: Request):
 async def root():
     return {"message": "HexForge Assistant is running"}
 
+
 @app.get("/health")
 async def health():
     return {"status": "ok", "uptime": psutil.boot_time()}
 
+
 @app.options("/health", include_in_schema=False)
 async def health_options():
     return Response(status_code=204)
+
 
 # === Registered Tools ===
 @app.get("/tool/os-info")
@@ -190,101 +204,121 @@ async def health_options():
 async def tool_os():
     return await get_os_info()
 
+
 @app.get("/tool/usb-list")
 @register_tool("usb-list", "List USB Devices", category="System")
 async def tool_usb():
     return await list_usb_devices()
+
 
 @app.get("/tool/logs")
 @register_tool("logs", "Fetch Logs", category="System")
 async def tool_logs():
     return await get_logs()
 
+
 @app.post("/tool/ping")
 @register_tool("ping", "Ping Host", category="Network", method="POST")
 async def tool_ping(req: PingRequest):
     return await ping_host(req.target)
+
 
 @app.get("/tool/uptime")
 @register_tool("uptime", "System Uptime", category="System")
 async def tool_uptime():
     return await try_subprocess(["uptime"], "uptime")
 
+
 @app.get("/tool/df")
 @register_tool("df", "Disk Usage", category="System")
 async def tool_df():
     return await try_subprocess(["df", "-h"], "disk_usage")
+
 
 @app.get("/tool/docker")
 @register_tool("docker", "Docker Status", category="System")
 async def tool_docker():
     return await try_subprocess(["docker", "ps"], "docker_ps")
 
+
 @app.get("/tool/freecad")
 @register_tool("freecad", "Launch FreeCAD", category="Apps")
 async def tool_freecad():
     return await launch_freecad()
+
 
 @app.get("/tool/blender")
 @register_tool("blender", "Launch Blender", category="Apps")
 async def tool_blender():
     return await launch_app("blender")
 
+
 @app.get("/tool/inkscape")
 @register_tool("inkscape", "Launch Inkscape", category="Apps")
 async def tool_inkscape():
     return await launch_app("inkscape")
+
 
 @app.get("/tool/gimp")
 @register_tool("gimp", "Launch GIMP", category="Apps")
 async def tool_gimp():
     return await launch_app("gimp")
 
+
 @app.get("/tool/fritzing")
 @register_tool("fritzing", "Launch Fritzing", category="Apps")
 async def tool_fritzing():
     return await launch_app("fritzing")
+
 
 @app.get("/tool/kicad")
 @register_tool("kicad", "Launch KiCad", category="Apps")
 async def tool_kicad():
     return await launch_app("kicad")
 
+
 @app.get("/tool/firefox")
 @register_tool("firefox", "Launch Firefox", category="Apps")
 async def tool_firefox():
     return await launch_app("firefox")
+
 
 @app.get("/tool/btop")
 @register_tool("btop", "Run btop", category="Monitoring")
 async def tool_btop():
     return await run_btop()
 
+
 @app.get("/tool/neofetch")
 @register_tool("neofetch", "Run Neofetch", category="Monitoring")
 async def tool_neofetch():
     return await run_neofetch()
+
 
 @app.get("/tool/status")
 @register_tool("status", "Check Installed Tools", category="Monitoring")
 async def tool_status():
     return await check_all_tools()
 
+
 @app.get("/tool/whoami")
 @register_tool("whoami", "Current User", category="System")
 async def tool_whoami():
     return await get_user()
 
+
 @app.get("/tool/memory")
 @register_tool("memory", "Memory Log", category="Memory")
 async def tool_memory():
     try:
-        res = requests.get("http://hexforge-backend:8000/api/memory/all", timeout=5)
-        data = res.json()
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            res = await client.get("http://hexforge-backend:8000/api/memory/all")
+            data = res.json()
         entries = data["entries"][-10:] if isinstance(data, dict) else data[-10:]
         return {"entries": entries}
     except Exception as e:
         return {"error": f"Memory fetch failed: {str(e)}"}
+
 
 @app.get("/tool/open")
 @register_tool("open", "Open File", category="Files")
@@ -297,14 +331,17 @@ async def tool_open(file_path: str):
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
+
 @app.get("/tool/ollama")
 @register_tool("ollama", "Ollama Models", category="AI")
 async def tool_ollama():
     try:
-        res = requests.get(f"{OLLAMA_URL}/api/models", timeout=5)
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            res = await client.get(f"{OLLAMA_URL}/api/models")
         return {"models": res.json()}
     except Exception as e:
         return {"error": str(e)}
+
 
 @app.get("/tool/debug")
 @register_tool("debug", "Debug Info", category="System")
@@ -313,12 +350,14 @@ async def tool_debug():
         "os": await get_os_info(),
         "user": await get_user(),
         "hostname": socket.gethostname(),
-        "ip": _get_ip_addresses()
+        "ip": _get_ip_addresses(),
     }
+
 
 @app.get("/tool/list")
 async def list_all_tools():
     return {"tools": TOOL_REGISTRY}
+
 
 # === Main Entrypoint ===
 if __name__ == "__main__":
