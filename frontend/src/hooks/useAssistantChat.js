@@ -4,9 +4,7 @@ import { parseSSEStream } from "../utils/parseSSEStream";
 import { addUserMessage, updateLastAssistantMessage } from "../utils/chatHelpers";
 import { checkPing } from "../utils/assistant";
 
-// -----------------------------------------------------------
-// Safe LocalStorage Loader
-// -----------------------------------------------------------
+// Safe message loader
 const safeLoadMessages = (key) => {
   try {
     const stored = localStorage.getItem(key);
@@ -14,15 +12,12 @@ const safeLoadMessages = (key) => {
     const parsed = JSON.parse(stored);
     return Array.isArray(parsed) ? parsed : [];
   } catch (err) {
-    console.error("Failed to parse chat history:", err);
+    console.warn("Resetting corrupted chat:", err);
     localStorage.removeItem(key);
     return [];
   }
 };
 
-// -----------------------------------------------------------
-// Main Hook — Reusable Chat Logic
-// -----------------------------------------------------------
 export function useAssistantChat(storageKey = "hexforge_chat") {
   const [messages, setMessages] = useState(() => safeLoadMessages(storageKey));
   const [input, setInput] = useState("");
@@ -31,41 +26,32 @@ export function useAssistantChat(storageKey = "hexforge_chat") {
   const chatRef = useRef(null);
   const inputRef = useRef(null);
 
-  // --- Helper: generate unique IDs ---
   const generateId = () => "-" + Math.random().toString(36).slice(2, 9);
 
-  // --- Persist messages to localStorage ---
+  // persist messages
   useEffect(() => {
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(messages));
-    } catch (err) {
-      console.error("Failed to persist chat:", err);
-    }
+    localStorage.setItem(storageKey, JSON.stringify(messages));
   }, [messages, storageKey]);
 
-  // --- Ping backend once on mount ---
+  // ping assistant
   useEffect(() => {
     checkPing().then((ok) => setStatus(ok ? "online" : "offline"));
   }, []);
 
-  // --- Auto-focus input ---
+  // autofocus
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
 
-  // -------------------------------------------------
-  // Main send function (handles commands + streaming)
-  // -------------------------------------------------
   const sendMessage = async () => {
     if (!input.trim()) return;
-
     const userMessage = { ...addUserMessage(input), id: generateId() };
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
     setLoading(true);
 
     const isCommand = input.trim().startsWith("!");
-    const responseTime = new Date().toLocaleTimeString();
+    const time = new Date().toLocaleTimeString();
 
     try {
       const res = await fetch(`${ASSISTANT_URL}/mcp/chat`, {
@@ -74,14 +60,12 @@ export function useAssistantChat(storageKey = "hexforge_chat") {
         body: JSON.stringify({ message: input }),
       });
 
-      // --------------------------
-      // Handle Command Responses
-      // --------------------------
+      // Command mode
       if (isCommand) {
-        let text = "(empty)";
+        let text;
         try {
-          const ct = res.headers.get("content-type") || "";
-          if (ct.includes("application/json")) {
+          const type = res.headers.get("content-type") || "";
+          if (type.includes("json")) {
             const data = await res.json();
             text =
               typeof data === "string"
@@ -91,60 +75,42 @@ export function useAssistantChat(storageKey = "hexforge_chat") {
             text = await res.text();
           }
         } catch (err) {
-          console.error("Command parse error:", err);
-          text = `(Error parsing response: ${err.message})`;
+          text = `(Error parsing command: ${err.message})`;
         }
-
         setMessages((prev) => [
           ...prev,
-          { id: generateId(), from: "assistant", text, time: responseTime },
+          { id: generateId(), from: "assistant", text, time },
         ]);
-
-        // ✅ Exit early so we don't trigger streaming logic
         return;
       }
 
-      // --------------------------
-      // Handle Streaming Responses
-      // --------------------------
+      // Streaming mode
       if (!res.ok || !res.body)
-        throw new Error(`Streaming connection failed: ${res.status}`);
-
-      // Create placeholder assistant message with “▌” cursor
+        throw new Error(`Streaming failed: ${res.status}`);
       setMessages((prev) => [
         ...prev,
-        { id: generateId(), from: "assistant", text: "▌", time: responseTime },
+        { id: generateId(), from: "assistant", text: "▌", time },
       ]);
 
-      // Process streamed chunks from the reader
       await parseSSEStream(res.body.getReader(), (chunk) => {
         setMessages((prev) => {
-          const safePrev = prev ?? [];
-          const last = safePrev[safePrev.length - 1];
+          const last = prev.at(-1);
           const lastText = (last?.text ?? "").replace(/▌$/, "");
-          const updated = updateLastAssistantMessage(
-            safePrev,
+          return updateLastAssistantMessage(
+            prev,
             lastText + chunk + "▌"
           );
-
-          chatRef.current?.scrollTo({
-            top: chatRef.current.scrollHeight,
-            behavior: "smooth",
-          });
-
-          return updated;
+        });
+        chatRef.current?.scrollTo({
+          top: chatRef.current.scrollHeight,
+          behavior: "smooth",
         });
       });
     } catch (err) {
       console.error("Assistant error:", err);
       setMessages((prev) => [
         ...prev,
-        {
-          id: generateId(),
-          from: "assistant",
-          text: "(Error connecting to assistant)",
-          time: new Date().toLocaleTimeString(),
-        },
+        { id: generateId(), from: "assistant", text: "(Connection error)", time },
       ]);
     } finally {
       setLoading(false);
@@ -157,7 +123,6 @@ export function useAssistantChat(storageKey = "hexforge_chat") {
     }
   };
 
-  // --- Send message on Enter ---
   const handleKeyDown = (e) => {
     if (e.key === "Enter") {
       e.preventDefault();
@@ -165,7 +130,6 @@ export function useAssistantChat(storageKey = "hexforge_chat") {
     }
   };
 
-  // --- Expose state and handlers ---
   return {
     messages,
     setMessages,
