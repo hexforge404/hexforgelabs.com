@@ -57,6 +57,8 @@ class CommandRequest(BaseModel):
     command: str
 
 
+
+
 # === Helpers ===
 async def try_subprocess(cmd, tool_name):
     try:
