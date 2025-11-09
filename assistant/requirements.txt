@@ -10,3 +10,6 @@ GPUtil
 httpx
 sse-starlette
 
+fastapi>=0.110
+uvicorn[standard]>=0.30
+websockets>=12

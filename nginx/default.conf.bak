@@ -1,0 +1,88 @@
+# ---- HTTP (80): ONLY redirect to HTTPS ----
+server {
+    listen 80;
+    listen [::]:80;
+    server_name hexforgelabs.com www.hexforgelabs.com;
+    return 301 https://$host$request_uri;
+}
+
+# ---- HTTPS (443): Serve site & proxy, NO redirects ----
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name hexforgelabs.com www.hexforgelabs.com;
+
+    # SSL (Let’s Encrypt)
+    ssl_certificate     /etc/letsencrypt/live/hexforgelabs.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/hexforgelabs.com/privkey.pem;
+
+    # Serve the built frontend
+    root /usr/share/nginx/html;
+    index index.html;
+
+    client_max_body_size 20m;
+
+    # SPA routes
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # --- API (backend) ---
+    location /api/ {
+        proxy_pass         http://hexforge-backend:8000;
+        proxy_http_version 1.1;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_set_header   Connection        "";
+    }
+
+    # --- Assistant (FastAPI) ---
+    location /mcp/ {
+        proxy_pass         http://hexforge-assistant:11435/mcp/;
+        proxy_http_version 1.1;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_set_header   Connection        "";
+    }
+
+    location /tool/ {
+        proxy_pass         http://hexforge-assistant:11435/tool/;
+        proxy_http_version 1.1;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_set_header   Connection        "";
+    }
+
+    # --- WebSocket (optional) ---
+    location /ws/ {
+        proxy_pass         http://hexforge-assistant:11435/ws/;
+        proxy_http_version 1.1;
+        proxy_set_header   Upgrade           $http_upgrade;
+        proxy_set_header   Connection        "upgrade";
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+    }
+
+    # Prevent manifest redirect loops + short cache
+location = /manifest.json {
+    try_files $uri =404;
+    add_header Cache-Control "public, max-age=86400, immutable";
+    add_header X-Content-Type-Options "nosniff";
+}
+
+# Long-cache static assets from the React build
+location ~* \.(js|css|png|jpg|jpeg|svg|gif|webp|ico|woff2?)$ {
+    add_header Cache-Control "public, max-age=31536000, immutable";
+    add_header X-Content-Type-Options "nosniff";
+}
+
+}

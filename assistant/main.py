@@ -7,7 +7,7 @@ import traceback
 import httpx
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
+from fastapi import Request
 from fastapi.responses import Response, JSONResponse
 from pydantic import BaseModel
 
@@ -21,8 +21,12 @@ from .tools import (
     run_btop, run_neofetch, check_all_tools, get_user
 )
 from .tools.system import ping_host
-from fastapi import WebSocket, WebSocketDisconnect
+
 import asyncio
+
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+import re
 
 
 
@@ -367,32 +371,59 @@ async def tool_debug():
 async def list_all_tools():
     return {"tools": TOOL_REGISTRY}
 
-    # === WebSocket (echo + simple ping) ===
+   # --- Allow all *.hexforgelabs.com + localhost ---
+def is_allowed_origin(origin: str) -> bool:
+    if not origin:
+        return False
+    allowed_patterns = [
+        r"^https://([a-zA-Z0-9-]+\.)?hexforgelabs\.com$",  # any subdomain of hexforgelabs.com
+        r"^http://(localhost|127\.0\.0\.1|10\.0\.0\.200)(:\d+)?$",  # local/dev
+    ]
+    return any(re.match(pattern, origin) for pattern in allowed_patterns)
+
+# --- CORS setup ---
+app.add_middleware(
+    CORSMiddleware,
+    allow_credentials=True,
+    allow_origin_regex=r"^(https://([a-zA-Z0-9-]+\.)?hexforgelabs\.com|http://(localhost|127\.0\.0\.1|10\.0\.0\.200)(:\d+)?)$",
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# --- WebSocket Route ---
 @app.websocket("/ws")
 async def ws_root(websocket: WebSocket):
-    await websocket.accept()
-    try:
-        # Optional: small hello payload
-        await websocket.send_json({"type": "welcome", "service": "hexforge-assistant"})
+    origin = websocket.headers.get("origin")
 
+    if not is_allowed_origin(origin):
+        print(f"[WS] ❌ Rejected unauthorized origin: {origin}")
+        await websocket.close(code=1008)
+        return
+
+    await websocket.accept()
+    print(f"[WS] ✅ Connection accepted from {origin}")
+
+    try:
+        await websocket.send_json({"type": "welcome", "service": "hexforge-assistant"})
         while True:
             msg = await websocket.receive_text()
-            # very basic routing for quick manual tests:
             if msg.strip() == "!ping":
                 await websocket.send_text("pong")
             else:
-                # echo back for now (you can wire to your MCP later)
                 await websocket.send_text(f"echo: {msg}")
     except WebSocketDisconnect:
-        # client closed; nothing to do
-        pass
+        print("[WS] Client disconnected")
     except Exception as e:
-        # keep noisy errors out of logs while still closing cleanly
+        print(f"[WS] Error: {e}")
         try:
             await websocket.send_json({"type": "error", "message": str(e)})
         except Exception:
             pass
         await websocket.close()
+
+
+
+
 
 
 
