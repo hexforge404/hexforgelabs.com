@@ -1,0 +1,66 @@
+--- a/nginx/default.conf
++++ b/nginx/default.conf
+@@
+ server {
+   listen 443 ssl http2;
+   listen [::]:443 ssl http2;
+   server_name hexforgelabs.com www.hexforgelabs.com;
+   root /usr/share/nginx/html;
+@@
++  # --- Security / PWA Header Baseline ---
++  add_header X-Content-Type-Options nosniff always;
++  add_header Referrer-Policy no-referrer-when-downgrade always;
++  add_header X-Frame-Options SAMEORIGIN always;
++  add_header X-XSS-Protection "1; mode=block" always;
++  add_header Permissions-Policy "geolocation=(), microphone=(), camera=()" always;
++
++  # Ensure correct types for modern assets
++  types {
++    application/javascript                    js mjs;
++    text/javascript                           mjs;
++    application/manifest+json                 webmanifest manifest json;
++    application/wasm                          wasm;
++    font/woff2                                woff2;
++    source-map                                map;
++  }
++
++  # Gzip/Brotli (if module present) — safe, common types
++  gzip on;
++  gzip_comp_level 5;
++  gzip_min_length 1024;
++  gzip_types
++    text/plain text/css application/json application/javascript
++    application/manifest+json application/xml text/xml image/svg+xml
++    font/woff2;
++  gzip_vary on;
++
++  # --- Caching policy ---
++  # 1) Hashed static assets (js/css/map/woff2) — 1 year + immutable
++  location ~* \.(?:js|mjs|css|map|woff2)$ {
++    try_files $uri =404;
++    add_header Cache-Control "public, max-age=31536000, immutable" always;
++  }
++
++  # 2) PWA manifest (JSON) — 1 day + immutable
++  location = /manifest.json {
++    try_files $uri =404;
++    default_type application/manifest+json;
++    add_header Cache-Control "public, max-age=86400, immutable" always;
++    add_header X-Content-Type-Options nosniff always;
++  }
++
++  # 3) Service worker — never cache
++  location = /sw.js {
++    try_files $uri =404;
++    add_header Cache-Control "no-cache, no-store, must-revalidate" always;
++    add_header Pragma "no-cache" always;
++    add_header Expires "0" always;
++  }
++
++  # 4) HTML — never cache
++  location ~* \.html?$ {
++    try_files $uri /index.html;
++    add_header Cache-Control "no-cache, no-store, must-revalidate" always;
++    add_header Pragma "no-cache" always;
++    add_header Expires "0" always;
++  }
