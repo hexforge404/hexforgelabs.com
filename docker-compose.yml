@@ -36,9 +36,7 @@ services:
 
     networks:
       hexforge-network:
-        aliases:
-          - hexforge-backend
-          - hexforge-assistant
+        
     depends_on:
       - backend
       - assistant
@@ -103,8 +101,8 @@ services:
         condition: service_healthy
     networks:
       - hexforge-network
-    ports:
-      - "11436:11435"  # host:container
+    #ports:
+      #- "11436:11435"  # host:container
     expose:
       - "11435"
     volumes:
