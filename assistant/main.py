@@ -21,6 +21,9 @@ from .tools import (
     run_btop, run_neofetch, check_all_tools, get_user
 )
 from .tools.system import ping_host
+from fastapi import WebSocket, WebSocketDisconnect
+import asyncio
+
 
 
 # 🌍 Environment
@@ -62,14 +65,18 @@ class CommandRequest(BaseModel):
 # === Helpers ===
 async def try_subprocess(cmd, tool_name):
     try:
-        output = subprocess.check_output(cmd, text=True)
-        result = {"output": output}
-    except subprocess.CalledProcessError as e:
-        result = {"error": e.output, "returncode": e.returncode}
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        out, _ = await proc.communicate()
+        result = {"stdout": out.decode(errors="replace"), "exit_code": proc.returncode}
     except Exception as e:
         result = {"error": str(e)}
     await save_memory_entry(tool_name, result)
     return result
+
 
 
 def _get_ip_addresses():
@@ -359,6 +366,34 @@ async def tool_debug():
 @app.get("/tool/list")
 async def list_all_tools():
     return {"tools": TOOL_REGISTRY}
+
+    # === WebSocket (echo + simple ping) ===
+@app.websocket("/ws")
+async def ws_root(websocket: WebSocket):
+    await websocket.accept()
+    try:
+        # Optional: small hello payload
+        await websocket.send_json({"type": "welcome", "service": "hexforge-assistant"})
+
+        while True:
+            msg = await websocket.receive_text()
+            # very basic routing for quick manual tests:
+            if msg.strip() == "!ping":
+                await websocket.send_text("pong")
+            else:
+                # echo back for now (you can wire to your MCP later)
+                await websocket.send_text(f"echo: {msg}")
+    except WebSocketDisconnect:
+        # client closed; nothing to do
+        pass
+    except Exception as e:
+        # keep noisy errors out of logs while still closing cleanly
+        try:
+            await websocket.send_json({"type": "error", "message": str(e)})
+        except Exception:
+            pass
+        await websocket.close()
+
 
 
 # === Main Entrypoint ===
