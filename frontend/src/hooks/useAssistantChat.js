@@ -1,7 +1,10 @@
 import { useState, useEffect, useRef } from "react";
 import { ASSISTANT_URL } from "../config";
 import { parseSSEStream } from "../utils/parseSSEStream";
-import { addUserMessage, updateLastAssistantMessage } from "../utils/chatHelpers";
+import {
+  addUserMessage,
+  updateLastAssistantMessage,
+} from "../utils/chatHelpers";
 import { checkPing } from "../utils/assistant";
 
 // Safe message loader
@@ -44,23 +47,26 @@ export function useAssistantChat(storageKey = "hexforge_chat") {
   }, []);
 
   const sendMessage = async () => {
-    if (!input.trim()) return;
-    const userMessage = { ...addUserMessage(input), id: generateId() };
+    const trimmedInput = input.trim();
+    if (!trimmedInput) return;
+
+    const userMessage = { ...addUserMessage(trimmedInput), id: generateId() };
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
     setLoading(true);
 
-    const isCommand = input.trim().startsWith("!");
+    const isCommand = trimmedInput.startsWith("!");
+    const endpoint = isCommand ? "/mcp/chat" : "/mcp/stream";
     const time = new Date().toLocaleTimeString();
 
     try {
-      const res = await fetch(`${ASSISTANT_URL}/mcp/chat`, {
+      const res = await fetch(`${ASSISTANT_URL}${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: input }),
+        body: JSON.stringify({ message: trimmedInput }),
       });
 
-      // Command mode
+      // ----- Command mode (no streaming) -----
       if (isCommand) {
         let text;
         try {
@@ -77,6 +83,7 @@ export function useAssistantChat(storageKey = "hexforge_chat") {
         } catch (err) {
           text = `(Error parsing command: ${err.message})`;
         }
+
         setMessages((prev) => [
           ...prev,
           { id: generateId(), from: "assistant", text, time },
@@ -84,9 +91,12 @@ export function useAssistantChat(storageKey = "hexforge_chat") {
         return;
       }
 
-      // Streaming mode
-      if (!res.ok || !res.body)
+      // ----- Streaming mode (normal chat) -----
+      if (!res.ok || !res.body) {
         throw new Error(`Streaming failed: ${res.status}`);
+      }
+
+      // placeholder assistant message with cursor
       setMessages((prev) => [
         ...prev,
         { id: generateId(), from: "assistant", text: "▌", time },
@@ -96,29 +106,36 @@ export function useAssistantChat(storageKey = "hexforge_chat") {
         setMessages((prev) => {
           const last = prev.at(-1);
           const lastText = (last?.text ?? "").replace(/▌$/, "");
-          return updateLastAssistantMessage(
-            prev,
-            lastText + chunk + "▌"
-          );
+          return updateLastAssistantMessage(prev, lastText + chunk + "▌");
         });
-        chatRef.current?.scrollTo({
-          top: chatRef.current.scrollHeight,
-          behavior: "smooth",
-        });
+
+        if (chatRef.current) {
+          chatRef.current.scrollTo({
+            top: chatRef.current.scrollHeight,
+            behavior: "smooth",
+          });
+        }
       });
     } catch (err) {
       console.error("Assistant error:", err);
       setMessages((prev) => [
         ...prev,
-        { id: generateId(), from: "assistant", text: "(Connection error)", time },
+        {
+          id: generateId(),
+          from: "assistant",
+          text: "(Connection error)",
+          time,
+        },
       ]);
     } finally {
       setLoading(false);
       setTimeout(() => {
-        chatRef.current?.scrollTo({
-          top: chatRef.current.scrollHeight,
-          behavior: "smooth",
-        });
+        if (chatRef.current) {
+          chatRef.current.scrollTo({
+            top: chatRef.current.scrollHeight,
+            behavior: "smooth",
+          });
+        }
       }, 100);
     }
   };

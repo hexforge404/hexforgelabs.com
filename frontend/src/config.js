@@ -1,7 +1,7 @@
 // frontend/src/config.js
 
 // Pull base URLs from environment variables (set in .env or .env.production)
-const ASSISTANT_BASE = process.env.REACT_APP_ASSISTANT_BASE || "https://assistant.hexforgelabs.com";
+const ASSISTANT_BASE = process.env.REACT_APP_ASSISTANT_BASE || "";
 const API_BASE = process.env.REACT_APP_API_BASE || "https://hexforgelabs.com/api";
 const SITE_BASE = process.env.REACT_APP_SITE_BASE || "https://hexforgelabs.com";
 

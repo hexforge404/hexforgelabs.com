@@ -2,6 +2,17 @@ import React from "react";
 import "./ChatPage.css";
 import { useAssistantChat } from "../hooks/useAssistantChat";
 
+// Safely convert any value to displayable text
+const renderText = (value) => {
+  if (value == null) return "";
+  if (typeof value === "string" || typeof value === "number") return String(value);
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+};
+
 const ChatPage = () => {
   const {
     messages,
@@ -20,6 +31,8 @@ const ChatPage = () => {
       sendMessage();
     }
   };
+
+  const safeMessages = Array.isArray(messages) ? messages : [];
 
   return (
     <div
@@ -40,14 +53,16 @@ const ChatPage = () => {
       </div>
 
       <div className="chat-messages" ref={chatRef}>
-        {messages.map((msg) => (
-          <div key={msg.id || msg.time} className={`chat-msg ${msg.from}`}>
-            <pre>{msg.text}</pre>
+        {safeMessages.map((msg, index) => (
+          <div
+            key={msg.id || msg.time || index}
+            className={`chat-msg ${msg.from || msg.role || "assistant"}`}
+          >
+            <pre>{renderText(msg.text ?? msg.content)}</pre>
           </div>
         ))}
-        {loading && (
-          <div className="chat-msg assistant typing">▌</div>
-        )}
+
+        {loading && <div className="chat-msg assistant typing">▌</div>}
       </div>
 
       <div className="chat-input">
