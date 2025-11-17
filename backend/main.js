@@ -10,10 +10,12 @@ const cors = require('cors');
 const session = require('express-session');
 const MongoStore = require('connect-mongo');
 const toolRoutes = require('./routes/tools');
+const path = require('path');                   // ⬅️ move up here
+const uploadsRouter = require('./routes/uploads'); // ⬅️ and this
+const scriptsRouter = require('./routes/scriptLab');
+const scriptLabRoutes = require('./routes/scriptLab');
 
 require('dotenv').config();
-
-
 
 // Initialize app
 const app = express();
@@ -21,10 +23,21 @@ app.set('trust proxy', (ip) => {
   return ip === '127.0.0.1' || ip.startsWith('172.') || ip.startsWith('10.') || ip.includes('::ffff:'); 
 });
 app.disable('x-powered-by');
+
+// Existing static dirs for general assets
 app.use(express.static('public'));
-app.use(express.static('uploads'));
 app.use(express.static('frontend/build'));
-app.use('/images', express.static('frontend/public/images'));
+
+// Shared images directory (this is where multer will write)
+const IMAGES_DIR = process.env.IMAGES_DIR || path.join(__dirname, '..', 'uploads');
+
+
+// Serve uploaded images at /images/filename.ext
+app.use('/images', express.static(IMAGES_DIR));
+
+// (Optional) ALSO serve any pre-bundled images from frontend/public/images
+app.use('/images', express.static(path.join(__dirname, '../frontend/public/images')));
+
 
 
 
@@ -131,8 +144,6 @@ const memoryRoutes = require("./routes/memory");
 const notionRoutes = require('./routes/notion');
 const mcpRoutes = require('./routes/mcp');
 
-
-
 app.use('/api/mcp', mcpRoutes);
 app.use('/api/products', apiLimiter, productRoutes);
 app.use('/api/orders', apiLimiter, orderRoutes);
@@ -148,8 +159,9 @@ app.use('/tool', toolRoutes);
 
 app.use('/api/editor', editorRouter);
 app.use('/api/tools', toolRoutes);
-
-
+app.use('/api/uploads', uploadsRouter);
+app.use('/api/scripts', apiLimiter, scriptsRouter);
+app.use('/api/script-lab', scriptLabRoutes);
 
 
 // ======================

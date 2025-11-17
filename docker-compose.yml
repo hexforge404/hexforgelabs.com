@@ -27,19 +27,23 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./frontend/build:/usr/share/nginx/html
+      # Serve the React build
+      - ./frontend/build:/usr/share/nginx/html:ro
+
+      # Nginx configs + certs
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
       - ./nginx/assistant.conf:/etc/nginx/conf.d/assistant.conf:ro
       - ./nginx/snippets:/etc/nginx/snippets:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
-      - ./uploads:/app/uploads
 
+      # Shared uploads folder, exposed as /images/*
+      - ./uploads:/usr/share/nginx/html/images
     networks:
       hexforge-network:
-        
     depends_on:
       - backend
       - assistant
+
 
 
 
@@ -61,11 +65,16 @@ services:
     volumes:
       - ./backend:/app
       - /mnt/hdd-storage:/mnt/hdd-storage
+      - ./uploads:/app/uploads
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
+      
+      
+      
+
 
   ollama:
     build:
@@ -94,6 +103,8 @@ services:
     environment:
       OLLAMA_MODEL: mistral:latest
       OLLAMA_URL: http://ollama:11434
+      SCRIPT_LAB_URL: http://hexforge-backend:8000/api/script-lab
+      SCRIPT_LAB_TOKEN: ${SCRIPT_LAB_TOKEN}
     depends_on:
       backend:
         condition: service_healthy
@@ -118,14 +129,12 @@ services:
 
 
 
-
- 
- 
-  
 volumes:
   mongo_data:
+    driver: local
   ollama-data:
     driver: local
+
 
 networks:
   hexforge-network:

@@ -1,0 +1,178 @@
+/* Floating wrapper, sits above everything but does not block clicks elsewhere */
+.hf-global-nav {
+  position: fixed;
+  top: 18px;
+  right: 22px;
+  z-index: 9999;
+  pointer-events: none;
+}
+
+/* Toggle pill */
+.hf-nav-toggle {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid #1f2937;
+  background: rgba(15, 23, 42, 0.92);
+  color: #e5e7eb;
+  font-size: 12px;
+  cursor: pointer;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(10px);
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.08s ease;
+}
+
+.hf-nav-toggle:hover {
+  background: #020617;
+  border-color: #22c55e;
+  box-shadow:
+    0 0 0 1px rgba(34, 197, 94, 0.5),
+    0 10px 28px rgba(0, 0, 0, 0.8);
+  transform: translateY(-1px);
+}
+
+.hf-nav-toggle-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #22c55e;
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.9);
+}
+
+.hf-nav-toggle-label {
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-weight: 600;
+  font-size: 10px;
+}
+
+/* Dropdown panel */
+.hf-nav-panel {
+  pointer-events: auto;
+  position: absolute;
+  top: 40px;
+  right: 0;
+  width: 220px;
+  border-radius: 18px;
+  border: 1px solid #111827;
+  background: radial-gradient(circle at top left, #0f172a 0, #020617 55%);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.85);
+  padding: 10px 10px 12px;
+}
+
+/* Panel header */
+.hf-nav-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.hf-nav-brand {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hf-nav-logo {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: #22c55e;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: #022c22;
+}
+
+.hf-nav-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #e5e7eb;
+}
+
+.hf-nav-close {
+  background: transparent;
+  border: none;
+  color: #6b7280;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.hf-nav-close:hover {
+  color: #f97316;
+}
+
+/* Links */
+.hf-nav-links {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.hf-nav-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  border: 1px solid #1f2937;
+  color: #e5e7eb;
+  text-decoration: none;
+  background: #020617;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease,
+    color 0.12s ease,
+    transform 0.08s ease,
+    box-shadow 0.12s ease;
+}
+
+.hf-nav-link:hover {
+  background: #030712;
+  border-color: #22c55e;
+  color: #bbf7d0;
+  transform: translateY(-1px);
+  box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.4);
+}
+
+.hf-nav-link--active {
+  background: #f97316;
+  border-color: #f97316;
+  color: #020617;
+  font-weight: 600;
+  box-shadow:
+    0 0 0 1px rgba(249, 115, 22, 0.6),
+    0 10px 25px rgba(0, 0, 0, 0.75);
+}
+
+.hf-nav-link--danger {
+  border-color: #b91c1c;
+  color: #fecaca;
+}
+
+.hf-nav-link--danger:hover {
+  background: #b91c1c;
+  border-color: #fecaca;
+  color: #020617;
+}
+
+/* Small screens */
+@media (max-width: 640px) {
+  .hf-nav-panel {
+    width: 180px;
+  }
+}

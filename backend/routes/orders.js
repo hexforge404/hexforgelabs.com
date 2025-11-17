@@ -182,46 +182,6 @@ router.get('/', orderLimiter, async (req, res) => {
   }
 });
 
-// Update order status
-router.patch('/:id', orderLimiter, [
-  body('status')
-    .isIn(['pending', 'processing', 'shipped', 'delivered', 'cancelled'])
-    .withMessage('Invalid status value')
-], async (req, res) => {
-  try {
-    // Validate request
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
-
-    const order = await Order.findByIdAndUpdate(
-      req.params.id,
-      { status: req.body.status },
-      { new: true, runValidators: true }
-    );
-
-    if (!order) {
-      return res.status(404).json({ message: 'Order not found' });
-    }
-
-    // Send status update email if configured
-    if (process.env.SEND_STATUS_UPDATES === 'true' && order.customer?.email) {
-      await mg.messages.create(process.env.MAILGUN_DOMAIN, {
-        from: `HexForge Labs <${process.env.MAILGUN_FROM_EMAIL}>`,
-        to: order.customer.email,
-        subject: `Order ${order.orderId} Status Update`,
-        text: `Your order status has been updated to: ${order.status}`
-      });
-    }
-
-    res.json(order);
-  } catch (err) {
-    console.error('Error updating order:', err);
-    res.status(500).json({ message: 'Server error' });
-  }
-});
-
 // Delete an order
 router.delete('/:id', orderLimiter, async (req, res) => {
   try {
@@ -251,6 +211,64 @@ router.get('/:orderId', async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch order' });
   }
 });
+
+// PATCH /api/orders/:id/status
+// PATCH /api/orders/:id/status - update order status
+router.patch('/:id/status',
+  orderLimiter,
+  [
+    body('status')
+      .isIn(['pending', 'processing', 'shipped', 'delivered', 'cancelled'])
+      .withMessage('Invalid status value'),
+  ],
+  async (req, res) => {
+    try {
+      // Validate request
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { id } = req.params;
+      const { status } = req.body;
+
+      const order = await Order.findByIdAndUpdate(
+        id,
+        { status },
+        { new: true, runValidators: true }
+      );
+
+      if (!order) {
+        return res.status(404).json({ message: 'Order not found' });
+      }
+
+      // Optional: status update email (kept from old route)
+      if (process.env.SEND_STATUS_UPDATES === 'true' && order.customer?.email) {
+        try {
+          await mg.messages.create(process.env.MAILGUN_DOMAIN, {
+            from: `HexForge Labs <${process.env.MAILGUN_FROM_EMAIL}>`,
+            to: order.customer.email,
+            subject: `Order ${order.orderId} Status Update`,
+            text: `Your order status has been updated to: ${order.status}`,
+          });
+        } catch (emailErr) {
+          console.warn('⚠️ Failed to send status email:', emailErr.message);
+        }
+      }
+
+      return res.json({ data: order });
+    } catch (err) {
+      console.error('Error updating order status:', err);
+
+      if (err.name === 'CastError') {
+        return res.status(400).json({ message: 'Invalid order id' });
+      }
+
+      return res.status(500).json({ message: 'Server error' });
+    }
+  }
+);
+
 
 
 

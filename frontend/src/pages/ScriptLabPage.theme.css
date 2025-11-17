@@ -1,0 +1,19 @@
+/* ScriptLabPage.theme.css */
+
+body {
+  background-color: #020617;
+}
+
+/* Slight green glow around the whole shell for that HexForge vibe */
+.scriptlab-shell {
+  position: relative;
+}
+
+.scriptlab-shell::before {
+  content: "";
+  position: absolute;
+  inset: -20px;
+  border-radius: 1.75rem;
+  background: radial-gradient(circle at top, rgba(34, 197, 94, 0.05), transparent 55%);
+  pointer-events: none;
+}
