@@ -34,6 +34,9 @@ import re
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "mistral")
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://ollama:11434")
 
+SCRIPT_LAB_URL = os.getenv("SCRIPT_LAB_URL", "http://hexforge-backend:8000/api/script-lab")
+SCRIPT_LAB_TOKEN = os.getenv("SCRIPT_LAB_TOKEN", "")  # shared secret with backend
+
 
 # === Lifespan ===
 @asynccontextmanager
@@ -80,6 +83,45 @@ async def try_subprocess(cmd, tool_name):
         result = {"error": str(e)}
     await save_memory_entry(tool_name, result)
     return result
+
+# === Script Lab Helper ===
+async def script_lab_request(method: str, path: str, *, json_body=None, params=None):
+    """
+    Helper to talk to the backend Script Lab API with a shared token.
+    """
+    if not SCRIPT_LAB_TOKEN:
+        return {"error": "SCRIPT_LAB_TOKEN is not configured on assistant service"}
+
+    url = f"{SCRIPT_LAB_URL.rstrip('/')}/{path.lstrip('/')}"
+    headers = {"X-Script-Lab-Token": SCRIPT_LAB_TOKEN}
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.request(
+                method.upper(),
+                url,
+                headers=headers,
+                json=json_body,
+                params=params,
+            )
+        # Pass through backend error details
+        try:
+            data = resp.json()
+        except Exception:
+            data = {"raw": resp.text}
+
+        return {
+            "status_code": resp.status_code,
+            "ok": resp.status_code < 400,
+            "data": data,
+        }
+    except Exception as e:
+        return {
+            "status_code": 500,
+            "ok": False,
+            "error": f"Script Lab request failed: {e}",
+        }
+
 
 
 
@@ -331,6 +373,48 @@ async def tool_memory():
         return {"entries": entries}
     except Exception as e:
         return {"error": f"Memory fetch failed: {str(e)}"}
+
+# === Script Lab Tools (for AI-only script management) ===
+
+@app.get("/tool/script-list")
+@register_tool("script-list", "List scripts in Script Lab", category="Scripts")
+async def tool_script_list(device: str | None = None):
+    """
+    List scripts. Optional device filter (e.g. 'skull-badusb', 'pico-recon').
+    """
+    params = {"device": device} if device else None
+    result = await script_lab_request("GET", "/list", params=params)
+    return result
+
+
+@app.get("/tool/script-get")
+@register_tool("script-get", "Get script content", category="Scripts")
+async def tool_script_get(name: str):
+    """
+    Fetch a single script by name from Script Lab.
+    """
+    result = await script_lab_request("GET", "/get", params={"name": name})
+    return result
+
+
+@app.post("/tool/script-save")
+@register_tool("script-save", "Save/update script", category="Scripts", method="POST")
+async def tool_script_save(payload: dict):
+    """
+    Save or update a script. Expected payload example:
+    {
+      "name": "skull-badusb/demo-1",
+      "device": "skull-badusb",
+      "language": "powershell",
+      "tags": ["wifi", "enum"],
+      "content": "..."
+    }
+    """
+    # Hard gate: only let trusted callers with token manage the library.
+    # (Token is not exposed to the frontend; only the MCP agent uses this.)
+    result = await script_lab_request("POST", "/save", json_body=payload)
+    return result
+
 
 
 @app.get("/tool/open")

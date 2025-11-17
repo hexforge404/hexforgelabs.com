@@ -1,13 +1,19 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import axios from 'axios';
-import { BrowserRouter as Router, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  Navigate
+} from 'react-router-dom';
 
 import { useCart } from 'context/CartContext';
 import ProductList from 'components/ProductList';
 import CartDrawer from 'components/CartDrawer';
 import LoadingSpinner from 'components/LoadingSpinner';
 import ErrorBoundary from 'components/ErrorBoundary';
+import GlobalNav from 'components/GlobalNav';
 
 import OrdersPage from 'pages/OrdersPage';
 import AdminPage from 'pages/AdminPage';
@@ -17,14 +23,13 @@ import BlogPage from 'pages/BlogPage';
 import HomePage from 'pages/HomePage';
 import BlogPost from 'pages/BlogPost';
 import ChatPage from 'pages/ChatPage';
-import FloatingChatButton from './components/FloatingChatButton';
-import MonacoEditorPage from 'pages/MonacoEditorPage';
+import FloatingChatButton from 'components/FloatingChatButton';
+import ScriptLabPage from 'pages/ScriptLabPage';
 import MemoryPage from 'pages/MemoryPage';
-import ChatAssistant from 'components/ChatAssistant';
-import AssistantPage from './pages/AssistantPage';
+import AssistantPage from 'pages/AssistantPage';
 
 import { ToastContainer } from 'react-toastify';
-import { successToast, errorToast, warningToast, infoToast } from './utils/toastUtils';
+import { errorToast } from './utils/toastUtils';
 
 import './App.css';
 
@@ -33,20 +38,20 @@ const api = axios.create({
   withCredentials: true,
   timeout: 5000,
   headers: {
-    'Accept': 'application/json',
+    Accept: 'application/json',
     'Content-Type': 'application/json'
   }
 });
 
 const useAuthCheck = () => {
-  const [authState, setAuthState] = useState({
+  const [authState] = useState({
     isAuthenticated: true,
     loading: false,
     error: null
   });
 
   useEffect(() => {
-    console.log("⚠️ Dev bypassing authentication");
+    console.log('⚠️ Dev bypassing authentication');
   }, []);
 
   return authState;
@@ -70,44 +75,6 @@ CartButton.propTypes = {
   toggleDrawer: PropTypes.func.isRequired
 };
 
-const HeaderControls = ({ isAuthenticated, loading, onLogout }) => {
-  const location = useLocation();
-  const isStorePage = location.pathname === '/store';
-  const isAdminPage = location.pathname === '/admin';
-
-  if (loading) return <LoadingSpinner small />;
-
-  return (
-    <div className="header-controls">
-  <Link to="/" className="control-button">🏠 Home</Link>
-  <Link to="/store" className="control-button">🏪 Store</Link>
-  <Link to="/chat" className="control-button">💬 Chat</Link>
-  <Link to="/assistant" className="control-button">🧠 Full Assistant</Link>
-
-  <div className="divider" />
-
-  <Link to="/editor" className="control-button">📝 Editor</Link>
-  <Link to="/blog" className="control-button">📰 Blog</Link>
-
-  {isAdminPage && (
-    <button
-      onClick={onLogout}
-      className="control-button logout-button"
-    >
-      🚪 Log Out
-    </button>
-  )}
-</div>
-
-  );
-};
-
-HeaderControls.propTypes = {
-  isAuthenticated: PropTypes.bool,
-  loading: PropTypes.bool,
-  onLogout: PropTypes.func.isRequired
-};
-
 const StorePage = ({ toggleDrawer, cart, isDrawerOpen }) => (
   <>
     <ProductList />
@@ -127,7 +94,7 @@ const MainApp = () => {
   const { cart } = useCart();
   const { isAuthenticated, loading, error } = useAuthCheck();
 
-  const toggleDrawer = () => setDrawerOpen(!isDrawerOpen);
+  const toggleDrawer = () => setDrawerOpen(v => !v);
 
   const handleLogout = async () => {
     try {
@@ -155,7 +122,10 @@ const MainApp = () => {
             <li>Cookies: {document.cookie || 'None detected'}</li>
           </ul>
         </div>
-        <button onClick={() => window.location.reload()} className="retry-button">
+        <button
+          onClick={() => window.location.reload()}
+          className="retry-button"
+        >
           Retry Authentication
         </button>
       </div>
@@ -164,34 +134,58 @@ const MainApp = () => {
 
   return (
     <ErrorBoundary>
-      <div className="app-container">
-        <HeaderControls 
-          isAuthenticated={isAuthenticated} 
-          loading={loading} 
-          onLogout={handleLogout} 
+      <>
+        <GlobalNav onLogout={handleLogout} />
+
+        <div className="app-container">
+          <Routes>
+            <Route path="/" element={<HomePage />} />
+            <Route
+              path="/store"
+              element={
+                <StorePage
+                  toggleDrawer={toggleDrawer}
+                  cart={cart}
+                  isDrawerOpen={isDrawerOpen}
+                />
+              }
+            />
+            <Route
+              path="/orders"
+              element={
+                isAuthenticated ? <OrdersPage /> : <Navigate to="/" />
+              }
+            />
+            <Route
+              path="/admin"
+              element={
+                isAuthenticated ? (
+                  <AdminPage />
+                ) : (
+                  <Navigate to="/admin-login" />
+                )
+              }
+            />
+            <Route path="/admin-login" element={<LoginPage />} />
+            <Route path="/success" element={<SuccessPage />} />
+            <Route path="/blog" element={<BlogPage />} />
+            <Route path="/blog/slug/:slug" element={<BlogPost />} />
+            <Route path="/chat" element={<ChatPage />} />
+            <Route path="/script-lab" element={<ScriptLabPage />} />
+            <Route path="/memory" element={<MemoryPage />} />
+            <Route path="/assistant" element={<AssistantPage />} />
+            <Route path="*" element={<Navigate to="/" />} />
+          </Routes>
+        </div>
+
+        <ToastContainer
+          position="bottom-right"
+          autoClose={3000}
+          pauseOnHover
+          draggable
         />
-
-<Routes>
-  <Route path="/" element={<HomePage />} />
-
-  <Route path="/blog" element={<BlogPage />} />
-  <Route path="/store" element={<StorePage toggleDrawer={toggleDrawer} cart={cart} isDrawerOpen={isDrawerOpen} />} />
-  <Route path="/orders" element={isAuthenticated ? <OrdersPage /> : <Navigate to="/" />} />
-  <Route path="/admin" element={isAuthenticated ? <AdminPage /> : <Navigate to="/admin-login" />} />
-  <Route path="/admin-login" element={<LoginPage />} />
-  <Route path="/success" element={<SuccessPage />} />
-  <Route path="/blog/slug/:slug" element={<BlogPost />} />
-  <Route path="/chat" element={<ChatPage />} />
-  <Route path="/editor" element={<MonacoEditorPage />} />
-  <Route path="*" element={<Navigate to="/" />} />
-  <Route path="/memory" element={<MemoryPage />} />
-  <Route path="/assistant" element={<AssistantPage />} />
-
-</Routes>
-
-      </div>
-      <ToastContainer position="bottom-right" autoClose={3000} pauseOnHover draggable />
-      <FloatingChatButton />
+        <FloatingChatButton />
+      </>
     </ErrorBoundary>
   );
 };

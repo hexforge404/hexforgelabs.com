@@ -7,6 +7,7 @@ import confetti from 'canvas-confetti';
 
 function SuccessPage() {
   const [hasFetched, setHasFetched] = useState(false);
+  const [didCelebrate, setDidCelebrate] = useState(false);
   const [order, setOrder] = useState(null);
   const [error, setError] = useState(false);
   const [feedback, setFeedback] = useState('');
@@ -19,42 +20,63 @@ function SuccessPage() {
     const fetchOrder = async () => {
       try {
         const urlParams = new URLSearchParams(window.location.search);
-        const orderId = urlParams.get('orderId');
-        if (!orderId) throw new Error('Missing orderId');
 
-        const res = await fetch(`/api/orders/${orderId}`, {
+        // ✅ Accept both new and old param names
+        const orderId =
+          urlParams.get('orderId') || urlParams.get('orderid');
+
+        if (!orderId) {
+          throw new Error('Missing orderId in URL');
+        }
+
+        const res = await fetch(`/api/orders/${encodeURIComponent(orderId)}`, {
           method: 'GET',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
         });
 
-        if (!res.ok) throw new Error('Failed to fetch order');
+        if (!res.ok) {
+          throw new Error(`Failed to fetch order: ${res.status}`);
+        }
 
         const data = await res.json();
         console.log('✅ Order loaded:', data);
         setOrder(data);
+        setHasFetched(true);
+
         successToast('✅ Order confirmed!');
         window.scrollTo(0, 0);
+
+        // Clear cart shortly after success
         setTimeout(() => {
           clearCart();
         }, 300);
-        setHasFetched(true);
-        localStorage.removeItem('lastOrderEmail');
 
-        // 🎉 Launch confetti
-        confetti({
-          particleCount: 80,
-          spread: 70,
-          origin: { y: 0.6 },
-        });
+        // 🎉 Launch confetti once
+        if (!didCelebrate) {
+          try {
+            confetti({
+              particleCount: 80,
+              spread: 70,
+              origin: { y: 0.6 },
+            });
+            setDidCelebrate(true);
+          } catch (confettiErr) {
+            console.warn('Confetti failed:', confettiErr);
+          }
+        }
+
+        // Clean up stored email (if any)
+        localStorage.removeItem('lastOrderEmail');
       } catch (err) {
-        console.error('❌ Order fetch failed:', err.message);
+        console.error('❌ Order fetch failed:', err);
         setError(true);
+        setHasFetched(true);
       }
     };
 
     fetchOrder();
-  }, []);
+  }, [hasFetched, didCelebrate, clearCart]);
 
   const handleFeedbackSubmit = async () => {
     if (!feedback.trim()) {

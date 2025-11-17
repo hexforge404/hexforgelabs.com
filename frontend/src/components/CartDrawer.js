@@ -12,7 +12,7 @@ function CartDrawer({ isOpen, onClose }) {
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
 
-  const handleCheckout = async () => {
+    const handleCheckout = async () => {
     if (cart.length === 0) {
       warningToast('⚠️ Your cart is empty!', { position: 'top-right' });
       return;
@@ -25,25 +25,46 @@ function CartDrawer({ isOpen, onClose }) {
         body: JSON.stringify({
           items: cart,
           email: email || undefined,
-          name: name?.trim() || 'Guest'
+          name: name?.trim() || 'Guest',
         }),
         credentials: 'include',
       });
 
-      const data = await res.json();
-      if (data.url) {
+      let data = null;
+      try {
+        data = await res.json();
+      } catch {
+        // ignore JSON parse error; we'll treat as unknown
+      }
+
+      if (!res.ok) {
+        console.error('Checkout failed:', data || res.statusText);
+        const msg =
+          data?.error ||
+          `Stripe checkout failed (${res.status}). Please try again.`;
+        errorToast(`❌ ${msg}`, { position: 'top-right' });
+        return;
+      }
+
+      if (data && data.url) {
         localStorage.setItem('cartItems', JSON.stringify(cart));
-        localStorage.setItem('lastOrderEmail', email);
+        if (email) localStorage.setItem('lastOrderEmail', email);
         infoToast('🛒 Proceeding to checkout!', { position: 'top-right' });
         window.location.href = data.url;
       } else {
-        errorToast('❌ Stripe Checkout failed. No URL received.', { position: 'top-right' });
+        console.error('Checkout response missing URL:', data);
+        errorToast('❌ Stripe Checkout failed. No URL received.', {
+          position: 'top-right',
+        });
       }
     } catch (err) {
       console.error('Checkout error:', err);
-      errorToast('⚠️ Something went wrong during checkout.', { position: 'top-right' });
+      errorToast('⚠️ Something went wrong during checkout.', {
+        position: 'top-right',
+      });
     }
   };
+
 
   const handleClearCart = () => {
     if (cart.length === 0) {
