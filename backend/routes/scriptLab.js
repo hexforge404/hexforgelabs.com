@@ -18,29 +18,40 @@ function requireScriptLabToken(req, res, next) {
   next();
 }
 
+// --- Helper: safe resolve path & block traversal ---
+function resolveSafe(targetPath) {
+  const resolved = path.resolve(path.join(SCRIPTS_BASE_DIR, targetPath));
+  if (!resolved.startsWith(path.resolve(SCRIPTS_BASE_DIR))) {
+    return null; // ❌ traversal
+  }
+  return resolved;
+}
+
 // GET /api/script-lab/list?device=skull-badusb
 router.get('/list', async (req, res) => {
   const device = req.query.device;
-  const baseDir = device
-    ? path.join(SCRIPTS_BASE_DIR, device)
-    : SCRIPTS_BASE_DIR;
+  const safeDir = resolveSafe(device || '');
+  if (!safeDir) {
+    return res.status(400).json({ error: 'Invalid device path' });
+  }
 
   try {
-    const entries = await fs.readdir(baseDir, { withFileTypes: true });
+    const entries = await fs.readdir(safeDir, { withFileTypes: true });
 
     const scripts = entries
       .filter((e) => e.isFile())
       .map((e) => ({
         name: e.name,
         device: device || null,
-        path: path.join(baseDir, e.name),
+        path: path.posix.join(device || '', e.name),
       }));
 
     res.json({ scripts });
   } catch (err) {
-    res
-      .status(500)
-      .json({ error: 'Failed to list scripts', detail: String(err) });
+    res.status(500).json({
+      error: 'Failed to list scripts',
+      detail: String(err),
+    });
   }
 });
 
@@ -51,14 +62,19 @@ router.get('/get', async (req, res) => {
     return res.status(400).json({ error: 'Missing name' });
   }
 
-  const filePath = path.join(SCRIPTS_BASE_DIR, name);
+  const safePath = resolveSafe(name);
+  if (!safePath) {
+    return res.status(400).json({ error: 'Invalid script path' });
+  }
+
   try {
-    const content = await fs.readFile(filePath, 'utf8');
-    res.json({ name, path: filePath, content });
+    const content = await fs.readFile(safePath, 'utf8');
+    res.json({ name, path: name, content });
   } catch (err) {
-    res
-      .status(404)
-      .json({ error: 'Script not found', detail: String(err) });
+    res.status(404).json({
+      error: 'Script not found',
+      detail: String(err),
+    });
   }
 });
 
@@ -69,17 +85,21 @@ router.post('/save', requireScriptLabToken, async (req, res) => {
     return res.status(400).json({ error: 'Missing name or content' });
   }
 
-  const filePath = path.join(SCRIPTS_BASE_DIR, name);
+  const safePath = resolveSafe(name);
+  if (!safePath) {
+    return res.status(400).json({ error: 'Invalid script path' });
+  }
 
   try {
-    await fs.mkdir(path.dirname(filePath), { recursive: true });
-    await fs.writeFile(filePath, content, 'utf8');
+    await fs.mkdir(path.dirname(safePath), { recursive: true });
+    await fs.writeFile(safePath, content, 'utf8');
 
-    res.json({ ok: true, name, path: filePath });
+    res.json({ ok: true, name, path: name });
   } catch (err) {
-    res
-      .status(500)
-      .json({ error: 'Failed to save script', detail: String(err) });
+    res.status(500).json({
+      error: 'Failed to save script',
+      detail: String(err),
+    });
   }
 });
 

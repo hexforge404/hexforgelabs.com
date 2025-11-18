@@ -111,8 +111,7 @@ User question:
 ${aiInput || '(no explicit question – explain how this script works and how to customize it safely for Skull BadUSB / other devices)'}
       `.trim();
 
-      const res = await axios.post('/assistant/mcp/chat', { prompt });
-
+      const res = await axios.post('/mcp/chat', { prompt });
       const out =
         res.data.output ??
         res.data.response ??
