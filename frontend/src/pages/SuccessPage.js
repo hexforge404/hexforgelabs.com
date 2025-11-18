@@ -22,8 +22,7 @@ function SuccessPage() {
         const urlParams = new URLSearchParams(window.location.search);
 
         // ✅ Accept both new and old param names
-        const orderId =
-          urlParams.get('orderId') || urlParams.get('orderid');
+        const orderId = urlParams.get('orderId');
 
         if (!orderId) {
           throw new Error('Missing orderId in URL');

@@ -53,7 +53,7 @@ const BlogCard = ({ post }) => {
           {new Date(createdAt).toLocaleDateString()} • Visibility: {visibility}
         </p>
 
-        <Link to={`/blog/${slug}`} className="blog-readmore">
+        <Link to={`/blog/slug/${slug}`} className="blog-readmore">
           Read Full Post →
         </Link>
       </div>
