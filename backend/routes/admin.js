@@ -17,13 +17,17 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-router.post('/upload-image', upload.single('image'), (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ error: 'No file uploaded' });
+// --- helper: require admin session ---
+function requireAdmin(req, res, next) {
+  if (req.session?.admin?.loggedIn) {
+    return next();
   }
-  res.json({ path: `/images/${req.file.filename}` });
-});
-
+  console.warn('🚨 Unauthorized admin access attempt from IP:', req.ip);
+  return res.status(401).json({
+    error: 'Unauthorized',
+    message: 'Admin login required'
+  });
+}
 
 // Rate limiting for admin endpoints
 const adminLimiter = rateLimit({
@@ -32,29 +36,26 @@ const adminLimiter = rateLimit({
   message: 'Too many requests, please try again later'
 });
 
-// Session check endpoint (public)
+// 🔓 Session check endpoint (public – used by frontend to see if admin is logged in)
 router.get('/session', (req, res) => {
   console.log('🔐 Session check from IP:', req.ip);
-  res.json({ 
+  res.json({
     loggedIn: !!req.session.admin?.loggedIn,
-    user: req.session.admin?.username 
+    user: req.session.admin?.username || null
   });
 });
 
-// 🔐 Require admin session for all routes below
-router.use((req, res, next) => {
-  if (!req.session.admin?.loggedIn) {
-    console.warn('🚨 Unauthorized access attempt from IP:', req.ip);
-    return res.status(401).json({ 
-      error: 'Unauthorized',
-      message: 'Admin login required'
-    });
-  }
-  next();
-});
-
-// Apply rate limiting to all admin routes
+// ⛔ Everything below this line requires admin session
+router.use(requireAdmin);
 router.use(adminLimiter);
+
+// ⛔ Image upload is now admin-only
+router.post('/upload-image', upload.single('image'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'No file uploaded' });
+  }
+  res.json({ path: `/images/${req.file.filename}` });
+});
 
 // Product validation rules
 const validateProduct = [
@@ -72,7 +73,7 @@ router.get('/products', async (req, res) => {
     res.json(products);
   } catch (err) {
     console.error('❌ Failed to fetch products:', err);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to fetch products',
       details: process.env.NODE_ENV === 'development' ? err.message : undefined
     });
@@ -94,12 +95,12 @@ router.post('/products', validateProduct, async (req, res) => {
     });
 
     await product.save();
-    
+
     console.log('✅ Product created:', product._id);
     res.status(201).json(product);
   } catch (err) {
     console.error('❌ Product creation failed:', err);
-    res.status(400).json({ 
+    res.status(400).json({
       error: 'Product creation failed',
       details: err.message
     });
@@ -115,10 +116,10 @@ router.put('/products/:id', validateProduct, async (req, res) => {
     }
 
     console.log(`🔄 Product update for ID: ${req.params.id} by admin: ${req.session.admin.username}`);
-    
+
     const product = await Product.findByIdAndUpdate(
       req.params.id,
-      { 
+      {
         ...req.body,
         updatedAt: new Date(),
         updatedBy: req.session.admin.username
@@ -134,7 +135,7 @@ router.put('/products/:id', validateProduct, async (req, res) => {
     res.json(product);
   } catch (err) {
     console.error('❌ Failed to update product', err);
-    res.status(400).json({ 
+    res.status(400).json({
       error: 'Failed to update product',
       details: err.message
     });
@@ -145,20 +146,20 @@ router.put('/products/:id', validateProduct, async (req, res) => {
 router.delete('/products/:id', async (req, res) => {
   try {
     console.log(`🗑️ Delete product ID: ${req.params.id} by admin: ${req.session.admin.username}`);
-    
+
     const product = await Product.findByIdAndDelete(req.params.id);
     if (!product) {
       return res.status(404).json({ error: 'Product not found' });
     }
 
     console.log('✅ Product deleted:', product._id);
-    res.json({ 
+    res.json({
       message: 'Product deleted successfully',
       deletedProduct: product._id
     });
   } catch (err) {
     console.error('❌ Failed to delete product', err);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to delete product',
       details: process.env.NODE_ENV === 'development' ? err.message : undefined
     });
@@ -170,7 +171,7 @@ router.get('/orders', async (req, res) => {
   try {
     const { status, limit = 50 } = req.query;
     const filter = status ? { status } : {};
-    
+
     const orders = await Order.find(filter)
       .sort({ createdAt: -1 })
       .limit(Number(limit));
@@ -178,7 +179,7 @@ router.get('/orders', async (req, res) => {
     res.json(orders);
   } catch (err) {
     console.error('❌ Failed to fetch orders:', err);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to fetch orders',
       details: process.env.NODE_ENV === 'development' ? err.message : undefined
     });

@@ -18,7 +18,7 @@ import GlobalNav from 'components/GlobalNav';
 import OrdersPage from 'pages/OrdersPage';
 import AdminPage from 'pages/AdminPage';
 import SuccessPage from 'pages/SuccessPage';
-import LoginPage from 'pages/LoginPage';
+import LoginPage from 'pages/LoginPage';        // admin login
 import BlogPage from 'pages/BlogPage';
 import HomePage from 'pages/HomePage';
 import BlogPost from 'pages/BlogPost';
@@ -27,9 +27,11 @@ import FloatingChatButton from 'components/FloatingChatButton';
 import ScriptLabPage from 'pages/ScriptLabPage';
 import MemoryPage from 'pages/MemoryPage';
 import AssistantPage from 'pages/AssistantPage';
+import AccountPage from 'pages/AccountPage';    // member account dashboard
+import UserAuthPage from 'pages/UserAuthPage';  // member sign in / register
 
 import { ToastContainer } from 'react-toastify';
-import { errorToast } from './utils/toastUtils';
+import { errorToast, successToast } from './utils/toastUtils';
 
 import './App.css';
 
@@ -43,15 +45,56 @@ const api = axios.create({
   }
 });
 
+const DEV_BYPASS_ADMIN =
+  process.env.NODE_ENV === 'development' &&
+  process.env.REACT_APP_DEV_BYPASS_ADMIN === 'true';
+
 const useAuthCheck = () => {
-  const [authState] = useState({
-    isAuthenticated: true,
-    loading: false,
+  const [authState, setAuthState] = useState({
+    isAuthenticated: false,
+    loading: true,
     error: null
   });
 
   useEffect(() => {
-    console.log('⚠️ Dev bypassing authentication');
+    const checkAuth = async () => {
+      try {
+        if (DEV_BYPASS_ADMIN) {
+          console.warn('⚠️ Dev bypassing authentication');
+          setAuthState({
+            isAuthenticated: true,
+            loading: false,
+            error: null
+          });
+          return;
+        }
+
+        const res = await api.get('/admin/session');
+
+        if (res.data?.loggedIn) {
+          setAuthState({
+            isAuthenticated: true,
+            loading: false,
+            error: null
+          });
+        } else {
+          setAuthState({
+            isAuthenticated: false,
+            loading: false,
+            error: null
+          });
+        }
+      } catch (err) {
+        console.error('Admin auth check failed:', err);
+        setAuthState({
+          isAuthenticated: false,
+          loading: false,
+          error: 'Failed to verify admin session'
+        });
+      }
+    };
+
+    checkAuth();
   }, []);
 
   return authState;
@@ -94,14 +137,47 @@ const MainApp = () => {
   const { cart } = useCart();
   const { isAuthenticated, loading, error } = useAuthCheck();
 
-  const toggleDrawer = () => setDrawerOpen(v => !v);
+  // ✅ member session state
+  const [member, setMember] = useState(null);
 
-  const handleLogout = async () => {
+  const toggleDrawer = () => setDrawerOpen((v) => !v);
+
+  const loadMember = async () => {
+    try {
+      const res = await api.get('/users/me');
+      if (res.data?.loggedIn) {
+        setMember(res.data.user);
+      } else {
+        setMember(null);
+      }
+    } catch (err) {
+      console.error('Member session check failed:', err);
+      setMember(null);
+    }
+  };
+
+  useEffect(() => {
+    loadMember();
+  }, []);
+
+  const handleAdminLogout = async () => {
     try {
       await api.post('/auth/logout', {});
+      successToast('Admin logged out');
       window.location.href = '/admin-login';
     } catch (err) {
       console.error('Logout failed', err);
+      errorToast('Logout failed. Please try again.');
+    }
+  };
+
+  const handleMemberLogout = async () => {
+    try {
+      await api.post('/users/logout', {});
+      successToast('Logged out');
+      setMember(null);
+    } catch (err) {
+      console.error('Member logout failed:', err);
       errorToast('Logout failed. Please try again.');
     }
   };
@@ -118,7 +194,7 @@ const MainApp = () => {
         <div className="debug-info">
           <p>Technical Details:</p>
           <ul>
-            <li>Endpoint: /api/auth/check</li>
+            <li>Endpoint: /api/admin/session</li>
             <li>Cookies: {document.cookie || 'None detected'}</li>
           </ul>
         </div>
@@ -135,7 +211,12 @@ const MainApp = () => {
   return (
     <ErrorBoundary>
       <>
-        <GlobalNav onLogout={handleLogout} />
+        {/* Pass member into nav so we can show Account / Sign In */}
+        <GlobalNav
+          onLogout={handleAdminLogout}
+          member={member}
+          onMemberLogout={handleMemberLogout}
+        />
 
         <div className="app-container">
           <Routes>
@@ -167,6 +248,10 @@ const MainApp = () => {
               }
             />
             <Route path="/admin-login" element={<LoginPage />} />
+
+            {/* 👇 Member login / register */}
+            <Route path="/login" element={<UserAuthPage />} />
+
             <Route path="/success" element={<SuccessPage />} />
             <Route path="/blog" element={<BlogPage />} />
             <Route path="/blog/slug/:slug" element={<BlogPost />} />
@@ -174,6 +259,7 @@ const MainApp = () => {
             <Route path="/script-lab" element={<ScriptLabPage />} />
             <Route path="/memory" element={<MemoryPage />} />
             <Route path="/assistant" element={<AssistantPage />} />
+            <Route path="/account" element={<AccountPage />} />
             <Route path="*" element={<Navigate to="/" />} />
           </Routes>
         </div>
