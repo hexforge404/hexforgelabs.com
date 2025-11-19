@@ -1,90 +1,105 @@
 import React, { useState } from 'react';
 import axios from 'axios';
-import { useNavigate } from 'react-router-dom';
-import { toast } from 'react-toastify';
-import 'react-toastify/dist/ReactToastify.css';
+import { successToast, errorToast } from '../utils/toastUtils';
 import './LoginPage.css';
 
+const api = axios.create({
+  baseURL: '/api',
+  withCredentials: true,
+  timeout: 5000,
+  headers: {
+    Accept: 'application/json',
+    'Content-Type': 'application/json'
+  }
+});
+
 const LoginPage = () => {
-  const [form, setForm] = useState({ username: '', password: '' });
-  const [isLoading, setIsLoading] = useState(false);
-  const navigate = useNavigate();
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
 
-  const handleLogin = async (e) => {
-    e.preventDefault();
-    if (!form.username || !form.password) {
-      toast.error('Username and password are required');
-      return;
-    }
+  const handleSubmit = async (e) => {
+    e.preventDefault(); // stop full page reload
+    setError('');
+    setSubmitting(true);
 
-    setIsLoading(true);
     try {
-      const res = await axios.post('/api/auth/login', form, {
-        withCredentials: true,
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
+      // 1) Hit the login endpoint
+      const res = await api.post('/auth/login', { username, password });
 
-      if (res.data.message === 'Login successful') {
-        toast.success('Login successful! Redirecting...');
-        setTimeout(() => navigate('/admin'), 1500);
-      } else {
-        throw new Error(res.data.message || 'Login failed');
+      if (!res || res.status !== 200) {
+        throw new Error('Login failed');
       }
+
+      // 2) Verify that the admin session is active
+      const sessionRes = await api.get('/admin/session');
+
+      if (!sessionRes.data?.loggedIn) {
+        throw new Error('Login did not stick. Please try again.');
+      }
+
+      successToast('Login successful! Redirecting…');
+
+      // 3) Force full reload so MainApp/useAuthCheck picks up the new session
+      window.location.href = '/admin';
     } catch (err) {
-      console.error('Login error:', err.response?.data || err.message);
-      toast.error(err.response?.data?.message || 'Invalid credentials');
+      console.error('Admin login failed:', err);
+      const msg =
+        err.response?.data?.message ||
+        err.message ||
+        'Login failed. Please check your credentials.';
+      setError(msg);
+      errorToast(msg);
     } finally {
-      setIsLoading(false);
+      setSubmitting(false);
     }
   };
 
   return (
     <div className="login-container">
       <div className="login-box">
-        <h2 className="login-title">HexForge Labs Admin</h2>
-        <form onSubmit={handleLogin} className="login-form">
+        <h1 className="login-title">HexForge Labs Admin</h1>
+
+        {error && <div className="login-error">{error}</div>}
+
+        <form className="login-form" onSubmit={handleSubmit}>
           <div className="form-group">
-            <label htmlFor="username" className="form-label">
+            <label className="form-label" htmlFor="username">
               Username
             </label>
             <input
               id="username"
               type="text"
-              value={form.username}
-              onChange={(e) => setForm({ ...form, username: e.target.value })}
-              className="form-input"
               autoComplete="username"
-              disabled={isLoading}
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              className="form-input"
+              disabled={submitting}
             />
           </div>
 
           <div className="form-group">
-            <label htmlFor="password" className="form-label">
+            <label className="form-label" htmlFor="password">
               Password
             </label>
             <input
               id="password"
               type="password"
-              value={form.password}
-              onChange={(e) => setForm({ ...form, password: e.target.value })}
-              className="form-input"
               autoComplete="current-password"
-              disabled={isLoading}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="form-input"
+              disabled={submitting}
             />
           </div>
 
           <button
             type="submit"
             className="login-button"
-            disabled={isLoading}
+            disabled={submitting}
           >
-            {isLoading ? (
-              <span className="spinner">⏳</span>
-            ) : (
-              '🔐 LOG IN'
-            )}
+            {submitting ? 'Logging in…' : '🔓 Log in'}
           </button>
         </form>
       </div>

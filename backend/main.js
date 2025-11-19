@@ -12,7 +12,6 @@ const MongoStore = require('connect-mongo');
 const toolRoutes = require('./routes/tools');
 const path = require('path');                   // ⬅️ move up here
 const uploadsRouter = require('./routes/uploads'); // ⬅️ and this
-const scriptsRouter = require('./routes/scriptLab');
 const scriptLabRoutes = require('./routes/scriptLab');
 
 require('dotenv').config();
@@ -143,6 +142,7 @@ const newsletterRoutes = require('./routes/newsletter');
 const memoryRoutes = require("./routes/memory");
 const notionRoutes = require('./routes/notion');
 const mcpRoutes = require('./routes/mcp');
+const userAuthRoutes = require('./routes/userAuth');
 
 app.use('/api/mcp', mcpRoutes);
 app.use('/api/products', apiLimiter, productRoutes);
@@ -160,9 +160,8 @@ app.use('/tool', toolRoutes);
 app.use('/api/editor', editorRouter);
 app.use('/api/tools', toolRoutes);
 app.use('/api/uploads', uploadsRouter);
-app.use('/api/scripts', apiLimiter, scriptsRouter);
-app.use('/api/script-lab', scriptLabRoutes);
-
+app.use('/api/script-lab', apiLimiter, scriptLabRoutes);
+app.use('/api/users', userAuthRoutes);
 
 // ======================
 // HEALTH CHECK
@@ -215,6 +214,8 @@ mongoose.connect(process.env.MONGO_URI, mongooseOptions)
     console.error('❌ MongoDB initial connection error:', err);
     process.exit(1);
   });
+
+  
 
 // ======================
 // ERROR HANDLERS

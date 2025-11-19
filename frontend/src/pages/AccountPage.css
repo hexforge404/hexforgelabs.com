@@ -1,0 +1,94 @@
+.account-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #020617;
+}
+
+.account-card {
+  background: #020617;
+  border-radius: 16px;
+  padding: 2.5rem 3rem;
+  max-width: 480px;
+  width: 90%;
+  border: 1px solid #1e293b;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+}
+
+.account-title {
+  color: #22c55e;
+  font-size: 1.8rem;
+  margin-bottom: 1.5rem;
+}
+
+.account-text {
+  color: #e5e7eb;
+  margin-bottom: 0.75rem;
+}
+
+.account-highlight {
+  color: #38bdf8;
+}
+
+.account-actions {
+  margin-top: 1.5rem;
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.account-button {
+  padding: 0.6rem 1.3rem;
+  border-radius: 999px;
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.95rem;
+  text-decoration: none;
+  text-align: center;
+  background: #22c55e;
+  color: #020617;
+  transition: transform 0.15s ease, box-shadow 0.15s ease,
+    background 0.15s ease;
+}
+
+.account-button.secondary {
+  background: #0f172a;
+  color: #e5e7eb;
+  border: 1px solid #1e293b;
+}
+
+.account-button.danger {
+  background: #ef4444;
+  color: #f9fafb;
+}
+
+.account-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.35);
+}
+
+.account-footer {
+  margin-top: 1.5rem;
+  font-size: 0.9rem;
+}
+
+.account-footer a {
+  color: #38bdf8;
+  text-decoration: none;
+}
+
+.account-footer a:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 480px) {
+  .account-card {
+    padding: 2rem 1.5rem;
+  }
+
+  .account-title {
+    font-size: 1.5rem;
+  }
+}

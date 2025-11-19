@@ -12,7 +12,7 @@ const routes = [
   { path: '/blog', label: 'Blog' },
 ];
 
-const GlobalNav = ({ onLogout }) => {
+const GlobalNav = ({ onLogout, member, onMemberLogout }) => {
   const [open, setOpen] = useState(false);
   const location = useLocation();
 
@@ -46,7 +46,7 @@ const GlobalNav = ({ onLogout }) => {
           </div>
 
           <div className="hf-nav-links">
-            {routes.map(r => {
+            {routes.map((r) => {
               const active = location.pathname === r.path;
               return (
                 <Link
@@ -62,6 +62,40 @@ const GlobalNav = ({ onLogout }) => {
               );
             })}
 
+            {/* ------------------------------
+                MEMBER ACCOUNT / LOGIN BUTTON
+               ------------------------------ */}
+            <Link
+              to={member ? '/account' : '/login'}
+              onClick={close}
+              className={
+                'hf-nav-link' +
+                (location.pathname === '/account' ? ' hf-nav-link--active' : '')
+              }
+            >
+              {member ? `Account (${member.username})` : 'Sign In'}
+            </Link>
+
+            {/* ------------------------------
+                MEMBER LOGOUT BUTTON
+               ------------------------------ */}
+            {member && (
+              <button
+                type="button"
+                onClick={() => {
+                  onMemberLogout && onMemberLogout();
+                  close();
+                }}
+                className="hf-nav-link hf-nav-link--danger"
+              >
+                🔓 Log Out
+              </button>
+            )}
+
+            {/* ------------------------------
+                ADMIN LOGOUT BUTTON 
+                Only appears on /admin
+               ------------------------------ */}
             {isAdminRoute && onLogout && (
               <button
                 type="button"
@@ -71,7 +105,7 @@ const GlobalNav = ({ onLogout }) => {
                 }}
                 className="hf-nav-link hf-nav-link--danger"
               >
-                🚪 Log Out
+                🚪 Admin Log Out
               </button>
             )}
           </div>
@@ -82,7 +116,9 @@ const GlobalNav = ({ onLogout }) => {
 };
 
 GlobalNav.propTypes = {
-  onLogout: PropTypes.func,
+  onLogout: PropTypes.func,        // Admin logout
+  member: PropTypes.object,        // Member user object
+  onMemberLogout: PropTypes.func,  // Member logout
 };
 
 export default GlobalNav;

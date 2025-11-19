@@ -28,6 +28,17 @@
   letter-spacing: 1px;
 }
 
+/* Error message */
+.login-error {
+  background: #ff4d4f22;
+  border: 1px solid #ff4d4f;
+  color: #ffb3b3;
+  padding: 0.75rem 1rem;
+  border-radius: 4px;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+}
+
 /* Login Form */
 .login-form {
   display: flex;
@@ -115,8 +126,22 @@
   .login-box {
     padding: 2rem 1.5rem;
   }
-  
+
   .login-title {
     font-size: 1.3rem;
   }
 }
+
+.link-button {
+  background: none;
+  border: none;
+  color: #64ffda;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+}
+
+.link-button:hover {
+  text-decoration: underline;
+}
+
