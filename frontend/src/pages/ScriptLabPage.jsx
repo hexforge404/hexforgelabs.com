@@ -85,17 +85,17 @@ const ScriptLabPage = () => {
   };
 
   const handleAskAI = async () => {
-    if (!selectedScript && !aiInput.trim()) return;
+  if (!selectedScript && !aiInput.trim()) return;
 
-    setAiLoading(true);
-    setStatus('Talking to assistant…');
-    setAiOutput('');
+  setAiLoading(true);
+  setStatus('Talking to assistant…');
+  setAiOutput('');
 
-    const fileName = selectedScript ? selectedScript.name : '(none)';
-    const fullPath = selectedScript ? selectedScript.path : '(no file selected)';
+  const fileName = selectedScript ? selectedScript.name : '(none)';
+  const fullPath = selectedScript ? selectedScript.path : '(no file selected)';
 
-    try {
-      const prompt = `
+  try {
+    const prompt = `
 You are helping a user understand and safely use HexForge product scripts.
 
 Current device: ${selectedScript?.device || '(unknown / not set)'}
@@ -109,24 +109,46 @@ ${code}
 
 User question:
 ${aiInput || '(no explicit question – explain how this script works and how to customize it safely for Skull BadUSB / other devices)'}
-      `.trim();
+    `.trim();
 
-      const res = await axios.post('/mcp/chat', { prompt });
-      const out =
-        res.data.output ??
-        res.data.response ??
-        JSON.stringify(res.data, null, 2);
+    const res = await axios.post('/mcp/chat', {
+      // ✅ Backend requirement: must have prompt or message
+      prompt,
+      mode: 'script-lab',
 
-      setAiOutput(out);
-      setStatus('✅ Assistant response ready');
-    } catch (err) {
-      console.error('AI helper error', err);
-      setAiOutput('❌ Failed to contact assistant');
-      setStatus('❌ Assistant error');
-    } finally {
-      setAiLoading(false);
-    }
-  };
+      // ✅ Extra context the backend can use if it wants
+      messages: [
+        {
+          role: 'system',
+          content:
+            'You are helping a user understand and safely use HexForge product scripts. Explain clearly, avoid dangerous or destructive instructions, and assume this is for user-owned hardware.',
+        },
+        {
+          role: 'user',
+          content: prompt,
+        },
+      ],
+    });
+
+    const data = res.data || {};
+    const out =
+      data.output ??
+      data.response ??
+      (typeof data === 'string'
+        ? data
+        : JSON.stringify(data, null, 2));
+
+    setAiOutput(out);
+    setStatus('✅ Assistant response ready');
+  } catch (err) {
+    console.error('AI helper error', err);
+    setAiOutput('❌ Failed to contact assistant');
+    setStatus('❌ Assistant error');
+  } finally {
+    setAiLoading(false);
+  }
+};
+
 
   // --- Effects ---
 

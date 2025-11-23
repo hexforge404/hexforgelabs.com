@@ -2,6 +2,16 @@ import { toast } from 'react-toastify';
 import React, { useEffect, useState } from 'react';
 import { useCart } from 'context/CartContext';
 
+const getImageSrc = (image) => {
+  if (!image) {
+    return process.env.PUBLIC_URL + '/images/hexforge-logo-removebg.png';
+  }
+  if (image.startsWith('http')) return image;
+  if (image.startsWith('/images/')) {
+    return process.env.PUBLIC_URL + image;
+  }
+  return process.env.PUBLIC_URL + '/images/' + image;
+};
 
 function ProductList() {
   const { addToCart } = useCart();
@@ -60,93 +70,74 @@ function ProductList() {
     );
   }
 
-  if (error) {
-    return (
-      <div style={{ textAlign: 'center', marginTop: '100px', color: '#ff4d4d' }}>
-        <h1 style={{ fontSize: '50px' }}>❌</h1>
-        <h2>Server Unavailable</h2>
-        <p style={{ color: '#ccc' }}>Please try refreshing the page later.</p>
-      </div>
-    );
-  }
-
+if (error) {
   return (
-    <div style={{
-      padding: '20px 20px 10px',
-      backgroundColor: '#0a192f',
-      textAlign: 'center',
-      boxShadow: '0 2px 4px rgba(0,0,0,0.5)',
-      marginBottom: '20px'
-    }}>
-      <div style={{ maxWidth: '300px', margin: '0 auto' }}>
-  <img
-    src="/images/hexforge-logo-full.png"
-    alt="HexForge Labs"
-    style={{
-      width: '100%',
-      height: 'auto',
-      marginBottom: '0.5rem'
-    }}
-  />
-</div>
-
-  
-
-      <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', marginTop: '20px' }}>
-        {products.map((product) => (
-          <div
-            key={product._id}
-            className="product-card"
-            style={{
-              width: '200px',
-              margin: '10px',
-              backgroundColor: '#111',
-              padding: '15px',
-              borderRadius: '10px',
-              color: '#fff',
-              textAlign: 'center',
-              transition: 'transform 0.2s, box-shadow 0.2s',
-              boxShadow: '0 0 0 rgba(0, 0, 0, 0)',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.boxShadow = '0 4px 15px rgba(0, 255, 200, 0.3)';
-              e.currentTarget.style.transform = 'translateY(-4px)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.boxShadow = '0 0 0 rgba(0, 0, 0, 0)';
-              e.currentTarget.style.transform = 'translateY(0)';
-            }}
-          >
-            <img
-              src={product.image}
-              alt={product.name}
-              style={{ width: '100%', height: 'auto', borderRadius: '8px', marginBottom: '10px' }}
-            />
-            <h3 style={{ fontSize: '18px', margin: '10px 0' }}>{product.name}</h3>
-            <p style={{ fontSize: '14px', color: '#ccc' }}>{product.priceFormatted}</p>
-            <button
-  onClick={() => {
-    addToCart(product);
-    toast.success(`🛒 ${product.name} added to cart!`);
-  }}
-  style={{
-    marginTop: '10px',
-    padding: '8px 16px',
-    backgroundColor: '#00ffc8',
-    border: 'none',
-    borderRadius: '5px',
-    color: '#111',
-    fontWeight: 'bold',
-    cursor: 'pointer'
-  }}
->
-  Add to Cart
-</button>
-
-          </div>
-        ))}
-      </div>
+    <div style={{ textAlign: 'center', marginTop: '100px', color: '#ff4d4d' }}>
+      <h1 style={{ fontSize: '50px' }}>❌</h1>
+      <h2>Server Unavailable</h2>
+      <p style={{ color: '#ccc' }}>Please try refreshing the page later.</p>
     </div>
+  );
+}
+
+return (
+  <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', marginTop: '20px' }}>
+    {products.map((product) => (
+      <div
+        key={product._id}
+        className="product-card"
+        style={{
+          width: '200px',
+          margin: '10px',
+          backgroundColor: '#111',
+          padding: '15px',
+          borderRadius: '10px',
+          color: '#fff',
+          textAlign: 'center',
+          transition: 'transform 0.2s, box-shadow 0.2s',
+          boxShadow: '0 0 0 rgba(0, 0, 0, 0)',
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.boxShadow = '0 4px 15px rgba(0, 255, 200, 0.3)';
+          e.currentTarget.style.transform = 'translateY(-4px)';
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.boxShadow = '0 0 0 rgba(0, 0, 0, 0)';
+          e.currentTarget.style.transform = 'translateY(0)';
+        }}
+      >
+        <img
+  src={getImageSrc(product.image)}
+  alt={product.name}
+  onError={(e) => {
+    e.currentTarget.src =
+      process.env.PUBLIC_URL + '/images/hexforge-logo-removebg.png';
+  }}
+  style={{ width: '100%', height: 'auto', borderRadius: '8px', marginBottom: '10px' }}
+/>
+
+        <h3 style={{ fontSize: '18px', margin: '10px 0' }}>{product.name}</h3>
+        <p style={{ fontSize: '14px', color: '#ccc' }}>{product.priceFormatted}</p>
+        <button
+          onClick={() => {
+            addToCart(product);
+            toast.success(`${product.name} added to cart!`);
+          }}
+          style={{
+            padding: '8px 16px',
+            backgroundColor: '#00ffc8',
+            border: 'none',
+            borderRadius: '5px',
+            color: '#111',
+            fontWeight: 'bold',
+            cursor: 'pointer'
+          }}
+        >
+          Add to Cart
+        </button>
+      </div>
+    ))}
+  </div>
   );
 }
 

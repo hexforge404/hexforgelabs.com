@@ -21,29 +21,28 @@ services:
    
    
   nginx:
-    image: nginx:stable
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: hexforge-nginx
     container_name: hexforge-nginx
     ports:
       - "80:80"
       - "443:443"
     volumes:
-      # Serve the React build
-      - ./frontend/build:/usr/share/nginx/html:ro
-
       # Nginx configs + certs
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
       - ./nginx/assistant.conf:/etc/nginx/conf.d/assistant.conf:ro
       - ./nginx/snippets:/etc/nginx/snippets:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
 
-      # Shared uploads folder, exposed as /images/*
-      - ./uploads:/usr/share/nginx/html/images
-    networks:
-      hexforge-network:
+      # Shared uploads folder (for /images/* -> /uploads/)
+      - ./uploads:/uploads
     depends_on:
       - backend
       - assistant
-
+    networks:
+      - hexforge-network
 
 
 

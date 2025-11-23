@@ -26,6 +26,9 @@ const AssistantPage = () => {
   const [bootStage, setBootStage] = useState(0);
   const [bootDone, setBootDone] = useState(false);
 
+  // Sidebar (history / projects / models) visibility
+  const [showHistory, setShowHistory] = useState(true);
+
   // Lab browser state (iframe on the right)
   const [browserUrl, setBrowserUrl] = useState('https://hexforgelabs.com');
   const [browserInput, setBrowserInput] = useState('https://hexforgelabs.com');
@@ -53,8 +56,7 @@ const AssistantPage = () => {
     return () => timeouts.forEach(clearTimeout);
   }, []);
 
-  // Very simple "assistant controls browser" hook:
-  // If latest assistant message contains a URL, update the iframe.
+  // Assistant → Lab Browser auto URL
   useEffect(() => {
     const lastAssistant = [...messages]
       .reverse()
@@ -63,8 +65,9 @@ const AssistantPage = () => {
     if (!lastAssistant) return;
 
     const urlMatch = lastAssistant.content.match(
-      /(https?:\/\/[^\s)]+)|(hexforgelabs\.com[^\s)]*)/i
+      /(https?:\/\/[^\s,)>\\]]+)|(hexforgelabs\.com[^\s,)>\\]]*)/i
     );
+
     if (!urlMatch) return;
 
     let url = urlMatch[0];
@@ -127,7 +130,7 @@ const AssistantPage = () => {
     [browserInput]
   );
 
-  const browserDisabled = !bootDone; // optional: lock browser until booted
+  const browserDisabled = !bootDone;
 
   return (
     <div className="hf-assistant-page">
@@ -135,20 +138,36 @@ const AssistantPage = () => {
         <div className="hf-assistant-logo">⚙ HexForge Assistant Lab</div>
         <button
           className="hf-assistant-history-toggle"
-          onClick={() => {
-            const el = document.querySelector('.hf-assistant-history');
-            if (el) {
-              el.classList.toggle('hf-assistant-history--hidden');
-            }
-          }}
+          onClick={() => setShowHistory((v) => !v)}
         >
-          Show History
+          {showHistory ? 'Collapse Sidebar' : 'Expand Sidebar'}
         </button>
       </header>
 
-      <main className="hf-assistant-main">
+      <main
+        className={
+          'hf-assistant-main ' +
+          (!showHistory ? 'hf-assistant-main--no-history' : '')
+        }
+      >
         {/* Left column: chats / projects / models */}
-        <aside className="hf-assistant-history hf-assistant-history--hidden">
+        <aside
+          className={
+            'hf-assistant-history ' +
+            (!showHistory ? 'hf-assistant-history--hidden' : '')
+          }
+        >
+          <div className="hf-side-header">
+            <span className="section-label">Session History</span>
+            <button
+              type="button"
+              className="hf-side-header-toggle"
+              onClick={() => setShowHistory(false)}
+            >
+              Hide
+            </button>
+          </div>
+
           <div className="hf-side-tabs">
             <button className="hf-side-tab is-active">Chats</button>
             <button className="hf-side-tab">Projects</button>
@@ -197,7 +216,8 @@ const AssistantPage = () => {
                     [3/4] Linking Script Lab, Store, Blog, Lab Browser…
                   </li>
                   <li className={bootStage >= 4 ? 'is-visible' : ''}>
-                    [4/4] Model online: <strong>HexForge&nbsp;Scribe</strong>
+                    [4/4] Model online:{' '}
+                    <strong>HexForge&nbsp;Scribe</strong>
                   </li>
                 </ul>
                 <div className="hf-boot-footer">
@@ -309,7 +329,7 @@ const AssistantPage = () => {
         {/* Right: Lab browser column */}
         <aside className="hf-lab-browser">
           <div className="hf-lab-browser-header">
-            <span className="section-label">LAB BROWSER</span>
+            <span className="section-label">Lab Browser</span>
           </div>
 
           <form className="hf-lab-browser-bar" onSubmit={handleBrowserGo}>
