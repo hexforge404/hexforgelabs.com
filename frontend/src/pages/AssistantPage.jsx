@@ -6,6 +6,7 @@ import React, {
   useState,
 } from 'react';
 import { useAssistantChat } from '../hooks/useAssistantChat';
+import { useAssistantSessions } from '../hooks/useAssistantSessions';
 import './AssistantPage.css';
 
 const AssistantPage = () => {
@@ -19,6 +20,14 @@ const AssistantPage = () => {
     resetError,
   } = useAssistantChat({ mode: 'assistant' });
 
+  const {
+    sessions,
+    activeSessionId,
+    activeSession,
+    setActiveSessionId,
+    createSession,
+  } = useAssistantSessions();
+
   const inputRef = useRef(null);
   const bottomRef = useRef(null);
 
@@ -26,7 +35,7 @@ const AssistantPage = () => {
   const [bootStage, setBootStage] = useState(0);
   const [bootDone, setBootDone] = useState(false);
 
-  // Sidebar (history / projects / models) visibility
+  // Sidebar visibility – default ON now
   const [showHistory, setShowHistory] = useState(true);
 
   // Lab browser state (iframe on the right)
@@ -150,7 +159,7 @@ const AssistantPage = () => {
           (!showHistory ? 'hf-assistant-main--no-history' : '')
         }
       >
-        {/* Left column: chats / projects / models */}
+        {/* Left column: session history */}
         <aside
           className={
             'hf-assistant-history ' +
@@ -158,7 +167,7 @@ const AssistantPage = () => {
           }
         >
           <div className="hf-side-header">
-            <span className="section-label">Session History</span>
+            <span className="hf-side-header-title">SESSION HISTORY</span>
             <button
               type="button"
               className="hf-side-header-toggle"
@@ -170,16 +179,37 @@ const AssistantPage = () => {
 
           <div className="hf-side-tabs">
             <button className="hf-side-tab is-active">Chats</button>
-            <button className="hf-side-tab">Projects</button>
-            <button className="hf-side-tab">Models</button>
+            <button className="hf-side-tab" disabled>
+              Projects
+            </button>
+            <button className="hf-side-tab" disabled>
+              Models
+            </button>
           </div>
 
           <div className="hf-side-list">
-            <div className="hf-side-item is-active">Current session</div>
-            <div className="hf-side-item">Skull BadUSB planning</div>
-            <div className="hf-side-item">Recon Unit recovery</div>
-            <div className="hf-side-item">Content engine notes</div>
+            {sessions.map((session) => (
+              <button
+                key={session.id}
+                type="button"
+                className={
+                  'hf-side-item ' +
+                  (session.id === activeSessionId ? 'is-active' : '')
+                }
+                onClick={() => setActiveSessionId(session.id)}
+              >
+                {session.name}
+              </button>
+            ))}
           </div>
+
+          <button
+            type="button"
+            className="hf-side-header-toggle"
+            onClick={() => createSession('New session')}
+          >
+            + New session
+          </button>
 
           <div className="hf-side-footer">
             <span className="hf-side-label">Active model:</span>
@@ -329,7 +359,7 @@ const AssistantPage = () => {
         {/* Right: Lab browser column */}
         <aside className="hf-lab-browser">
           <div className="hf-lab-browser-header">
-            <span className="section-label">Lab Browser</span>
+            <span className="section-label">LAB BROWSER</span>
           </div>
 
           <form className="hf-lab-browser-bar" onSubmit={handleBrowserGo}>
