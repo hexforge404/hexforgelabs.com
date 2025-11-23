@@ -1,3 +1,4 @@
+// frontend/src/App.jsx
 import React, { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import axios from 'axios';
@@ -18,7 +19,7 @@ import GlobalNav from 'components/GlobalNav';
 import OrdersPage from 'pages/OrdersPage';
 import AdminPage from 'pages/AdminPage';
 import SuccessPage from 'pages/SuccessPage';
-import LoginPage from 'pages/LoginPage';        // admin login
+import LoginPage from 'pages/LoginPage';          // admin login
 import BlogPage from 'pages/BlogPage';
 import HomePage from 'pages/HomePage';
 import BlogPost from 'pages/BlogPost';
@@ -27,8 +28,9 @@ import FloatingChatButton from 'components/FloatingChatButton';
 import ScriptLabPage from 'pages/ScriptLabPage';
 import MemoryPage from 'pages/MemoryPage';
 import AssistantPage from 'pages/AssistantPage';
-import AccountPage from 'pages/AccountPage';    // member account dashboard
-import UserAuthPage from 'pages/UserAuthPage';  // member sign in / register
+
+import UserAuthPage from 'pages/UserAuthPage';    // ✅ member login/register
+import AccountPage from 'pages/AccountPage';      // ✅ member account
 
 import { ToastContainer } from 'react-toastify';
 import { errorToast, successToast } from './utils/toastUtils';
@@ -49,7 +51,7 @@ const DEV_BYPASS_ADMIN =
   process.env.NODE_ENV === 'development' &&
   process.env.REACT_APP_DEV_BYPASS_ADMIN === 'true';
 
-const useAuthCheck = () => {
+const useAdminAuthCheck = () => {
   const [authState, setAuthState] = useState({
     isAuthenticated: false,
     loading: true,
@@ -60,7 +62,7 @@ const useAuthCheck = () => {
     const checkAuth = async () => {
       try {
         if (DEV_BYPASS_ADMIN) {
-          console.warn('⚠️ Dev bypassing authentication');
+          console.warn('⚠️ Dev bypassing admin authentication');
           setAuthState({
             isAuthenticated: true,
             loading: false,
@@ -135,12 +137,15 @@ StorePage.propTypes = {
 const MainApp = () => {
   const [isDrawerOpen, setDrawerOpen] = useState(false);
   const { cart } = useCart();
-  const { isAuthenticated, loading, error } = useAuthCheck();
 
-  // ✅ member session state
+  // ✅ admin session
+  const { isAuthenticated, loading, error } = useAdminAuthCheck();
+
+  // ✅ member session
   const [member, setMember] = useState(null);
+  const [memberLoaded, setMemberLoaded] = useState(false);
 
-  const toggleDrawer = () => setDrawerOpen((v) => !v);
+  const toggleDrawer = () => setDrawerOpen(v => !v);
 
   const loadMember = async () => {
     try {
@@ -153,6 +158,8 @@ const MainApp = () => {
     } catch (err) {
       console.error('Member session check failed:', err);
       setMember(null);
+    } finally {
+      setMemberLoaded(true);
     }
   };
 
@@ -166,8 +173,8 @@ const MainApp = () => {
       successToast('Admin logged out');
       window.location.href = '/admin-login';
     } catch (err) {
-      console.error('Logout failed', err);
-      errorToast('Logout failed. Please try again.');
+      console.error('Admin logout failed', err);
+      errorToast('Admin logout failed. Please try again.');
     }
   };
 
@@ -176,13 +183,14 @@ const MainApp = () => {
       await api.post('/users/logout', {});
       successToast('Logged out');
       setMember(null);
+      window.location.href = '/';
     } catch (err) {
-      console.error('Member logout failed:', err);
+      console.error('Member logout failed', err);
       errorToast('Logout failed. Please try again.');
     }
   };
 
-  if (loading) {
+  if (loading || !memberLoaded) {
     return <LoadingSpinner fullPage />;
   }
 
@@ -211,7 +219,6 @@ const MainApp = () => {
   return (
     <ErrorBoundary>
       <>
-        {/* Pass member into nav so we can show Account / Sign In */}
         <GlobalNav
           onLogout={handleAdminLogout}
           member={member}
@@ -221,6 +228,7 @@ const MainApp = () => {
         <div className="app-container">
           <Routes>
             <Route path="/" element={<HomePage />} />
+
             <Route
               path="/store"
               element={
@@ -231,6 +239,8 @@ const MainApp = () => {
                 />
               }
             />
+
+            {/* Admin side */}
             <Route
               path="/orders"
               element={
@@ -249,17 +259,28 @@ const MainApp = () => {
             />
             <Route path="/admin-login" element={<LoginPage />} />
 
-            {/* 👇 Member login / register */}
-            <Route path="/login" element={<UserAuthPage />} />
-
+            {/* Public site */}
             <Route path="/success" element={<SuccessPage />} />
             <Route path="/blog" element={<BlogPage />} />
             <Route path="/blog/slug/:slug" element={<BlogPost />} />
             <Route path="/chat" element={<ChatPage />} />
+            <Route path="/assistant" element={<AssistantPage />} />
             <Route path="/script-lab" element={<ScriptLabPage />} />
             <Route path="/memory" element={<MemoryPage />} />
-            <Route path="/assistant" element={<AssistantPage />} />
-            <Route path="/account" element={<AccountPage />} />
+
+            {/* Member accounts */}
+            <Route
+              path="/login"
+              element={<UserAuthPage onAuth={setMember} />}
+            />
+            <Route
+              path="/account"
+              element={
+                member ? <AccountPage /> : <Navigate to="/login" replace />
+              }
+            />
+
+            {/* Fallback */}
             <Route path="*" element={<Navigate to="/" />} />
           </Routes>
         </div>

@@ -1,3 +1,4 @@
+// frontend/src/components/GlobalNav.jsx
 import React, { useState } from 'react';
 import PropTypes from 'prop-types';
 import { Link, useLocation } from 'react-router-dom';
@@ -9,7 +10,7 @@ const routes = [
   { path: '/chat', label: 'Chat' },
   { path: '/assistant', label: 'Full Assistant' },
   { path: '/script-lab', label: 'Script Lab' },
-  { path: '/blog', label: 'Blog' },
+  { path: '/blog', label: 'Blog' }
 ];
 
 const GlobalNav = ({ onLogout, member, onMemberLogout }) => {
@@ -19,7 +20,7 @@ const GlobalNav = ({ onLogout, member, onMemberLogout }) => {
   const toggle = () => setOpen(v => !v);
   const close = () => setOpen(false);
 
-  const isAdminRoute = location.pathname === '/admin';
+  const isAdminRoute = location.pathname.startsWith('/admin');
 
   return (
     <div className="hf-global-nav">
@@ -46,7 +47,7 @@ const GlobalNav = ({ onLogout, member, onMemberLogout }) => {
           </div>
 
           <div className="hf-nav-links">
-            {routes.map((r) => {
+            {routes.map(r => {
               const active = location.pathname === r.path;
               return (
                 <Link
@@ -62,40 +63,48 @@ const GlobalNav = ({ onLogout, member, onMemberLogout }) => {
               );
             })}
 
-            {/* ------------------------------
-                MEMBER ACCOUNT / LOGIN BUTTON
-               ------------------------------ */}
-            <Link
-              to={member ? '/account' : '/login'}
-              onClick={close}
-              className={
-                'hf-nav-link' +
-                (location.pathname === '/account' ? ' hf-nav-link--active' : '')
-              }
-            >
-              {member ? `Account (${member.username})` : 'Sign In'}
-            </Link>
-
-            {/* ------------------------------
-                MEMBER LOGOUT BUTTON
-               ------------------------------ */}
-            {member && (
-              <button
-                type="button"
-                onClick={() => {
-                  onMemberLogout && onMemberLogout();
-                  close();
-                }}
-                className="hf-nav-link hf-nav-link--danger"
+            {/* Member account controls */}
+            {member ? (
+              <>
+                <Link
+                  to="/account"
+                  onClick={close}
+                  className={
+                    'hf-nav-link' +
+                    (location.pathname === '/account'
+                      ? ' hf-nav-link--active'
+                      : '')
+                  }
+                >
+                  Account ({member.username})
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onMemberLogout?.();
+                    close();
+                  }}
+                  className="hf-nav-link hf-nav-link--danger"
+                >
+                  🔒 Log Out
+                </button>
+              </>
+            ) : (
+              <Link
+                to="/login"
+                onClick={close}
+                className={
+                  'hf-nav-link' +
+                  (location.pathname === '/login'
+                    ? ' hf-nav-link--active'
+                    : '')
+                }
               >
-                🔓 Log Out
-              </button>
+                Sign In
+              </Link>
             )}
 
-            {/* ------------------------------
-                ADMIN LOGOUT BUTTON 
-                Only appears on /admin
-               ------------------------------ */}
+            {/* Admin logout only on /admin */}
             {isAdminRoute && onLogout && (
               <button
                 type="button"
@@ -105,7 +114,7 @@ const GlobalNav = ({ onLogout, member, onMemberLogout }) => {
                 }}
                 className="hf-nav-link hf-nav-link--danger"
               >
-                🚪 Admin Log Out
+                🧱 Admin Log Out
               </button>
             )}
           </div>
@@ -116,9 +125,12 @@ const GlobalNav = ({ onLogout, member, onMemberLogout }) => {
 };
 
 GlobalNav.propTypes = {
-  onLogout: PropTypes.func,        // Admin logout
-  member: PropTypes.object,        // Member user object
-  onMemberLogout: PropTypes.func,  // Member logout
+  onLogout: PropTypes.func,
+  member: PropTypes.shape({
+    username: PropTypes.string,
+    email: PropTypes.string
+  }),
+  onMemberLogout: PropTypes.func
 };
 
 export default GlobalNav;

@@ -1,162 +1,119 @@
-import { useState, useEffect, useRef } from "react";
-import { ASSISTANT_URL } from "../config";
-import { parseSSEStream } from "../utils/parseSSEStream";
-import {
-  addUserMessage,
-  updateLastAssistantMessage,
-} from "../utils/chatHelpers";
-import { checkPing } from "../utils/assistant";
+// frontend/src/hooks/useAssistantChat.js
+import { useState, useCallback } from 'react';
+import axios from 'axios';
 
-// Safe message loader
-const safeLoadMessages = (key) => {
-  try {
-    const stored = localStorage.getItem(key);
-    if (!stored) return [];
-    const parsed = JSON.parse(stored);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch (err) {
-    console.warn("Resetting corrupted chat:", err);
-    localStorage.removeItem(key);
-    return [];
-  }
-};
+let idCounter = 0;
+const makeId = () => `msg-${Date.now()}-${idCounter++}`;
 
-export function useAssistantChat(storageKey = "hexforge_chat") {
-  const [messages, setMessages] = useState(() => safeLoadMessages(storageKey));
-  const [input, setInput] = useState("");
+/**
+ * Shared chat hook for:
+ *  - /chat      (mode: 'chat')
+ *  - /assistant (mode: 'assistant')
+ *
+ * It:
+ *  - Keeps local messages state
+ *  - Sends POST /mcp/chat with { prompt, mode }
+ *  - Handles tool buttons via send(commandText)
+ */
+export function useAssistantChat({ mode = 'chat' } = {}) {
+  const [messages, setMessages] = useState(() => {
+    const greeting =
+      mode === 'assistant'
+        ? 'Hello! How can I help you with your lab environment today?'
+        : 'Hello! How can I help you today?';
+
+    return [
+      {
+        id: makeId(),
+        role: 'assistant',
+        content: greeting,
+      },
+    ];
+  });
+
+  const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const [status, setStatus] = useState("offline");
-  const chatRef = useRef(null);
-  const inputRef = useRef(null);
+  const [error, setError] = useState(null);
 
-  const generateId = () => "-" + Math.random().toString(36).slice(2, 9);
+  const resetError = useCallback(() => setError(null), []);
 
-  // persist messages
-  useEffect(() => {
-    localStorage.setItem(storageKey, JSON.stringify(messages));
-  }, [messages, storageKey]);
+  /**
+   * Send a message.
+   * - If textOverride is provided, use that (for tool buttons).
+   * - Otherwise use the current input state.
+   */
+  const send = useCallback(
+    async (textOverride) => {
+      const raw = textOverride != null ? textOverride : input;
+      const text = (raw || '').trim();
+      if (!text) return;
 
-  // ping assistant
-  useEffect(() => {
-    checkPing().then((ok) => setStatus(ok ? "online" : "offline"));
-  }, []);
+      // Optimistic user message
+      const userMsg = {
+        id: makeId(),
+        role: 'user',
+        content: text,
+      };
 
-  // autofocus
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
+      setMessages((prev) => [...prev, userMsg]);
+      setInput(''); // clear box right away
+      setLoading(true);
+      setError(null);
 
-  const sendMessage = async () => {
-    const trimmedInput = input.trim();
-    if (!trimmedInput) return;
-
-    const userMessage = { ...addUserMessage(trimmedInput), id: generateId() };
-    setMessages((prev) => [...prev, userMessage]);
-    setInput("");
-    setLoading(true);
-
-    const isCommand = trimmedInput.startsWith("!");
-    const endpoint = isCommand ? "/mcp/chat" : "/mcp/stream";
-    const time = new Date().toLocaleTimeString();
-
-    try {
-      const res = await fetch(`${ASSISTANT_URL}${endpoint}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: trimmedInput }),
-      });
-
-      // ----- Command mode (no streaming) -----
-      if (isCommand) {
-        let text;
-        try {
-          const type = res.headers.get("content-type") || "";
-          if (type.includes("json")) {
-            const data = await res.json();
-            text =
-              typeof data === "string"
-                ? data
-                : data?.response || JSON.stringify(data, null, 2);
-          } else {
-            text = await res.text();
-          }
-        } catch (err) {
-          text = `(Error parsing command: ${err.message})`;
-        }
-
-        setMessages((prev) => [
-          ...prev,
-          { id: generateId(), from: "assistant", text, time },
-        ]);
-        return;
-      }
-
-      // ----- Streaming mode (normal chat) -----
-      if (!res.ok || !res.body) {
-        throw new Error(`Streaming failed: ${res.status}`);
-      }
-
-      // placeholder assistant message with cursor
-      setMessages((prev) => [
-        ...prev,
-        { id: generateId(), from: "assistant", text: "▌", time },
-      ]);
-
-      await parseSSEStream(res.body.getReader(), (chunk) => {
-        setMessages((prev) => {
-          const last = prev.at(-1);
-          const lastText = (last?.text ?? "").replace(/▌$/, "");
-          return updateLastAssistantMessage(prev, lastText + chunk + "▌");
+      try {
+        // Backend expects `prompt` or `message`.
+        // Script Lab already uses `prompt`, so we keep it consistent.
+        const res = await axios.post('/mcp/chat', {
+          prompt: text,
+          mode,
         });
 
-        if (chatRef.current) {
-          chatRef.current.scrollTo({
-            top: chatRef.current.scrollHeight,
-            behavior: "smooth",
-          });
-        }
-      });
-    } catch (err) {
-      console.error("Assistant error:", err);
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: generateId(),
-          from: "assistant",
-          text: "(Connection error)",
-          time,
-        },
-      ]);
-    } finally {
-      setLoading(false);
-      setTimeout(() => {
-        if (chatRef.current) {
-          chatRef.current.scrollTo({
-            top: chatRef.current.scrollHeight,
-            behavior: "smooth",
-          });
-        }
-      }, 100);
-    }
-  };
+        const data = res.data || {};
+        const assistantText =
+          data.output ??
+          data.message ??
+          data.reply ??
+          (typeof data === 'string'
+            ? data
+            : JSON.stringify(data, null, 2));
 
-  const handleKeyDown = (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      sendMessage();
-    }
-  };
+        const assistantMsg = {
+          id: makeId(),
+          role: 'assistant',
+          content: assistantText,
+        };
+
+        setMessages((prev) => [...prev, assistantMsg]);
+      } catch (err) {
+        console.error('Assistant chat error:', err);
+
+        if (err.response && err.response.data) {
+          const detail =
+            err.response.data.detail ||
+            err.response.data.error ||
+            JSON.stringify(err.response.data);
+          setError(`Assistant error: ${detail}`);
+        } else if (err.message) {
+          setError(`Assistant error: ${err.message}`);
+        } else {
+          setError('Assistant error: Unknown problem talking to server.');
+        }
+      } finally {
+        setLoading(false);
+      }
+    },
+    [input, mode]
+  );
 
   return {
     messages,
-    setMessages,
     input,
     setInput,
     loading,
-    status,
-    chatRef,
-    inputRef,
-    sendMessage,
-    handleKeyDown,
+    error,
+    send, // can be called as send() or send('!os')
+    resetError,
   };
 }
+
+export default useAssistantChat;
