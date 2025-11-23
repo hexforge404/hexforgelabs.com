@@ -108,6 +108,13 @@
   margin-bottom: 0.45rem;
 }
 
+.hf-side-header-title {
+  font-size: 0.72rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #6b7280;
+}
+
 .hf-side-header-toggle {
   border: none;
   border-radius: 999px;
