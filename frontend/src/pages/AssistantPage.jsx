@@ -1,20 +1,12 @@
 // frontend/src/pages/AssistantPage.jsx
-
-import React, { useState } from "react";
-import "../components/ChatAssistant.css";
-import PromptPicker from "../components/PromptPicker";
-import { useAssistantChat } from "../hooks/useAssistantChat";
-
-// Safely convert any value to displayable text
-const renderText = (value) => {
-  if (value == null) return "";
-  if (typeof value === "string" || typeof value === "number") return String(value);
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
-  }
-};
+import React, {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
+import { useAssistantChat } from '../hooks/useAssistantChat';
+import './AssistantPage.css';
 
 const AssistantPage = () => {
   const {
@@ -22,159 +14,336 @@ const AssistantPage = () => {
     input,
     setInput,
     loading,
-    status,
-    sendMessage,
-    chatRef,
-    inputRef,
-  } = useAssistantChat("hexforge_chat_full");
+    error,
+    send,
+    resetError,
+  } = useAssistantChat({ mode: 'assistant' });
 
-  // Start with history visible on page load
-  const [showHistory, setShowHistory] = useState(true);
+  const inputRef = useRef(null);
+  const bottomRef = useRef(null);
 
-  const tools = ["!os", "!usb", "!logs", "!ping 8.8.8.8", "!uptime", "!df", "!docker"];
+  // Boot sequence state
+  const [bootStage, setBootStage] = useState(0);
+  const [bootDone, setBootDone] = useState(false);
 
-  const handleKeyDown = (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      sendMessage();
+  // Lab browser state (iframe on the right)
+  const [browserUrl, setBrowserUrl] = useState('https://hexforgelabs.com');
+  const [browserInput, setBrowserInput] = useState('https://hexforgelabs.com');
+
+  // Auto scroll chat
+  useEffect(() => {
+    if (bottomRef.current) {
+      bottomRef.current.scrollIntoView({ behavior: 'smooth' });
     }
-  };
+  }, [messages.length, loading]);
 
-  const safeMessages = Array.isArray(messages) ? messages : [];
-  const getMsgText = (msg) => renderText(msg.text ?? msg.content);
-  const userHistory = safeMessages.filter(
-    (msg) => msg.from === "user" || msg.role === "user"
+  // Boot sequence animation
+  useEffect(() => {
+    const timeouts = [
+      setTimeout(() => setBootStage(1), 200),
+      setTimeout(() => setBootStage(2), 650),
+      setTimeout(() => setBootStage(3), 1150),
+      setTimeout(() => setBootStage(4), 1650),
+      setTimeout(() => {
+        setBootStage(5);
+        setBootDone(true);
+      }, 2200),
+    ];
+
+    return () => timeouts.forEach(clearTimeout);
+  }, []);
+
+  // Very simple "assistant controls browser" hook:
+  // If latest assistant message contains a URL, update the iframe.
+  useEffect(() => {
+    const lastAssistant = [...messages]
+      .reverse()
+      .find((m) => m.role === 'assistant');
+
+    if (!lastAssistant) return;
+
+    const urlMatch = lastAssistant.content.match(
+      /(https?:\/\/[^\s)]+)|(hexforgelabs\.com[^\s)]*)/i
+    );
+    if (!urlMatch) return;
+
+    let url = urlMatch[0];
+    if (!/^https?:\/\//i.test(url)) {
+      url = 'https://' + url;
+    }
+
+    if (url !== browserUrl) {
+      setBrowserUrl(url);
+      setBrowserInput(url);
+    }
+  }, [messages, browserUrl]);
+
+  const handleChange = useCallback(
+    (e) => {
+      if (error) resetError();
+      setInput(e.target.value);
+    },
+    [error, resetError, setInput]
   );
 
+  const handleKeyDown = useCallback(
+    (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        if (!loading && bootDone) {
+          send();
+        }
+      }
+    },
+    [send, loading, bootDone]
+  );
+
+  const handleClickSend = useCallback(() => {
+    if (!loading && bootDone) {
+      send();
+    }
+  }, [send, loading, bootDone]);
+
+  const handleToolClick = useCallback(
+    (cmd) => {
+      if (loading || !bootDone) return;
+      setInput(cmd);
+      send(cmd);
+    },
+    [loading, bootDone, setInput, send]
+  );
+
+  const handleBrowserGo = useCallback(
+    (e) => {
+      e.preventDefault();
+      let url = browserInput.trim();
+      if (!url) return;
+      if (!/^https?:\/\//i.test(url)) {
+        url = 'https://' + url;
+      }
+      setBrowserUrl(url);
+      setBrowserInput(url);
+    },
+    [browserInput]
+  );
+
+  const browserDisabled = !bootDone; // optional: lock browser until booted
+
   return (
-    <div className="assistant-page">
-      {/* Top header */}
-      <div className="chat-header">
-        <strong>HexForge Assistant Lab</strong>
-        <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-          <span
-            className={`status-dot ${status}`}
-            title={`Status: ${status}`}
-          />
-          <button
-            onClick={() => setShowHistory((v) => !v)}
-            style={{ fontSize: "12px" }}
-          >
-            {showHistory ? "🡸 Hide History" : "🡺 Show History"}
-          </button>
-        </div>
-      </div>
-
-      {/* Tool buttons + prompt picker */}
-      <div className="chat-tools">
-        {tools.map((cmd, i) => (
-          <button key={i} onClick={() => setInput(cmd)}>
-            {cmd}
-          </button>
-        ))}
-        <PromptPicker onSelect={(text) => setInput(text)} />
-      </div>
-
-      {/* Main conversation area */}
-      <div className="chat-messages fullscreen" ref={chatRef}>
-        {safeMessages.map((msg, index) => (
-          <div
-            key={msg.id || msg.time || index}
-            className={`chat-msg ${msg.from || msg.role || "assistant"}`}
-          >
-            <pre>{getMsgText(msg)}</pre>
-            {msg.time && <small>{renderText(msg.time)}</small>}
-          </div>
-        ))}
-
-        {loading && <div className="chat-msg assistant typing">▌</div>}
-      </div>
-
-      {/* History drawer – always in DOM, visibility controlled by showHistory */}
-      <div
-        className="chat-history"
-        style={{ display: showHistory ? "block" : "none" }}
-      >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            marginBottom: "4px",
+    <div className="hf-assistant-page">
+      <header className="hf-assistant-header">
+        <div className="hf-assistant-logo">⚙ HexForge Assistant Lab</div>
+        <button
+          className="hf-assistant-history-toggle"
+          onClick={() => {
+            const el = document.querySelector('.hf-assistant-history');
+            if (el) {
+              el.classList.toggle('hf-assistant-history--hidden');
+            }
           }}
         >
-          <h4 style={{ margin: 0 }}>🧠 History</h4>
-          <button
-            onClick={() => setShowHistory(false)}
-            style={{
-              border: "none",
-              background: "transparent",
-              color: "inherit",
-              cursor: "pointer",
-              fontSize: "14px",
-            }}
-            title="Close history"
-          >
-            ✖
-          </button>
-        </div>
-
-        <ul>
-          {userHistory.map((msg, index) => {
-            const fullText = getMsgText(msg);
-            const preview =
-              fullText.length > 40 ? fullText.slice(0, 37) + "..." : fullText;
-
-            return (
-              <li key={msg.id || msg.time || index}>
-                <button
-                  onClick={() => setInput(fullText)}
-                  style={{
-                    width: "100%",
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "flex-start",
-                    textAlign: "left",
-                  }}
-                >
-                  <div>
-                    🧑{" "}
-                    <span style={{ fontWeight: 500 }}>
-                      {preview || "(empty message)"}
-                    </span>
-                    {msg.tag && (
-                      <span className="tag-label" style={{ marginLeft: 6 }}>
-                        {renderText(msg.tag)}
-                      </span>
-                    )}
-                  </div>
-                  {msg.time && (
-                    <small style={{ opacity: 0.6, marginTop: 2 }}>
-                      {renderText(msg.time)}
-                    </small>
-                  )}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
-
-      {/* Input row */}
-      <div className="chat-input">
-        <input
-          ref={inputRef}
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Ask or command..."
-          disabled={loading}
-        />
-        <button onClick={sendMessage} disabled={loading || !input.trim()}>
-          Send
+          Show History
         </button>
-      </div>
+      </header>
+
+      <main className="hf-assistant-main">
+        {/* Left column: chats / projects / models */}
+        <aside className="hf-assistant-history hf-assistant-history--hidden">
+          <div className="hf-side-tabs">
+            <button className="hf-side-tab is-active">Chats</button>
+            <button className="hf-side-tab">Projects</button>
+            <button className="hf-side-tab">Models</button>
+          </div>
+
+          <div className="hf-side-list">
+            <div className="hf-side-item is-active">Current session</div>
+            <div className="hf-side-item">Skull BadUSB planning</div>
+            <div className="hf-side-item">Recon Unit recovery</div>
+            <div className="hf-side-item">Content engine notes</div>
+          </div>
+
+          <div className="hf-side-footer">
+            <span className="hf-side-label">Active model:</span>
+            <div className="hf-model-chips">
+              <span className="hf-model-chip">Lab Core</span>
+              <span className="hf-model-chip">Tool Runner</span>
+              <span className="hf-model-chip is-active">HexForge Scribe</span>
+            </div>
+            <p className="hf-side-note">
+              (Backend will treat these the same for now – later we can route
+              tools / prompts per model.)
+            </p>
+          </div>
+        </aside>
+
+        {/* Center: assistant shell */}
+        <section className="hf-assistant-shell">
+          {/* Boot overlay */}
+          {!bootDone && (
+            <div className="hf-boot-overlay">
+              <div className="hf-boot-window">
+                <div className="hf-boot-title">
+                  HexForge Assistant • Boot Sequence
+                </div>
+                <ul className="hf-boot-lines">
+                  <li className={bootStage >= 1 ? 'is-visible' : ''}>
+                    [1/4] Initializing assistant core…
+                  </li>
+                  <li className={bootStage >= 2 ? 'is-visible' : ''}>
+                    [2/4] Loading tools: <code>!os</code>, <code>!uptime</code>,{' '}
+                    <code>!df</code>, <code>!docker</code>…
+                  </li>
+                  <li className={bootStage >= 3 ? 'is-visible' : ''}>
+                    [3/4] Linking Script Lab, Store, Blog, Lab Browser…
+                  </li>
+                  <li className={bootStage >= 4 ? 'is-visible' : ''}>
+                    [4/4] Model online: <strong>HexForge&nbsp;Scribe</strong>
+                  </li>
+                </ul>
+                <div className="hf-boot-footer">
+                  <span
+                    className={
+                      'hf-boot-status-dot ' +
+                      (bootStage >= 4 ? 'is-ready' : '')
+                    }
+                  />
+                  <span className="hf-boot-status-label">
+                    {bootStage < 4 ? 'Warming up…' : 'Ready'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="hf-assistant-toolbar">
+            <span className="hf-assistant-toolbar-label">Tools:</span>
+            <button
+              className="hf-assistant-toolbar-chip"
+              onClick={() => handleToolClick('!os')}
+              disabled={loading || !bootDone}
+            >
+              !os
+            </button>
+            <button
+              className="hf-assistant-toolbar-chip"
+              onClick={() => handleToolClick('!uptime')}
+              disabled={loading || !bootDone}
+            >
+              !uptime
+            </button>
+            <button
+              className="hf-assistant-toolbar-chip"
+              onClick={() => handleToolClick('!df')}
+              disabled={loading || !bootDone}
+            >
+              !df
+            </button>
+            <button
+              className="hf-assistant-toolbar-chip"
+              onClick={() => handleToolClick('!docker')}
+              disabled={loading || !bootDone}
+            >
+              !docker
+            </button>
+          </div>
+
+          <div className="hf-assistant-messages">
+            {messages.map((msg) => (
+              <div
+                key={msg.id}
+                className={
+                  'hf-assistant-message ' +
+                  (msg.role === 'assistant'
+                    ? 'hf-assistant-message--assistant'
+                    : 'hf-assistant-message--user')
+                }
+              >
+                <div className="hf-assistant-message-role">
+                  {msg.role === 'assistant' ? 'Assistant' : 'You'}
+                </div>
+                <div className="hf-assistant-message-body">
+                  {msg.content}
+                </div>
+              </div>
+            ))}
+
+            {loading && (
+              <div className="hf-assistant-message hf-assistant-message--assistant">
+                <div className="hf-assistant-message-role">Assistant</div>
+                <div className="hf-assistant-message-body hf-assistant-typing">
+                  Running tools…
+                </div>
+              </div>
+            )}
+
+            {error && <div className="hf-assistant-error">{error}</div>}
+
+            <div ref={bottomRef} />
+          </div>
+
+          <footer className="hf-assistant-input-bar">
+            <textarea
+              ref={inputRef}
+              className="hf-assistant-input"
+              placeholder={
+                bootDone
+                  ? 'Type a question or command…'
+                  : 'Assistant is booting…'
+              }
+              value={input}
+              onChange={handleChange}
+              onKeyDown={handleKeyDown}
+              disabled={loading || !bootDone}
+              rows={1}
+            />
+            <button
+              className="hf-assistant-send"
+              onClick={handleClickSend}
+              disabled={loading || !bootDone || !input.trim()}
+            >
+              Send
+            </button>
+          </footer>
+        </section>
+
+        {/* Right: Lab browser column */}
+        <aside className="hf-lab-browser">
+          <div className="hf-lab-browser-header">
+            <span className="section-label">LAB BROWSER</span>
+          </div>
+
+          <form className="hf-lab-browser-bar" onSubmit={handleBrowserGo}>
+            <input
+              type="text"
+              className="hf-lab-browser-input"
+              value={browserInput}
+              onChange={(e) => setBrowserInput(e.target.value)}
+              disabled={browserDisabled}
+              aria-label="Lab browser address"
+            />
+            <button
+              type="submit"
+              className="hf-lab-browser-go"
+              disabled={browserDisabled}
+            >
+              Go
+            </button>
+          </form>
+
+          <div className="hf-lab-browser-frame">
+            <iframe
+              title="HexForge Lab Browser"
+              src={browserUrl}
+              className="hf-lab-browser-iframe"
+            />
+            <p className="hf-lab-browser-caption">
+              The assistant can describe and suggest URLs. As we refine tools,
+              we can let it send open-URL instructions to update this panel
+              automatically.
+            </p>
+          </div>
+        </aside>
+      </main>
     </div>
   );
 };

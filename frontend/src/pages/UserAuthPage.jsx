@@ -1,193 +1,206 @@
 // frontend/src/pages/UserAuthPage.jsx
 import React, { useState } from 'react';
+import PropTypes from 'prop-types';
 import axios from 'axios';
-import { successToast, errorToast } from '../utils/toastUtils';
+import { useNavigate } from 'react-router-dom';
+import { errorToast, successToast } from '../utils/toastUtils';
 import './UserAuthPage.css';
 
 const api = axios.create({
   baseURL: '/api',
   withCredentials: true,
-  timeout: 5000,
-  headers: {
-    Accept: 'application/json',
-    'Content-Type': 'application/json',
-  },
+  timeout: 5000
 });
 
-const UserAuthPage = () => {
+const UserAuthPage = ({ onAuth }) => {
   const [mode, setMode] = useState('login'); // 'login' | 'register'
-  const [identifier, setIdentifier] = useState(''); // username or email for login
-  const [username, setUsername] = useState('');     // for register
-  const [email, setEmail] = useState('');           // for register
+  const [identifier, setIdentifier] = useState('');
+  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState('');
 
-  const switchToLogin = () => {
-    setMode('login');
-    setError('');
+  const navigate = useNavigate();
+
+  const resetFields = () => {
+    setPassword('');
   };
 
-  const switchToRegister = () => {
-    setMode('register');
-    setError('');
-  };
-
-  const handleSubmit = async (e) => {
+  const handleLogin = async e => {
     e.preventDefault();
-    setError('');
     setSubmitting(true);
 
     try {
-      if (mode === 'register') {
-        // Create account
-        const res = await api.post('/users/register', {
-          username: username.trim(),
-          email: email.trim(),
-          password,
-        });
+      const body = identifier.includes('@')
+        ? { email: identifier, password }
+        : { username: identifier, password };
 
-        if (!res || res.status !== 201) {
-          throw new Error('Registration failed');
-        }
+      const res = await api.post('/users/login', body);
+      successToast('Signed in successfully');
 
-        successToast('Account created! You can sign in now.');
-        // optional: auto-fill identifier with email
-        setIdentifier(email.trim());
-        setMode('login');
-      } else {
-        // Login
-        const res = await api.post('/users/login', {
-          identifier: identifier.trim(),
-          password,
-        });
-
-        if (!res || res.status !== 200) {
-          throw new Error('Login failed');
-        }
-
-        // Verify session
-        const me = await api.get('/users/me');
-        if (!me.data?.loggedIn) {
-          throw new Error('Login did not stick. Please try again.');
-        }
-
-        successToast('Signed in!');
-        // You can redirect to /account or just let the nav update
-        window.location.href = '/account';
+      if (res.data?.user) {
+        onAuth?.(res.data.user);
       }
+
+      resetFields();
+      navigate('/account');
     } catch (err) {
-      console.error('User auth failed:', err);
+      console.error('User login failed:', err);
       const msg =
         err.response?.data?.message ||
-        (err.response?.data?.errors &&
-          err.response.data.errors.map((e) => e.msg).join(', ')) ||
-        err.message ||
-        'Something went wrong. Please try again.';
-      setError(msg);
+        err.response?.data?.errors?.[0]?.msg ||
+        'Login failed';
       errorToast(msg);
     } finally {
       setSubmitting(false);
     }
   };
 
+  const handleRegister = async e => {
+    e.preventDefault();
+    setSubmitting(true);
+
+    try {
+      const res = await api.post('/users/register', {
+        username,
+        email,
+        password
+      });
+
+      successToast('Account created! You can now sign in.');
+
+      if (res.data?.user) {
+        onAuth?.(res.data.user);
+      }
+
+      resetFields();
+      navigate('/account');
+    } catch (err) {
+      console.error('User registration failed:', err);
+      const msg =
+        err.response?.data?.message ||
+        err.response?.data?.errors?.[0]?.msg ||
+        'Registration failed';
+      errorToast(msg);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const isLogin = mode === 'login';
+
   return (
-    <div className="user-auth-page">
-      <div className="user-auth-card">
-        <h1 className="user-auth-title">
-          {mode === 'login' ? 'Sign in to HexForge' : 'Create your HexForge account'}
-        </h1>
+    <div className="auth-page">
+      <div className="auth-card">
+        <h2 className="auth-title">
+          {isLogin ? 'Sign in to HexForge' : 'Create a HexForge Account'}
+        </h2>
 
-        {error && <div className="user-auth-error">{error}</div>}
+        {isLogin ? (
+          <form onSubmit={handleLogin} className="auth-form">
+            <div className="auth-field">
+              <label>Username or Email</label>
+              <input
+                type="text"
+                value={identifier}
+                onChange={e => setIdentifier(e.target.value)}
+                required
+                autoComplete="username"
+              />
+            </div>
 
-        <form className="user-auth-form" onSubmit={handleSubmit}>
-          {mode === 'login' ? (
-            <>
-              <label className="user-auth-label">
-                <span>Username or Email</span>
-                <input
-                  type="text"
-                  className="user-auth-input"
-                  autoComplete="username"
-                  value={identifier}
-                  onChange={(e) => setIdentifier(e.target.value)}
-                />
-              </label>
-            </>
-          ) : (
-            <>
-              <label className="user-auth-label">
-                <span>Username</span>
-                <input
-                  type="text"
-                  className="user-auth-input"
-                  autoComplete="username"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                />
-              </label>
+            <div className="auth-field">
+              <label>Password</label>
+              <input
+                type="password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                required
+                autoComplete="current-password"
+              />
+            </div>
 
-              <label className="user-auth-label">
-                <span>Email</span>
-                <input
-                  type="email"
-                  className="user-auth-input"
-                  autoComplete="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                />
-              </label>
-            </>
-          )}
+            <button
+              type="submit"
+              className="auth-submit"
+              disabled={submitting}
+            >
+              {submitting ? 'Signing in...' : '🔒 Sign In'}
+            </button>
 
-          <label className="user-auth-label">
-            <span>Password</span>
-            <input
-              type="password"
-              className="user-auth-input"
-              autoComplete={
-                mode === 'login' ? 'current-password' : 'new-password'
-              }
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-          </label>
-
-          <button
-            type="submit"
-            className="user-auth-button"
-            disabled={submitting}
-          >
-            {submitting
-              ? mode === 'login'
-                ? 'Signing in…'
-                : 'Creating account…'
-              : mode === 'login'
-              ? '🔓 Sign In'
-              : '🚀 Create Account'}
-          </button>
-        </form>
-
-        <div className="user-auth-switch">
-          {mode === 'login' ? (
-            <>
-              <span>New here?</span>
-              <button type="button" onClick={switchToRegister}>
+            <p className="auth-toggle">
+              New here?{' '}
+              <button
+                type="button"
+                onClick={() => setMode('register')}
+                className="auth-toggle-link"
+              >
                 Create an account
               </button>
-            </>
-          ) : (
-            <>
-              <span>Already have an account?</span>
-              <button type="button" onClick={switchToLogin}>
+            </p>
+          </form>
+        ) : (
+          <form onSubmit={handleRegister} className="auth-form">
+            <div className="auth-field">
+              <label>Username</label>
+              <input
+                type="text"
+                value={username}
+                onChange={e => setUsername(e.target.value)}
+                required
+                autoComplete="username"
+              />
+            </div>
+
+            <div className="auth-field">
+              <label>Email</label>
+              <input
+                type="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                required
+                autoComplete="email"
+              />
+            </div>
+
+            <div className="auth-field">
+              <label>Password</label>
+              <input
+                type="password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                required
+                autoComplete="new-password"
+              />
+            </div>
+
+            <button
+              type="submit"
+              className="auth-submit"
+              disabled={submitting}
+            >
+              {submitting ? 'Creating account...' : '🚀 Create Account'}
+            </button>
+
+            <p className="auth-toggle">
+              Already have an account?{' '}
+              <button
+                type="button"
+                onClick={() => setMode('login')}
+                className="auth-toggle-link"
+              >
                 Sign in
               </button>
-            </>
-          )}
-        </div>
+            </p>
+          </form>
+        )}
       </div>
     </div>
   );
+};
+
+UserAuthPage.propTypes = {
+  onAuth: PropTypes.func
 };
 
 export default UserAuthPage;

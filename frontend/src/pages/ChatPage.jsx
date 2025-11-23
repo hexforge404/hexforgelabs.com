@@ -1,17 +1,12 @@
-import React from "react";
-import "./ChatPage.css";
-import { useAssistantChat } from "../hooks/useAssistantChat";
-
-// Safely convert any value to displayable text
-const renderText = (value) => {
-  if (value == null) return "";
-  if (typeof value === "string" || typeof value === "number") return String(value);
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
-  }
-};
+// frontend/src/pages/ChatPage.jsx
+import React, {
+  useCallback,
+  useRef,
+  useEffect,
+  useState,
+} from 'react';
+import { useAssistantChat } from '../hooks/useAssistantChat';
+import './ChatPage.css';
 
 const ChatPage = () => {
   const {
@@ -19,65 +14,133 @@ const ChatPage = () => {
     input,
     setInput,
     loading,
-    status,
-    sendMessage,
-    chatRef,
-    inputRef,
-  } = useAssistantChat("hexforge_chat_main");
+    error,
+    send,
+    resetError,
+  } = useAssistantChat({ mode: 'chat' });
 
-  const handleKeyDown = (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      sendMessage();
+  const inputRef = useRef(null);
+  const bottomRef = useRef(null);
+
+  // Simple "boot" delay so the model feels like it's waking up
+  const [bootDone, setBootDone] = useState(false);
+
+  useEffect(() => {
+    const t = setTimeout(() => setBootDone(true), 1500);
+    return () => clearTimeout(t);
+  }, []);
+
+  // Auto-scroll to bottom on new messages
+  useEffect(() => {
+    if (bottomRef.current) {
+      bottomRef.current.scrollIntoView({ behavior: 'smooth' });
     }
-  };
+  }, [messages.length]);
 
-  const safeMessages = Array.isArray(messages) ? messages : [];
+  const handleChange = useCallback(
+    (e) => {
+      if (error) resetError();
+      setInput(e.target.value);
+    },
+    [error, resetError, setInput]
+  );
+
+  const handleKeyDown = useCallback(
+    (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        if (!loading && bootDone) {
+          send();
+        }
+      }
+    },
+    [send, loading, bootDone]
+  );
+
+  const handleClickSend = useCallback(() => {
+    if (!loading && bootDone) {
+      send();
+    }
+  }, [send, loading, bootDone]);
 
   return (
-    <div
-      className="chat-container"
-      style={{
-        background: `url(${process.env.PUBLIC_URL}/images/hero-background.png) no-repeat center center fixed`,
-        backgroundSize: "cover",
-      }}
-    >
-      <div className="chat-header">
-        <img
-          src={`${process.env.PUBLIC_URL}/images/hexforge-logo-full.png`}
-          alt="HexForge Labs"
-          className="chat-logo"
-        />
-        <strong>HexForge Assistant</strong>
-        <span className={`status-dot ${status}`} />
-      </div>
+    <div className="hf-chat-page">
+      <div className="hf-chat-shell">
+        <header className="hf-chat-header">
+          <div className="hf-chat-logo">HexForge Labs</div>
+          <div className="hf-chat-title">HexForge Assistant</div>
+        </header>
 
-      <div className="chat-messages" ref={chatRef}>
-        {safeMessages.map((msg, index) => (
-          <div
-            key={msg.id || msg.time || index}
-            className={`chat-msg ${msg.from || msg.role || "assistant"}`}
-          >
-            <pre>{renderText(msg.text ?? msg.content)}</pre>
+        <main className="hf-chat-main">
+          <div className="hf-chat-messages">
+            {/* Light boot hint while the assistant is "spinning up" */}
+            {!bootDone && (
+              <div className="hf-chat-message hf-chat-message--assistant">
+                <div className="hf-chat-message-role">Assistant</div>
+                <div className="hf-chat-message-body hf-chat-typing">
+                  Connecting to HexForge Scribe core…
+                </div>
+              </div>
+            )}
+
+            {messages.map((msg) => (
+              <div
+                key={msg.id}
+                className={
+                  'hf-chat-message ' +
+                  (msg.role === 'assistant'
+                    ? 'hf-chat-message--assistant'
+                    : 'hf-chat-message--user')
+                }
+              >
+                <div className="hf-chat-message-role">
+                  {msg.role === 'assistant' ? 'Assistant' : 'You'}
+                </div>
+                <div className="hf-chat-message-body">
+                  {msg.content}
+                </div>
+              </div>
+            ))}
+
+            {loading && (
+              <div className="hf-chat-message hf-chat-message--assistant">
+                <div className="hf-chat-message-role">Assistant</div>
+                <div className="hf-chat-message-body hf-chat-typing">
+                  Thinking…
+                </div>
+              </div>
+            )}
+
+            {error && <div className="hf-chat-error">{error}</div>}
+
+            <div ref={bottomRef} />
           </div>
-        ))}
+        </main>
 
-        {loading && <div className="chat-msg assistant typing">▌</div>}
-      </div>
-
-      <div className="chat-input">
-        <input
-          ref={inputRef}
-          type="text"
-          placeholder="Ask or command..."
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          disabled={loading}
-        />
-        <button onClick={sendMessage} disabled={loading || !input.trim()}>
-          ➤
-        </button>
+        <footer className="hf-chat-input-bar">
+          <textarea
+            ref={inputRef}
+            className="hf-chat-input"
+            placeholder={
+              bootDone
+                ? 'Ask or command…'
+                : 'Connecting to HexForge Scribe…'
+            }
+            value={input}
+            onChange={handleChange}
+            onKeyDown={handleKeyDown}
+            disabled={loading || !bootDone}
+            rows={1}
+          />
+          <button
+            className="hf-chat-send"
+            onClick={handleClickSend}
+            disabled={loading || !bootDone || !input.trim()}
+            aria-label="Send message"
+          >
+            ▶
+          </button>
+        </footer>
       </div>
     </div>
   );
