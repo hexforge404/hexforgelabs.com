@@ -143,7 +143,12 @@ function SuccessPage() {
   return (
     <div className="success-container">
       <div className="success-card">
-        <img src="/images/hexforge-logo-removebg.png" alt="HexForge Labs Logo" style={{ width: '160px', marginBottom: '1rem' }} />
+        <img
+  src={process.env.PUBLIC_URL + '/images/hexforge-logo-removebg.png'}
+  alt="HexForge Labs Logo"
+  style={{ width: '160px', marginBottom: '1rem' }}
+/>
+
         <h2>🎉 Order Received</h2>
         <p style={{ color: '#52e3c2', fontSize: '0.95rem' }}>✅ Your transaction has been securely processed.</p>
         <p style={{ color: '#8892b0', fontSize: '0.85rem' }}>🔒 SSL Secured — Your data is encrypted and safe.</p>

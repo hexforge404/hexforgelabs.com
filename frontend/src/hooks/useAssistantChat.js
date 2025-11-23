@@ -43,67 +43,95 @@ export function useAssistantChat({ mode = 'chat' } = {}) {
    * - Otherwise use the current input state.
    */
   const send = useCallback(
-    async (textOverride) => {
-      const raw = textOverride != null ? textOverride : input;
-      const text = (raw || '').trim();
-      if (!text) return;
+  async (textOverride) => {
+    // 1) Decide what text we’re sending
+    const raw = textOverride != null ? textOverride : input;
+    const text = (raw || '').trim();
+    if (!text) return;
 
-      // Optimistic user message
-      const userMsg = {
+    // 2) Build optimistic user message (with id for React keys)
+    const userMsg = {
+      id: makeId(),
+      role: 'user',
+      content: text,
+    };
+
+    // 3) Push user message and clear the input immediately
+    setMessages((prev) => [...prev, userMsg]);
+    setInput('');
+    setLoading(true);
+    setError(null);
+
+    try {
+      // 4) Build simple history array (roles + content only)
+      const history = [...messages, userMsg].map((m) => ({
+        role: m.role,
+        content: m.content,
+      }));
+
+      // *** IMPORTANT PART ***
+      // Backend wants `prompt` or `message` at top level.
+      // We give it `prompt` plus an optional `history` and `mode`.
+      const res = await axios.post('/mcp/chat', {
+        prompt: text,   // <- satisfies backend requirement
+        mode,
+        history,        // <- optional, backend can use or ignore
+      });
+
+      const data = res.data || {};
+
+// Prefer a top-level string-like answer first
+let primary =
+  data.output ??
+  data.message ??
+  data.reply ??
+  data.text ??
+  null;
+
+// If no primary string, but we have a nested `response` object (your tool shape),
+// unwrap that and pretty-print it.
+if (!primary && data.response) {
+  primary = data.response;
+}
+
+// Fallback: if primary is still null, just use the whole payload
+const payloadToRender = primary ?? data;
+
+const assistantText =
+  typeof payloadToRender === 'string'
+    ? payloadToRender
+    : JSON.stringify(payloadToRender, null, 2);
+
+
+      const assistantMsg = {
         id: makeId(),
-        role: 'user',
-        content: text,
+        role: 'assistant',
+        content: assistantText,
       };
 
-      setMessages((prev) => [...prev, userMsg]);
-      setInput(''); // clear box right away
-      setLoading(true);
-      setError(null);
+      setMessages((prev) => [...prev, assistantMsg]);
+    } catch (err) {
+      console.error('Assistant chat error:', err);
 
-      try {
-        // Backend expects `prompt` or `message`.
-        // Script Lab already uses `prompt`, so we keep it consistent.
-        const res = await axios.post('/mcp/chat', {
-          prompt: text,
-          mode,
-        });
-
-        const data = res.data || {};
-        const assistantText =
-          data.output ??
-          data.message ??
-          data.reply ??
-          (typeof data === 'string'
-            ? data
-            : JSON.stringify(data, null, 2));
-
-        const assistantMsg = {
-          id: makeId(),
-          role: 'assistant',
-          content: assistantText,
-        };
-
-        setMessages((prev) => [...prev, assistantMsg]);
-      } catch (err) {
-        console.error('Assistant chat error:', err);
-
-        if (err.response && err.response.data) {
-          const detail =
-            err.response.data.detail ||
-            err.response.data.error ||
-            JSON.stringify(err.response.data);
-          setError(`Assistant error: ${detail}`);
-        } else if (err.message) {
-          setError(`Assistant error: ${err.message}`);
-        } else {
-          setError('Assistant error: Unknown problem talking to server.');
-        }
-      } finally {
-        setLoading(false);
+      if (err.response && err.response.data) {
+        const detail =
+          err.response.data.detail ||
+          err.response.data.error ||
+          JSON.stringify(err.response.data);
+        setError(`Assistant error: ${detail}`);
+      } else if (err.message) {
+        setError(`Assistant error: ${err.message}`);
+      } else {
+        setError('Assistant error: Unknown problem talking to server.');
       }
-    },
-    [input, mode]
-  );
+    } finally {
+      setLoading(false);
+    }
+  },
+  [input, mode, messages]
+);
+
+
 
   return {
     messages,

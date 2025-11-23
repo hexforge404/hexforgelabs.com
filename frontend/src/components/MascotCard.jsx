@@ -5,7 +5,12 @@ import './MascotCard.css';
 const MascotCard = () => {
   return (
     <div className="mascot-card">
-      <img src="/images/hexforge-logo-removebg.png" alt="HexForge Mascot" className="mascot-image" />
+      <img
+  src={process.env.PUBLIC_URL + '/images/hexforge-logo-removebg.png'}
+  alt="HexForge Mascot"
+  className="mascot-image"
+/>
+
       <div className="mascot-text">
         <h1>Welcome to HexForge Labs</h1>
         <p>Discover hacking tools, DIY builds, and blog content made for rebels, makers, and tinkerers.</p>

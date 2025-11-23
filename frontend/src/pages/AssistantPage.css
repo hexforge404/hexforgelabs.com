@@ -50,6 +50,15 @@
   color: #67f9d4;
 }
 
+/* Generic small section label (used in sidebar + browser) */
+
+.section-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: #9ca3af;
+}
+
 /* =========================
    Main 3-column grid
    ========================= */
@@ -63,7 +72,14 @@
   align-items: flex-start;
 }
 
-/* History column (left) */
+/* When history is hidden, use a 2-column layout so chat isn't squished */
+.hf-assistant-main.hf-assistant-main--no-history {
+  grid-template-columns: minmax(0, 1.9fr) minmax(0, 1.5fr);
+}
+
+/* =========================
+   History column (left)
+   ========================= */
 
 .hf-assistant-history {
   background: radial-gradient(circle at top left, #020617 0, #020617 45%, #020617 100%);
@@ -78,9 +94,32 @@
   overflow-y: auto;
 }
 
-/* Hide history when toggle is off */
+/* Hide history when layout is collapsed */
 .hf-assistant-history--hidden {
   display: none;
+}
+
+/* Mini header inside sidebar */
+
+.hf-side-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.45rem;
+}
+
+.hf-side-header-toggle {
+  border: none;
+  border-radius: 999px;
+  padding: 0.18rem 0.6rem;
+  font-size: 0.7rem;
+  cursor: pointer;
+  background: rgba(15, 23, 42, 0.95);
+  color: #9ca3af;
+}
+
+.hf-side-header-toggle:hover {
+  color: #e5e7eb;
 }
 
 /* Tabs */
@@ -498,6 +537,12 @@
   .hf-assistant-main {
     grid-template-columns: 230px minmax(0, 1.8fr);
     grid-template-rows: auto auto;
+  }
+
+  /* On medium screens with history hidden, collapse to a single column for the shell,
+     and push the browser below */
+  .hf-assistant-main.hf-assistant-main--no-history {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .hf-lab-browser {

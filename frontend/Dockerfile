@@ -3,24 +3,22 @@ FROM node:18 AS builder
 WORKDIR /app
 
 # Install dependencies
-COPY package*.json ./
+COPY package*.json jsconfig.json ./
 RUN npm install
 
-# Copy app and build it
+# Copy app source + config and build it
 COPY public ./public
 COPY src ./src
-COPY package.json ./
-COPY package-lock.json ./
 
 RUN npm run build
+
+# Ensure public/images is copied into the final build output
+RUN mkdir -p build/images && cp -R public/images/* build/images/
+
 
 # === Production Stage ===
 FROM nginx:stable
 COPY --from=builder /app/build /usr/share/nginx/html
-# REMOVE this line to avoid double-mounting:
-COPY nginx/default.conf /etc/nginx/conf.d/default.conf
-COPY public/images /usr/share/nginx/html/images
 
 EXPOSE 80
-
 CMD ["nginx", "-g", "daemon off;"]
