@@ -52,6 +52,9 @@ SCRIPT_LAB_URL = os.getenv(
 )
 SCRIPT_LAB_TOKEN = os.getenv("SCRIPT_LAB_TOKEN", "")  # shared secret with backend
 
+BACKEND_BASE_URL = os.getenv("BACKEND_BASE_URL", "http://hexforge-backend:8000")
+
+
 # 🧠 In-memory per-session history (RAM only for now)
 SESSION_HISTORY: Dict[str, List[dict]] = {}
 MAX_TURNS_PER_SESSION = int(os.getenv("ASSISTANT_MAX_TURNS", "40"))
@@ -279,7 +282,7 @@ async def _handle_chat(req: Request):
             try:
                 async with httpx.AsyncClient(timeout=5.0) as client:
                     r = await client.get(
-                        "http://hexforge-backend:8000/api/memory/all"
+                        f"{BACKEND_BASE_URL.rstrip('/')}/api/memory/all"
                     )
                     data = r.json()
                 return await safe_wrap(
@@ -343,10 +346,29 @@ async def _handle_chat(req: Request):
                 turns = SESSION_HISTORY.setdefault(session_id, [])
                 turns.append({"role": "user", "content": message})
                 turns.append({"role": "assistant", "content": reply})
+
+                # Trim old turns
                 if len(turns) > MAX_TURNS_PER_SESSION:
                     turns[:] = turns[-MAX_TURNS_PER_SESSION :]
 
+                # Also persist to backend (fire-and-forget)
+                try:
+                    async with httpx.AsyncClient(timeout=5.0) as client:
+                        await client.post(
+                            f"{BACKEND_BASE_URL.rstrip('/')}/api/assistant-sessions/{session_id}/append",
+                            json={
+                                "model": requested_model_label or ollama_model,
+                                "messages": [
+                                    {"role": "user", "content": message},
+                                    {"role": "assistant", "content": reply},
+                                ],
+                            },
+                        )
+                except Exception as e:
+                    print("[sessions] persist error:", e)
+
             return JSONResponse({"response": reply})
+
         except Exception as e:
             print("Ollama error:", e)
             traceback.print_exc()
@@ -355,9 +377,10 @@ async def _handle_chat(req: Request):
             )
 
     except Exception as e:
-        print("Chat handler crash:", e)
+        print("Chat handler error:", e)
         traceback.print_exc()
-        return JSONResponse({"response": f"❌ Internal error: {e}"})
+        return JSONResponse({"response": f"❌ Chat handler error: {e}"})
+
 
 
 # === Chat Endpoints (both paths) ===

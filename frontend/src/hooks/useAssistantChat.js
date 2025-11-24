@@ -1,23 +1,19 @@
-// frontend/src/hooks/useAssistantChat.js
-import { useState, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
-import { ASSISTANT_URL } from "../config";
+import { ASSISTANT_URL, API_URL } from "../config";
 
-// Simple ID helper
+// Simple ID generator
 const makeId = () => `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
 /**
- * HexForge Assistant chat hook
+ * HexForge Assistant Chat Hook (with full session persistence)
  *
- * Usage:
- * const {
- *   messages, input, setInput, loading, error,
- *   send, resetError
- * } = useAssistantChat({ mode: "assistant", model: activeModel, sessionId });
+ * Props:
+ *   model      - "Tool Runner", "Lab Core", "HexForge Scribe"
+ *   sessionId  - "session-7", "skull-badusb", etc.
+ *   mode       - always "assistant" for now
  */
-export function useAssistantChat(options = {}) {
-  const { mode = "assistant", model, sessionId } = options;
-
+export function useAssistantChat({ model, sessionId, mode = "assistant" }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -25,36 +21,68 @@ export function useAssistantChat(options = {}) {
 
   const resetError = useCallback(() => setError(""), []);
 
+  // ---------------------------------------------------------
+  // 1) Load session history from backend when sessionId changes
+  // ---------------------------------------------------------
+  useEffect(() => {
+    if (!sessionId) return;
+
+    let mounted = true;
+
+    async function loadSession() {
+      try {
+        const url = `${API_URL}/assistant-sessions/${sessionId}`;
+        const res = await axios.get(url);
+        const data = res.data || {};
+
+        if (!mounted) return;
+
+        const loaded = (data.messages || []).map((m) => ({
+          id: makeId(),
+          role: m.role,
+          content: m.content,
+        }));
+
+        setMessages(loaded);
+      } catch (err) {
+        console.error("[assistant] failed to load session", err);
+      }
+    }
+
+    loadSession();
+    return () => {
+      mounted = false;
+    };
+  }, [sessionId]);
+
+  // ---------------------------------------------------------
+  // 2) Send a message
+  // ---------------------------------------------------------
   const send = useCallback(
     async (overrideText) => {
       const text = (overrideText ?? input).trim();
-      if (!text || loading) return;
+      if (!text || loading || !sessionId) return;
 
       setLoading(true);
       setError("");
 
-      // push user message immediately for snappy UI
-      setMessages((prev) => [
-        ...prev,
-        { id: makeId(), role: "user", content: text },
-      ]);
-      if (!overrideText) {
-        setInput("");
-      }
+      // UI: push user message immediately
+      const userMsg = { id: makeId(), role: "user", content: text };
+      setMessages((prev) => [...prev, userMsg]);
+      if (!overrideText) setInput("");
 
       try {
+        // Call the assistant service (default /mcp/chat)
         const res = await axios.post(
           `${ASSISTANT_URL.replace(/\/$/, "")}/chat`,
           {
             message: text,
             mode,
             model,
-            session_id: sessionId, // 🔗 send active session to backend
+            session_id: sessionId,
           },
           {
-            headers: {
-              "Content-Type": "application/json",
-            },
+            headers: { "Content-Type": "application/json" },
           }
         );
 
@@ -64,26 +92,35 @@ export function useAssistantChat(options = {}) {
             ? data.response
             : JSON.stringify(data, null, 2);
 
-        setMessages((prev) => [
-          ...prev,
-          { id: makeId(), role: "assistant", content },
-        ]);
+        const assistantMsg = {
+          id: makeId(),
+          role: "assistant",
+          content,
+        };
+
+        // UI update
+        setMessages((prev) => [...prev, assistantMsg]);
+
+        // (Optional) Local copy? Backend already saves via Python → Express
       } catch (err) {
         console.error("[assistant] send error:", err);
         let msg = "Something went wrong talking to the assistant.";
-        if (err.response && err.response.data && err.response.data.response) {
+
+        if (err?.response?.data?.response)
           msg = String(err.response.data.response);
-        } else if (err.message) {
-          msg = err.message;
-        }
+        else if (err.message) msg = err.message;
+
         setError(msg);
       } finally {
         setLoading(false);
       }
     },
-    [input, loading, mode, model, sessionId]
+    [input, loading, sessionId, mode, model]
   );
 
+  // ---------------------------------------------------------
+  // Exported API
+  // ---------------------------------------------------------
   return {
     messages,
     input,
