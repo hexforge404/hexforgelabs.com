@@ -1,6 +1,8 @@
+// frontend/src/hooks/useAssistantChat.js
 import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import { ASSISTANT_URL, API_URL } from "../config";
+
 
 // Simple ID generator
 const makeId = () => `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -117,6 +119,41 @@ export function useAssistantChat({ model, sessionId, mode = "assistant" }) {
     },
     [input, loading, sessionId, mode, model]
   );
+
+    // 🔁 Load existing messages for this session from backend
+  useEffect(() => {
+    if (!sessionId) return;
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const res = await axios.get(
+          `${API_URL.replace(/\/$/, "")}/assistant-sessions/${sessionId}`
+        );
+        const serverMessages = res.data?.messages || [];
+
+        if (!cancelled) {
+          setMessages(
+            serverMessages.map((m, idx) => ({
+              id: m.id || `${idx}-${m.role}`,
+              role: m.role,
+              content: m.content,
+            }))
+          );
+        }
+      } catch (err) {
+        console.error("[assistant] failed to load session history", err);
+        // Optional: surface a soft error if you want
+        // setError("Failed to load chat history for this session.");
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId]);
+
 
   // ---------------------------------------------------------
   // Exported API
