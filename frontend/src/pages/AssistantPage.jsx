@@ -6,10 +6,54 @@ import React, {
   useState,
 } from 'react';
 import { useAssistantChat } from '../hooks/useAssistantChat';
-import { useAssistantSessions } from '../hooks/useAssistantSessions';
 import './AssistantPage.css';
 
+// Initial logical sessions in the sidebar
+const INITIAL_SESSIONS = [
+  { id: 'current', label: 'Current session' },
+  { id: 'skull-badusb', label: 'Skull BadUSB planning' },
+  { id: 'recon-unit', label: 'Recon Unit recovery' },
+  { id: 'content-notes', label: 'Content engine notes' },
+];
+
+// Available model chips
+const MODEL_OPTIONS = ['Lab Core', 'Tool Runner', 'HexForge Scribe'];
+
 const AssistantPage = () => {
+  const inputRef = useRef(null);
+  const bottomRef = useRef(null);
+
+  // Boot sequence state
+  const [bootStage, setBootStage] = useState(0);
+  const [bootDone, setBootDone] = useState(false);
+
+  // Sidebar collapsed -> hide history column
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  // Sidebar active tab
+  const [activeTab, setActiveTab] = useState('chats'); // 'chats' | 'projects' | 'models'
+
+  // Sessions + active session
+  const [sessionItems, setSessionItems] = useState(INITIAL_SESSIONS);
+  const [activeSessionId, setActiveSessionId] = useState(
+    INITIAL_SESSIONS[0].id
+  );
+  const [sessionCounter, setSessionCounter] = useState(
+    INITIAL_SESSIONS.length + 1
+  );
+
+  // Simple project list (visual only for now)
+  const [projectItems, setProjectItems] = useState([]);
+  const [projectCounter, setProjectCounter] = useState(1);
+
+  // Active model for assistant routing
+  const [activeModel, setActiveModel] = useState('HexForge Scribe');
+
+  // Lab browser state (iframe on the right)
+  const [browserUrl, setBrowserUrl] = useState('https://hexforgelabs.com');
+  const [browserInput, setBrowserInput] = useState('https://hexforgelabs.com');
+
+  // Chat hook – pass mode + model + sessionId
   const {
     messages,
     input,
@@ -18,29 +62,11 @@ const AssistantPage = () => {
     error,
     send,
     resetError,
-  } = useAssistantChat({ mode: 'assistant' });
-
-  const {
-    sessions,
-    activeSessionId,
-    activeSession,
-    setActiveSessionId,
-    createSession,
-  } = useAssistantSessions();
-
-  const inputRef = useRef(null);
-  const bottomRef = useRef(null);
-
-  // Boot sequence state
-  const [bootStage, setBootStage] = useState(0);
-  const [bootDone, setBootDone] = useState(false);
-
-  // Sidebar visibility – default ON now
-  const [showHistory, setShowHistory] = useState(true);
-
-  // Lab browser state (iframe on the right)
-  const [browserUrl, setBrowserUrl] = useState('https://hexforgelabs.com');
-  const [browserInput, setBrowserInput] = useState('https://hexforgelabs.com');
+  } = useAssistantChat({
+    mode: 'assistant',
+    model: activeModel,
+    sessionId: activeSessionId,
+  });
 
   // Auto scroll chat
   useEffect(() => {
@@ -111,10 +137,10 @@ const AssistantPage = () => {
   );
 
   const handleClickSend = useCallback(() => {
-    if (!loading && bootDone) {
+    if (!loading && bootDone && input.trim()) {
       send();
     }
-  }, [send, loading, bootDone]);
+  }, [send, loading, bootDone, input]);
 
   const handleToolClick = useCallback(
     (cmd) => {
@@ -141,86 +167,203 @@ const AssistantPage = () => {
 
   const browserDisabled = !bootDone;
 
+  // --- New session / project handlers ---
+
+  const handleNewSession = useCallback(() => {
+    setSessionItems((prev) => {
+      const id = `session-${sessionCounter}`;
+      const label = `Session ${sessionCounter}`;
+      const next = [...prev, { id, label }];
+      setActiveSessionId(id);
+      setSessionCounter((n) => n + 1);
+      resetError();
+      return next;
+    });
+  }, [sessionCounter, resetError]);
+
+  const handleNewProject = useCallback(() => {
+    setProjectItems((prev) => {
+      const id = `project-${projectCounter}`;
+      const label = `Untitled project ${projectCounter}`;
+      setProjectCounter((n) => n + 1);
+      return [...prev, { id, label }];
+    });
+  }, [projectCounter]);
+
   return (
     <div className="hf-assistant-page">
       <header className="hf-assistant-header">
         <div className="hf-assistant-logo">⚙ HexForge Assistant Lab</div>
         <button
           className="hf-assistant-history-toggle"
-          onClick={() => setShowHistory((v) => !v)}
+          onClick={() => setSidebarCollapsed((v) => !v)}
         >
-          {showHistory ? 'Collapse Sidebar' : 'Expand Sidebar'}
+          {sidebarCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
         </button>
       </header>
 
       <main
         className={
-          'hf-assistant-main ' +
-          (!showHistory ? 'hf-assistant-main--no-history' : '')
+          'hf-assistant-main' +
+          (sidebarCollapsed ? ' hf-assistant-main--no-history' : '')
         }
       >
-        {/* Left column: session history */}
+        {/* Left column: session sidebar */}
         <aside
           className={
-            'hf-assistant-history ' +
-            (!showHistory ? 'hf-assistant-history--hidden' : '')
+            'hf-assistant-history' +
+            (sidebarCollapsed ? ' hf-assistant-history--hidden' : '')
           }
         >
           <div className="hf-side-header">
             <span className="hf-side-header-title">SESSION HISTORY</span>
-            <button
-              type="button"
-              className="hf-side-header-toggle"
-              onClick={() => setShowHistory(false)}
-            >
-              Hide
-            </button>
           </div>
 
           <div className="hf-side-tabs">
-            <button className="hf-side-tab is-active">Chats</button>
-            <button className="hf-side-tab" disabled>
+            <button
+              type="button"
+              className={
+                'hf-side-tab' + (activeTab === 'chats' ? ' is-active' : '')
+              }
+              onClick={() => setActiveTab('chats')}
+            >
+              Chats
+            </button>
+            <button
+              type="button"
+              className={
+                'hf-side-tab' + (activeTab === 'projects' ? ' is-active' : '')
+              }
+              onClick={() => setActiveTab('projects')}
+            >
               Projects
             </button>
-            <button className="hf-side-tab" disabled>
+            <button
+              type="button"
+              className={
+                'hf-side-tab' + (activeTab === 'models' ? ' is-active' : '')
+              }
+              onClick={() => setActiveTab('models')}
+            >
               Models
             </button>
           </div>
 
-          <div className="hf-side-list">
-            {sessions.map((session) => (
+          <div className="hf-side-actions">
+            {activeTab === 'chats' && (
               <button
-                key={session.id}
                 type="button"
-                className={
-                  'hf-side-item ' +
-                  (session.id === activeSessionId ? 'is-active' : '')
-                }
-                onClick={() => setActiveSessionId(session.id)}
+                className="hf-assistant-toolbar-chip hf-side-add-button"
+                onClick={handleNewSession}
               >
-                {session.name}
+                + New session
               </button>
-            ))}
+            )}
+            {activeTab === 'projects' && (
+              <button
+                type="button"
+                className="hf-assistant-toolbar-chip hf-side-add-button"
+                onClick={handleNewProject}
+              >
+                + New project
+              </button>
+            )}
           </div>
 
-          <button
-            type="button"
-            className="hf-side-header-toggle"
-            onClick={() => createSession('New session')}
-          >
-            + New session
-          </button>
+          {/* Chats tab: real sessions */}
+          {activeTab === 'chats' && (
+            <div className="hf-side-list">
+              {sessionItems.map((s) => (
+                <div
+                  key={s.id}
+                  className={
+                    'hf-side-item' +
+                    (s.id === activeSessionId ? ' is-active' : '')
+                  }
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => {
+                    setActiveSessionId(s.id);
+                    resetError();
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      setActiveSessionId(s.id);
+                      resetError();
+                    }
+                  }}
+                >
+                  {s.label}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Projects tab */}
+          {activeTab === 'projects' && (
+            <div className="hf-side-list">
+              {projectItems.length === 0 && (
+                <div className="hf-side-item is-disabled">
+                  No projects yet. Create one to pin an assistant session.
+                </div>
+              )}
+              {projectItems.map((p) => (
+                <div key={p.id} className="hf-side-item is-disabled">
+                  {p.label}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Models tab – duplicate model selector view */}
+          {activeTab === 'models' && (
+            <div className="hf-side-list">
+              {MODEL_OPTIONS.map((m) => (
+                <div
+                  key={m}
+                  className={
+                    'hf-side-item' + (activeModel === m ? ' is-active' : '')
+                  }
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setActiveModel(m)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ')
+                      setActiveModel(m);
+                  }}
+                >
+                  {m}
+                </div>
+              ))}
+            </div>
+          )}
 
           <div className="hf-side-footer">
-            <span className="hf-side-label">Active model:</span>
+            <span className="hf-side-label">ACTIVE MODEL:</span>
             <div className="hf-model-chips">
-              <span className="hf-model-chip">Lab Core</span>
-              <span className="hf-model-chip">Tool Runner</span>
-              <span className="hf-model-chip is-active">HexForge Scribe</span>
+              {MODEL_OPTIONS.map((m) => (
+                <span
+                  key={m}
+                  className={
+                    'hf-model-chip ' + (activeModel === m ? 'is-active' : '')
+                  }
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setActiveModel(m)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') setActiveModel(m);
+                  }}
+                >
+                  {m}
+                </span>
+              ))}
             </div>
+
             <p className="hf-side-note">
-              (Backend will treat these the same for now – later we can route
-              tools / prompts per model.)
+              (Every request now carries <code>model=&quot;{activeModel}
+              &quot;</code> and <code>session_id=&quot;{activeSessionId}
+              &quot;</code> so the backend can keep separate context per
+              model/session.)
             </p>
           </div>
         </aside>
@@ -268,6 +411,7 @@ const AssistantPage = () => {
           <div className="hf-assistant-toolbar">
             <span className="hf-assistant-toolbar-label">Tools:</span>
             <button
+              type="button"
               className="hf-assistant-toolbar-chip"
               onClick={() => handleToolClick('!os')}
               disabled={loading || !bootDone}
@@ -275,6 +419,7 @@ const AssistantPage = () => {
               !os
             </button>
             <button
+              type="button"
               className="hf-assistant-toolbar-chip"
               onClick={() => handleToolClick('!uptime')}
               disabled={loading || !bootDone}
@@ -282,6 +427,7 @@ const AssistantPage = () => {
               !uptime
             </button>
             <button
+              type="button"
               className="hf-assistant-toolbar-chip"
               onClick={() => handleToolClick('!df')}
               disabled={loading || !bootDone}
@@ -289,6 +435,7 @@ const AssistantPage = () => {
               !df
             </button>
             <button
+              type="button"
               className="hf-assistant-toolbar-chip"
               onClick={() => handleToolClick('!docker')}
               disabled={loading || !bootDone}
@@ -340,6 +487,7 @@ const AssistantPage = () => {
                   ? 'Type a question or command…'
                   : 'Assistant is booting…'
               }
+              aria-label="Assistant message"
               value={input}
               onChange={handleChange}
               onKeyDown={handleKeyDown}
@@ -347,9 +495,11 @@ const AssistantPage = () => {
               rows={1}
             />
             <button
+              type="button"
               className="hf-assistant-send"
               onClick={handleClickSend}
               disabled={loading || !bootDone || !input.trim()}
+              aria-label="Send message"
             >
               Send
             </button>

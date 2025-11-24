@@ -1,137 +1,88 @@
 // frontend/src/hooks/useAssistantChat.js
-import { useState, useCallback } from 'react';
-import axios from 'axios';
+import { useState, useCallback } from "react";
+import axios from "axios";
+import { ASSISTANT_URL } from "../config";
 
-let idCounter = 0;
-const makeId = () => `msg-${Date.now()}-${idCounter++}`;
+// Simple ID helper
+const makeId = () => `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
 /**
- * Shared chat hook for:
- *  - /chat      (mode: 'chat')
- *  - /assistant (mode: 'assistant')
+ * HexForge Assistant chat hook
  *
- * It:
- *  - Keeps local messages state
- *  - Sends POST /mcp/chat with { prompt, mode }
- *  - Handles tool buttons via send(commandText)
+ * Usage:
+ * const {
+ *   messages, input, setInput, loading, error,
+ *   send, resetError
+ * } = useAssistantChat({ mode: "assistant", model: activeModel, sessionId });
  */
-export function useAssistantChat({ mode = 'chat' } = {}) {
-  const [messages, setMessages] = useState(() => {
-    const greeting =
-      mode === 'assistant'
-        ? 'Hello! How can I help you with your lab environment today?'
-        : 'Hello! How can I help you today?';
+export function useAssistantChat(options = {}) {
+  const { mode = "assistant", model, sessionId } = options;
 
-    return [
-      {
-        id: makeId(),
-        role: 'assistant',
-        content: greeting,
-      },
-    ];
-  });
-
-  const [input, setInput] = useState('');
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState("");
 
-  const resetError = useCallback(() => setError(null), []);
+  const resetError = useCallback(() => setError(""), []);
 
-  /**
-   * Send a message.
-   * - If textOverride is provided, use that (for tool buttons).
-   * - Otherwise use the current input state.
-   */
   const send = useCallback(
-  async (textOverride) => {
-    // 1) Decide what text we’re sending
-    const raw = textOverride != null ? textOverride : input;
-    const text = (raw || '').trim();
-    if (!text) return;
+    async (overrideText) => {
+      const text = (overrideText ?? input).trim();
+      if (!text || loading) return;
 
-    // 2) Build optimistic user message (with id for React keys)
-    const userMsg = {
-      id: makeId(),
-      role: 'user',
-      content: text,
-    };
+      setLoading(true);
+      setError("");
 
-    // 3) Push user message and clear the input immediately
-    setMessages((prev) => [...prev, userMsg]);
-    setInput('');
-    setLoading(true);
-    setError(null);
-
-    try {
-      // 4) Build simple history array (roles + content only)
-      const history = [...messages, userMsg].map((m) => ({
-        role: m.role,
-        content: m.content,
-      }));
-
-      // *** IMPORTANT PART ***
-      // Backend wants `prompt` or `message` at top level.
-      // We give it `prompt` plus an optional `history` and `mode`.
-      const res = await axios.post('/mcp/chat', {
-        prompt: text,   // <- satisfies backend requirement
-        mode,
-        history,        // <- optional, backend can use or ignore
-      });
-
-      const data = res.data || {};
-
-// Prefer a top-level string-like answer first
-let primary =
-  data.output ??
-  data.message ??
-  data.reply ??
-  data.text ??
-  null;
-
-// If no primary string, but we have a nested `response` object (your tool shape),
-// unwrap that and pretty-print it.
-if (!primary && data.response) {
-  primary = data.response;
-}
-
-// Fallback: if primary is still null, just use the whole payload
-const payloadToRender = primary ?? data;
-
-const assistantText =
-  typeof payloadToRender === 'string'
-    ? payloadToRender
-    : JSON.stringify(payloadToRender, null, 2);
-
-
-      const assistantMsg = {
-        id: makeId(),
-        role: 'assistant',
-        content: assistantText,
-      };
-
-      setMessages((prev) => [...prev, assistantMsg]);
-    } catch (err) {
-      console.error('Assistant chat error:', err);
-
-      if (err.response && err.response.data) {
-        const detail =
-          err.response.data.detail ||
-          err.response.data.error ||
-          JSON.stringify(err.response.data);
-        setError(`Assistant error: ${detail}`);
-      } else if (err.message) {
-        setError(`Assistant error: ${err.message}`);
-      } else {
-        setError('Assistant error: Unknown problem talking to server.');
+      // push user message immediately for snappy UI
+      setMessages((prev) => [
+        ...prev,
+        { id: makeId(), role: "user", content: text },
+      ]);
+      if (!overrideText) {
+        setInput("");
       }
-    } finally {
-      setLoading(false);
-    }
-  },
-  [input, mode, messages]
-);
 
+      try {
+        const res = await axios.post(
+          `${ASSISTANT_URL.replace(/\/$/, "")}/chat`,
+          {
+            message: text,
+            mode,
+            model,
+            session_id: sessionId, // 🔗 send active session to backend
+          },
+          {
+            headers: {
+              "Content-Type": "application/json",
+            },
+          }
+        );
 
+        const data = res.data || {};
+        const content =
+          typeof data.response === "string"
+            ? data.response
+            : JSON.stringify(data, null, 2);
+
+        setMessages((prev) => [
+          ...prev,
+          { id: makeId(), role: "assistant", content },
+        ]);
+      } catch (err) {
+        console.error("[assistant] send error:", err);
+        let msg = "Something went wrong talking to the assistant.";
+        if (err.response && err.response.data && err.response.data.response) {
+          msg = String(err.response.data.response);
+        } else if (err.message) {
+          msg = err.message;
+        }
+        setError(msg);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [input, loading, mode, model, sessionId]
+  );
 
   return {
     messages,
@@ -139,9 +90,7 @@ const assistantText =
     setInput,
     loading,
     error,
-    send, // can be called as send() or send('!os')
+    send,
     resetError,
   };
 }
-
-export default useAssistantChat;

@@ -4,11 +4,16 @@ import psutil
 import subprocess
 import json
 import traceback
-import httpx
+import asyncio
+import re
+from typing import Dict, List
 
+import httpx
 from contextlib import asynccontextmanager
-from fastapi import Request
+
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import Response, JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 # ✅ Assistant imports
@@ -16,32 +21,47 @@ from .routes import mcp
 from .tool_registry import TOOL_REGISTRY, register_tool
 from .tools.core import save_memory_entry
 from .tools import (
-    get_os_info, list_usb_devices, get_logs,
-    launch_freecad, launch_app, launch_file,
-    run_btop, run_neofetch, check_all_tools, get_user
+    get_os_info,
+    list_usb_devices,
+    get_logs,
+    launch_freecad,
+    launch_app,
+    launch_file,
+    run_btop,
+    run_neofetch,
+    check_all_tools,
+    get_user,
 )
 from .tools.system import ping_host
 
-import asyncio
-
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.middleware.cors import CORSMiddleware
-import re
-
-
 
 # 🌍 Environment
+# Base model + per-chip overrides so the frontend model selector can matter later.
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "mistral")
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://ollama:11434")
 
-SCRIPT_LAB_URL = os.getenv("SCRIPT_LAB_URL", "http://hexforge-backend:8000/api/script-lab")
+MODEL_MAP = {
+    # Sidebar chip label -> Ollama model name (override via env if you want)
+    "Lab Core": os.getenv("OLLAMA_MODEL_LAB_CORE", OLLAMA_MODEL),
+    "Tool Runner": os.getenv("OLLAMA_MODEL_TOOL_RUNNER", OLLAMA_MODEL),
+    "HexForge Scribe": os.getenv("OLLAMA_MODEL_SCRIBE", OLLAMA_MODEL),
+}
+
+SCRIPT_LAB_URL = os.getenv(
+    "SCRIPT_LAB_URL", "http://hexforge-backend:8000/api/script-lab"
+)
 SCRIPT_LAB_TOKEN = os.getenv("SCRIPT_LAB_TOKEN", "")  # shared secret with backend
+
+# 🧠 In-memory per-session history (RAM only for now)
+SESSION_HISTORY: Dict[str, List[dict]] = {}
+MAX_TURNS_PER_SESSION = int(os.getenv("ASSISTANT_MAX_TURNS", "40"))
 
 
 # === Lifespan ===
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from fastapi.routing import APIRoute
+
     print("Available routes:")
     for route in app.routes:
         if isinstance(route, APIRoute):
@@ -56,7 +76,11 @@ app.include_router(mcp.router)
 
 # === Schemas ===
 class ChatRequest(BaseModel):
-    message: str
+    message: str | None = None
+    model: str | None = None
+    mode: str | None = None
+    history: list | None = None
+    session_id: str | None = None
 
 
 class PingRequest(BaseModel):
@@ -67,10 +91,11 @@ class CommandRequest(BaseModel):
     command: str
 
 
-
-
 # === Helpers ===
-async def try_subprocess(cmd, tool_name):
+async def try_subprocess(cmd, tool_name: str):
+    """
+    Run a subprocess, capture stdout + exit code, and log to memory.
+    """
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd,
@@ -78,16 +103,22 @@ async def try_subprocess(cmd, tool_name):
             stderr=asyncio.subprocess.STDOUT,
         )
         out, _ = await proc.communicate()
-        result = {"stdout": out.decode(errors="replace"), "exit_code": proc.returncode}
+        result = {
+            "stdout": out.decode(errors="replace"),
+            "exit_code": proc.returncode,
+        }
     except Exception as e:
         result = {"error": str(e)}
+
     await save_memory_entry(tool_name, result)
     return result
+
 
 # === Script Lab Helper ===
 async def script_lab_request(method: str, path: str, *, json_body=None, params=None):
     """
     Helper to talk to the backend Script Lab API with a shared token.
+    This is only meant to be used by trusted tools / MCP, not the public frontend.
     """
     if not SCRIPT_LAB_TOKEN:
         return {"error": "SCRIPT_LAB_TOKEN is not configured on assistant service"}
@@ -104,7 +135,8 @@ async def script_lab_request(method: str, path: str, *, json_body=None, params=N
                 json=json_body,
                 params=params,
             )
-        # Pass through backend error details
+
+        # Try to parse JSON; fall back to raw text
         try:
             data = resp.json()
         except Exception:
@@ -123,42 +155,85 @@ async def script_lab_request(method: str, path: str, *, json_body=None, params=N
         }
 
 
-
-
 def _get_ip_addresses():
     addrs = []
     try:
         for ifname, ifaddrs in psutil.net_if_addrs().items():
             for a in ifaddrs:
-                if a.family == socket.AF_INET and not str(a.address).startswith("127."):
+                if (
+                    a.family == socket.AF_INET
+                    and not str(a.address).startswith("127.")
+                ):
                     addrs.append({"iface": ifname, "ip": a.address})
     except Exception as e:
         addrs.append({"error": str(e)})
     return addrs
 
 
-# === Chat Endpoint ===
-@app.api_route("/chat", methods=["POST", "OPTIONS"])
-async def assistant_chat(req: Request):
+# === Shared Chat Handler ===
+async def _handle_chat(req: Request):
+    """
+    Shared chat handler used by both /chat and /mcp/chat.
+
+    Accepts JSON like:
+      {
+        "message": "...",
+        "model": "HexForge Scribe",
+        "mode": "assistant",
+        "history": [...],
+        "session_id": "session-5"
+      }
+
+    Only 'message' is required. 'model' is used to pick an Ollama model via MODEL_MAP.
+    """
     if req.method == "OPTIONS":
         return JSONResponse({"status": "ok"})
 
     try:
         body = await req.json()
-        message = str(body.get("message", "")).strip()
     except Exception:
         return JSONResponse({"response": "⚠️ Invalid request body"})
+
+    # Support multiple key names just in case
+    raw_message = (
+        body.get("message")
+        or body.get("prompt")
+        or body.get("text")
+        or ""
+    )
+    message = str(raw_message).strip()
 
     if not message:
         return JSONResponse({"response": "(empty message)"})
 
+    requested_model_label = body.get("model") or body.get("activeModel")
+    ollama_model = MODEL_MAP.get(requested_model_label, OLLAMA_MODEL)
+
+    # Session id (used for in-memory history)
+    session_id = (
+        body.get("session_id")
+        or body.get("sessionId")
+        or body.get("session")
+    )
+
+    # 'history' and 'mode' are accepted but currently unused; kept for compatibility.
+    _history = body.get("history")  # noqa: F841
+    _mode = body.get("mode")        # noqa: F841
+
     async def safe_wrap(result, label=None):
-        """Guarantee valid JSON."""
+        """
+        Guarantee valid JSON shape for the frontend.
+        Frontend expects a top-level 'response' key.
+        """
         try:
             if isinstance(result, dict) and "response" in result:
                 return JSONResponse(result)
+
             if isinstance(result, (dict, list)):
-                return JSONResponse({"response": json.dumps(result, ensure_ascii=False)})
+                return JSONResponse(
+                    {"response": json.dumps(result, ensure_ascii=False)}
+                )
+
             return JSONResponse({"response": str(result)})
         except Exception as e:
             print(f"[wrap:{label}] error:", e)
@@ -180,13 +255,19 @@ async def assistant_chat(req: Request):
             return await safe_wrap(await ping_host(target), "ping")
 
         elif message == "!uptime":
-            return await safe_wrap(await try_subprocess(["uptime"], "uptime"))
+            return await safe_wrap(
+                await try_subprocess(["uptime"], "uptime"), "uptime"
+            )
 
         elif message == "!df":
-            return await safe_wrap(await try_subprocess(["df", "-h"], "disk_usage"))
+            return await safe_wrap(
+                await try_subprocess(["df", "-h"], "disk_usage"), "disk_usage"
+            )
 
         elif message == "!docker":
-            return await safe_wrap(await try_subprocess(["docker", "ps"], "docker_ps"))
+            return await safe_wrap(
+                await try_subprocess(["docker", "ps"], "docker_ps"), "docker_ps"
+            )
 
         elif message == "!whoami":
             return await safe_wrap(await get_user(), "whoami")
@@ -197,44 +278,97 @@ async def assistant_chat(req: Request):
         elif message.startswith("!memory"):
             try:
                 async with httpx.AsyncClient(timeout=5.0) as client:
-                    r = await client.get("http://hexforge-backend:8000/api/memory/all")
+                    r = await client.get(
+                        "http://hexforge-backend:8000/api/memory/all"
+                    )
                     data = r.json()
-                return await safe_wrap({"response": json.dumps(data, ensure_ascii=False)}, "memory")
+                return await safe_wrap(
+                    {"response": json.dumps(data, ensure_ascii=False)},
+                    "memory",
+                )
             except Exception as e:
-                return JSONResponse({"response": f"⚠️ Memory API error: {e}"})
+                return JSONResponse(
+                    {"response": f"⚠️ Memory API error: {e}"}
+                )
 
         elif message == "!help":
-            return JSONResponse({
-                "response": (
-                    "🧠 **HexForge Assistant Commands**\n"
-                    "`!os`, `!usb`, `!logs`, `!ping <host>`, `!uptime`, `!df`, "
-                    "`!docker`, `!status`, `!whoami`, `!memory`"
-                )
-            })
+            return JSONResponse(
+                {
+                    "response": (
+                        "🧠 **HexForge Assistant Commands**\n"
+                        "`!os`, `!usb`, `!logs`, `!ping <host>`, `!uptime`, "
+                        "`!df`, `!docker`, `!status`, `!whoami`, `!memory`"
+                    )
+                }
+            )
 
         # === FALLBACK TO OLLAMA ===
         try:
+            # Pull prior turns for this session (if any)
+            history = SESSION_HISTORY.get(session_id, []) if session_id else []
+
+            if history:
+                parts: List[str] = []
+                for turn in history:
+                    role = (turn.get("role") or "user").upper()
+                    content = turn.get("content") or ""
+                    parts.append(f"{role}: {content}")
+                parts.append(f"USER: {message}")
+                prompt = "\n\n".join(parts) + "\n\nASSISTANT:"
+            else:
+                prompt = message
+
             async with httpx.AsyncClient(timeout=20.0) as client:
                 res = await client.post(
                     f"{OLLAMA_URL}/api/generate",
-                    json={"model": OLLAMA_MODEL, "prompt": message, "stream": False},
+                    json={
+                        "model": ollama_model,
+                        "prompt": prompt,
+                        "stream": False,
+                    },
                 )
 
             if not res.text:
                 return JSONResponse({"response": "(empty Ollama reply)"})
 
             data = res.json()
-            reply = data.get("response") or data.get("message") or "(empty Ollama reply)"
+            reply = (
+                data.get("response")
+                or data.get("message")
+                or "(empty Ollama reply)"
+            )
+
+            # Save to in-memory session history
+            if session_id:
+                turns = SESSION_HISTORY.setdefault(session_id, [])
+                turns.append({"role": "user", "content": message})
+                turns.append({"role": "assistant", "content": reply})
+                if len(turns) > MAX_TURNS_PER_SESSION:
+                    turns[:] = turns[-MAX_TURNS_PER_SESSION :]
+
             return JSONResponse({"response": reply})
         except Exception as e:
             print("Ollama error:", e)
             traceback.print_exc()
-            return JSONResponse({"response": f"⚠️ Ollama connection failed: {e}"})
+            return JSONResponse(
+                {"response": f"⚠️ Ollama connection failed: {e}"}
+            )
 
     except Exception as e:
         print("Chat handler crash:", e)
         traceback.print_exc()
         return JSONResponse({"response": f"❌ Internal error: {e}"})
+
+
+# === Chat Endpoints (both paths) ===
+@app.api_route("/mcp/chat", methods=["POST", "OPTIONS"])
+async def assistant_chat_mcp(req: Request):
+    return await _handle_chat(req)
+
+
+@app.api_route("/chat", methods=["POST", "OPTIONS"])
+async def assistant_chat_legacy(req: Request):
+    return await _handle_chat(req)
 
 
 # === Health & Core Routes ===
@@ -369,13 +503,17 @@ async def tool_memory():
         async with httpx.AsyncClient(timeout=5.0) as client:
             res = await client.get("http://hexforge-backend:8000/api/memory/all")
             data = res.json()
-        entries = data["entries"][-10:] if isinstance(data, dict) else data[-10:]
+        entries = (
+            data["entries"][-10:]
+            if isinstance(data, dict)
+            else data[-10:]
+        )
         return {"entries": entries}
     except Exception as e:
         return {"error": f"Memory fetch failed: {str(e)}"}
 
-# === Script Lab Tools (for AI-only script management) ===
 
+# === Script Lab Tools (for AI-only script management) ===
 @app.get("/tool/script-list")
 @register_tool("script-list", "List scripts in Script Lab", category="Scripts")
 async def tool_script_list(device: str | None = None):
@@ -398,7 +536,9 @@ async def tool_script_get(name: str):
 
 
 @app.post("/tool/script-save")
-@register_tool("script-save", "Save/update script", category="Scripts", method="POST")
+@register_tool(
+    "script-save", "Save/update script", category="Scripts", method="POST"
+)
 async def tool_script_save(payload: dict):
     """
     Save or update a script. Expected payload example:
@@ -414,7 +554,6 @@ async def tool_script_save(payload: dict):
     # (Token is not exposed to the frontend; only the MCP agent uses this.)
     result = await script_lab_request("POST", "/save", json_body=payload)
     return result
-
 
 
 @app.get("/tool/open")
@@ -455,15 +594,17 @@ async def tool_debug():
 async def list_all_tools():
     return {"tools": TOOL_REGISTRY}
 
-   # --- Allow all *.hexforgelabs.com + localhost ---
+
+# --- Allow all *.hexforgelabs.com + localhost ---
 def is_allowed_origin(origin: str) -> bool:
     if not origin:
         return False
     allowed_patterns = [
-        r"^https://([a-zA-Z0-9-]+\.)?hexforgelabs\.com$",  # any subdomain of hexforgelabs.com
+        r"^https://([a-zA-Z0-9-]+\.)?hexforgelabs\.com$",  # any subdomain
         r"^http://(localhost|127\.0\.0\.1|10\.0\.0\.200)(:\d+)?$",  # local/dev
     ]
     return any(re.match(pattern, origin) for pattern in allowed_patterns)
+
 
 # --- CORS setup ---
 app.add_middleware(
@@ -473,6 +614,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 # --- WebSocket Route ---
 @app.websocket("/ws")
@@ -488,7 +630,9 @@ async def ws_root(websocket: WebSocket):
     print(f"[WS] ✅ Connection accepted from {origin}")
 
     try:
-        await websocket.send_json({"type": "welcome", "service": "hexforge-assistant"})
+        await websocket.send_json(
+            {"type": "welcome", "service": "hexforge-assistant"}
+        )
         while True:
             msg = await websocket.receive_text()
             if msg.strip() == "!ping":
@@ -506,14 +650,10 @@ async def ws_root(websocket: WebSocket):
         await websocket.close()
 
 
-
-
-
-
-
 # === Main Entrypoint ===
 if __name__ == "__main__":
     import uvicorn
+
     port = int(os.getenv("PORT", 11435))
     print(f"🚀 Starting HexForge Assistant on 0.0.0.0:{port}")
     uvicorn.run("assistant.main:app", host="0.0.0.0", port=port, reload=False)

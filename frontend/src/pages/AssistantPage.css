@@ -211,6 +211,8 @@
   font-size: 0.7rem;
   background: #020617;
   color: #9ca3af;
+  cursor: pointer;
+  user-select: none;
 }
 
 .hf-model-chip.is-active {
@@ -526,7 +528,7 @@
 .hf-lab-browser-iframe {
   border: none;
   width: 100%;
-  height: 280px;
+  height: clamp(240px, 32vh, 480px);
 }
 
 .hf-lab-browser-caption {
