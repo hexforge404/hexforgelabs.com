@@ -30,7 +30,7 @@ command_aliases = {
     "usb": "usb-list",
     "os": "os-info",
     "logs": "logs",
-    "df": "disk-usage",
+    "df": "df",
     "uptime": "uptime",
     "docker": "docker",
     "user": "user",
