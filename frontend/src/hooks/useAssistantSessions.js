@@ -1,121 +1,199 @@
 // frontend/src/hooks/useAssistantSessions.js
-import { useEffect, useMemo, useState } from 'react';
+import { useState, useEffect, useCallback } from "react";
+import axios from "axios";
+import { API_URL } from "../config";
 
-const STORAGE_KEY = 'hf-assistant-sessions';
+const apiBase = API_URL.replace(/\/$/, "");
 
+// These are your “pinned” starter sessions
 const DEFAULT_SESSIONS = [
-  { id: 'current', name: 'Current session' },
-  { id: 'skull-badusb', name: 'Skull BadUSB planning' },
-  { id: 'recon-unit', name: 'Recon Unit recovery' },
-  { id: 'content-engine', name: 'Content engine notes' },
+  { id: "current", title: "Current session", model: "HexForge Scribe" },
+  { id: "skull-badusb", title: "Skull BadUSB planning", model: "HexForge Scribe" },
+  { id: "recon-unit", title: "Recon Unit recovery", model: "HexForge Scribe" },
+  { id: "content-notes", title: "Content engine notes", model: "HexForge Scribe" },
 ];
 
-function loadFromStorage() {
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (!parsed || !Array.isArray(parsed.sessions)) return null;
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
-function saveToStorage(state) {
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } catch {
-    // ignore
-  }
-}
-
-function createId() {
-  return `hf-session-${Date.now().toString(36)}-${Math.random()
-    .toString(36)
-    .slice(2, 8)}`;
-}
+const ACTIVE_KEY = "hexforge.assistant.activeSessionId";
 
 export function useAssistantSessions() {
-  const [sessionsState, setSessionsState] = useState(() => {
-    if (typeof window === 'undefined') {
-      return {
-        sessions: DEFAULT_SESSIONS,
-        activeSessionId: DEFAULT_SESSIONS[0].id,
-      };
-    }
+  const [sessions, setSessions] = useState([]);
+  const [activeSessionId, setActiveSessionId] = useState(
+    () => window.localStorage.getItem(ACTIVE_KEY) || "current"
+  );
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-    const stored = loadFromStorage();
-    if (stored && stored.sessions.length > 0) {
-      return stored;
+  // Persist active session id locally so refresh keeps focus
+  useEffect(() => {
+    if (activeSessionId) {
+      window.localStorage.setItem(ACTIVE_KEY, activeSessionId);
     }
+  }, [activeSessionId]);
 
-    return {
-      sessions: DEFAULT_SESSIONS,
-      activeSessionId: DEFAULT_SESSIONS[0].id,
-    };
+  // Helper: normalise backend session shape
+  const normaliseSession = (s) => ({
+    id: s.id || s.sessionId,
+    sessionId: s.sessionId || s.id,
+    title: s.title || s.sessionId || "Untitled session",
+    model: s.model || "HexForge Scribe",
+    createdAt: s.createdAt,
+    updatedAt: s.updatedAt,
   });
 
-  const { sessions, activeSessionId } = sessionsState;
+  // 🔁 Load sessions from backend on mount
+  useEffect(() => {
+    let cancelled = false;
 
-  const activeSession = useMemo(
-    () => sessions.find((s) => s.id === activeSessionId) || sessions[0],
-    [sessions, activeSessionId]
+    (async () => {
+      setLoading(true);
+      setError("");
+
+      try {
+        const res = await axios.get(`${apiBase}/assistant-sessions`);
+        const serverSessions = (res.data?.sessions || []).map(normaliseSession);
+
+        // If DB is empty, seed the default four and save them to backend
+        if (!cancelled && serverSessions.length === 0) {
+          const seeded = [];
+
+          for (const sess of DEFAULT_SESSIONS) {
+            try {
+              const createRes = await axios.post(`${apiBase}/assistant-sessions`, {
+                sessionId: sess.id,
+                title: sess.title,
+                model: sess.model,
+              });
+
+              seeded.push(normaliseSession(createRes.data.session));
+            } catch (e) {
+              console.error("[assistantSessions] seed error", e);
+            }
+          }
+
+          setSessions(seeded);
+          if (!seeded.some((s) => s.id === activeSessionId)) {
+            setActiveSessionId("current");
+          }
+          setLoading(false);
+          return;
+        }
+
+        if (!cancelled) {
+          setSessions(serverSessions);
+          if (!serverSessions.some((s) => s.id === activeSessionId)) {
+            // Fallback to "current" if active one was deleted
+            const fallback =
+              serverSessions.find((s) => s.id === "current") ||
+              serverSessions[0] ||
+              null;
+            if (fallback) setActiveSessionId(fallback.id);
+          }
+        }
+      } catch (err) {
+        console.error("[assistantSessions] load error", err);
+        if (!cancelled) {
+          setError("Failed to load assistant sessions");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []); // run once
+
+  // ➕ Create a new session
+  const createNewSession = useCallback(
+    async (opts = {}) => {
+      const index =
+        sessions.filter((s) => s.id?.startsWith("session-")).length + 1;
+      const sessionId = `session-${index}`;
+      const title = opts.title || `Session ${index}`;
+      const model = opts.model || "HexForge Scribe";
+
+      try {
+        const res = await axios.post(`${apiBase}/assistant-sessions`, {
+          sessionId,
+          title,
+          model,
+        });
+
+        const created = normaliseSession(res.data.session);
+        setSessions((prev) => [...prev, created]);
+        setActiveSessionId(created.id);
+        return created;
+      } catch (err) {
+        console.error("[assistantSessions] create error", err);
+        setError("Failed to create session");
+        return null;
+      }
+    },
+    [sessions]
   );
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    saveToStorage(sessionsState);
-  }, [sessionsState]);
+  // ✏️ Rename a session
+  const renameSession = useCallback(async (sessionId, newTitle) => {
+    newTitle = String(newTitle || "").trim();
+    if (!sessionId || !newTitle) return;
 
-  const setActiveSessionId = (id) => {
-    setSessionsState((prev) => {
-      if (!prev.sessions.some((s) => s.id === id)) return prev;
-      return { ...prev, activeSessionId: id };
-    });
-  };
+    try {
+      const res = await axios.patch(
+        `${apiBase}/assistant-sessions/${sessionId}`,
+        { title: newTitle }
+      );
+      const updated = normaliseSession(res.data.session);
 
-  const createSession = (name = 'New session') => {
-    const id = createId();
-    setSessionsState((prev) => ({
-      sessions: [...prev.sessions, { id, name }],
-      activeSessionId: id,
-    }));
-  };
+      setSessions((prev) =>
+        prev.map((s) => (s.id === sessionId ? updated : s))
+      );
+    } catch (err) {
+      console.error("[assistantSessions] rename error", err);
+      setError("Failed to rename session");
+    }
+  }, []);
 
-  const renameSession = (id, name) => {
-    setSessionsState((prev) => ({
-      ...prev,
-      sessions: prev.sessions.map((s) =>
-        s.id === id ? { ...s, name: name || s.name } : s
-      ),
-    }));
-  };
-
-  const deleteSession = (id) => {
-    setSessionsState((prev) => {
-      const remaining = prev.sessions.filter((s) => s.id !== id);
-      if (remaining.length === 0) {
-        return {
-          sessions: DEFAULT_SESSIONS,
-          activeSessionId: DEFAULT_SESSIONS[0].id,
-        };
+  // 🗑 Delete a session
+  const deleteSession = useCallback(
+    async (sessionId) => {
+      if (!sessionId) return;
+      // Don't allow deleting your pinned “current” unless you really want to
+      if (sessionId === "current") {
+        console.warn("Skipping delete of pinned 'current' session");
+        return;
       }
-      let nextActive = prev.activeSessionId;
-      if (prev.activeSessionId === id) {
-        nextActive = remaining[0].id;
+
+      try {
+        await axios.delete(`${apiBase}/assistant-sessions/${sessionId}`);
+        setSessions((prev) => prev.filter((s) => s.id !== sessionId));
+
+        if (activeSessionId === sessionId) {
+          const fallback =
+            sessions.find((s) => s.id === "current") ||
+            sessions.find((s) => s.id !== sessionId) ||
+            null;
+          if (fallback) setActiveSessionId(fallback.id);
+        }
+      } catch (err) {
+        console.error("[assistantSessions] delete error", err);
+        setError("Failed to delete session");
       }
-      return { sessions: remaining, activeSessionId: nextActive };
-    });
-  };
+    },
+    [activeSessionId, sessions]
+  );
+
+  const clearError = useCallback(() => setError(""), []);
 
   return {
-    sessions,
-    activeSessionId,
-    activeSession,
+    sessions,          // [{id, title, model, ...}]
+    activeSessionId,   // "current", "session-5", etc.
     setActiveSessionId,
-    createSession,
+    createNewSession,
     renameSession,
     deleteSession,
+    loading,
+    error,
+    clearError,
   };
 }

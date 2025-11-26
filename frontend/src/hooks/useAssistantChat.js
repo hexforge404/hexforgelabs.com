@@ -3,7 +3,6 @@ import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import { ASSISTANT_URL, API_URL } from "../config";
 
-
 // Simple ID generator
 const makeId = () => `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
@@ -27,33 +26,35 @@ export function useAssistantChat({ model, sessionId, mode = "assistant" }) {
   // 1) Load session history from backend when sessionId changes
   // ---------------------------------------------------------
   useEffect(() => {
-    if (!sessionId) return;
+    if (!sessionId) {
+      setMessages([]);
+      return;
+    }
 
-    let mounted = true;
+    let cancelled = false;
 
-    async function loadSession() {
+    (async () => {
       try {
-        const url = `${API_URL}/assistant-sessions/${sessionId}`;
-        const res = await axios.get(url);
+        const base = API_URL.replace(/\/$/, "");
+        const res = await axios.get(`${base}/assistant-sessions/${sessionId}`);
         const data = res.data || {};
 
-        if (!mounted) return;
-
-        const loaded = (data.messages || []).map((m) => ({
-          id: makeId(),
+        const loaded = (data.messages || []).map((m, idx) => ({
+          id: m.id || m._id || `${idx}-${m.role}`,
           role: m.role,
           content: m.content,
         }));
 
-        setMessages(loaded);
+        if (!cancelled) {
+          setMessages(loaded);
+        }
       } catch (err) {
         console.error("[assistant] failed to load session", err);
       }
-    }
+    })();
 
-    loadSession();
     return () => {
-      mounted = false;
+      cancelled = true;
     };
   }, [sessionId]);
 
@@ -74,9 +75,10 @@ export function useAssistantChat({ model, sessionId, mode = "assistant" }) {
       if (!overrideText) setInput("");
 
       try {
-        // Call the assistant service (default /mcp/chat)
+        // 1) Talk to assistant backend (FastAPI)
+        const assistantBase = ASSISTANT_URL.replace(/\/$/, "");
         const res = await axios.post(
-          `${ASSISTANT_URL.replace(/\/$/, "")}/chat`,
+          `${assistantBase}/chat`,
           {
             message: text,
             mode,
@@ -100,16 +102,27 @@ export function useAssistantChat({ model, sessionId, mode = "assistant" }) {
           content,
         };
 
-        // UI update
+        // 2) Update UI
         setMessages((prev) => [...prev, assistantMsg]);
 
-        // (Optional) Local copy? Backend already saves via Python → Express
+        // 3) Persist both messages to Node/Mongo
+        const apiBase = API_URL.replace(/\/$/, "");
+        await axios.post(
+          `${apiBase}/assistant-sessions/${sessionId}/append`,
+          {
+            model,
+            messages: [
+              { role: "user", content: text },
+              { role: "assistant", content },
+            ],
+          }
+        );
       } catch (err) {
         console.error("[assistant] send error:", err);
         let msg = "Something went wrong talking to the assistant.";
 
-        if (err?.response?.data?.response)
-          msg = String(err.response.data.response);
+        if (err?.response?.data?.error)
+          msg = String(err.response.data.error);
         else if (err.message) msg = err.message;
 
         setError(msg);
@@ -119,41 +132,6 @@ export function useAssistantChat({ model, sessionId, mode = "assistant" }) {
     },
     [input, loading, sessionId, mode, model]
   );
-
-    // 🔁 Load existing messages for this session from backend
-  useEffect(() => {
-    if (!sessionId) return;
-
-    let cancelled = false;
-
-    (async () => {
-      try {
-        const res = await axios.get(
-          `${API_URL.replace(/\/$/, "")}/assistant-sessions/${sessionId}`
-        );
-        const serverMessages = res.data?.messages || [];
-
-        if (!cancelled) {
-          setMessages(
-            serverMessages.map((m, idx) => ({
-              id: m.id || `${idx}-${m.role}`,
-              role: m.role,
-              content: m.content,
-            }))
-          );
-        }
-      } catch (err) {
-        console.error("[assistant] failed to load session history", err);
-        // Optional: surface a soft error if you want
-        // setError("Failed to load chat history for this session.");
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [sessionId]);
-
 
   // ---------------------------------------------------------
   // Exported API

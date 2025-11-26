@@ -4,20 +4,21 @@ import React, {
   useEffect,
   useRef,
   useState,
-} from 'react';
-import { useAssistantChat } from '../hooks/useAssistantChat';
-import './AssistantPage.css';
-
-// Initial logical sessions in the sidebar
-const INITIAL_SESSIONS = [
-  { id: 'current', label: 'Current session' },
-  { id: 'skull-badusb', label: 'Skull BadUSB planning' },
-  { id: 'recon-unit', label: 'Recon Unit recovery' },
-  { id: 'content-notes', label: 'Content engine notes' },
-];
+} from "react";
+import { useAssistantChat } from "../hooks/useAssistantChat";
+import { useAssistantSessions } from "../hooks/useAssistantSessions";
+import "./AssistantPage.css";
 
 // Available model chips
-const MODEL_OPTIONS = ['Lab Core', 'Tool Runner', 'HexForge Scribe'];
+const MODEL_OPTIONS = ["Lab Core", "Tool Runner", "HexForge Scribe"];
+
+// Pinned system sessions (we avoid showing delete for these)
+const PINNED_SESSION_IDS = new Set([
+  "current",
+  "skull-badusb",
+  "recon-unit",
+  "content-notes",
+]);
 
 const AssistantPage = () => {
   const inputRef = useRef(null);
@@ -31,47 +32,47 @@ const AssistantPage = () => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   // Sidebar active tab
-  const [activeTab, setActiveTab] = useState('chats'); // 'chats' | 'projects' | 'models'
-
-  // Sessions + active session
-  const [sessionItems, setSessionItems] = useState(INITIAL_SESSIONS);
-  const [activeSessionId, setActiveSessionId] = useState(
-    INITIAL_SESSIONS[0].id
-  );
-  const [sessionCounter, setSessionCounter] = useState(
-    INITIAL_SESSIONS.length + 1
-  );
+  const [activeTab, setActiveTab] = useState("chats"); // 'chats' | 'projects' | 'models'
 
   // Simple project list (visual only for now)
   const [projectItems, setProjectItems] = useState([]);
   const [projectCounter, setProjectCounter] = useState(1);
 
   // Active model for assistant routing
-  const [activeModel, setActiveModel] = useState('HexForge Scribe');
+  const [activeModel, setActiveModel] = useState("HexForge Scribe");
 
   // Lab browser state (iframe on the right)
-  const [browserUrl, setBrowserUrl] = useState('https://hexforgelabs.com');
-  const [browserInput, setBrowserInput] = useState('https://hexforgelabs.com');
+  const [browserUrl, setBrowserUrl] = useState("https://hexforgelabs.com");
+  const [browserInput, setBrowserInput] = useState("https://hexforgelabs.com");
 
-  // Chat hook – pass mode + model + sessionId
+  // Which session's overflow menu is open (for ⋯ menu)
+  const [sessionMenuOpenId, setSessionMenuOpenId] = useState(null);
+
+  // 🔹 Session management hook (Mongo-backed)
   const {
-    messages,
-    input,
-    setInput,
-    loading,
-    error,
-    send,
-    resetError,
-  } = useAssistantChat({
-    mode: 'assistant',
-    model: activeModel,
-    sessionId: activeSessionId,
-  });
+    sessions,
+    activeSessionId,
+    setActiveSessionId,
+    createNewSession,
+    renameSession,
+    deleteSession,
+    loading: sessionsLoading,
+    error: sessionsError,
+    clearError: clearSessionsError,
+  } = useAssistantSessions();
+
+  // 🔹 Chat hook – pass mode + model + active sessionId
+  const { messages, input, setInput, loading, error, send, resetError } =
+    useAssistantChat({
+      mode: "assistant",
+      model: activeModel,
+      sessionId: activeSessionId,
+    });
 
   // Auto scroll chat
   useEffect(() => {
     if (bottomRef.current) {
-      bottomRef.current.scrollIntoView({ behavior: 'smooth' });
+      bottomRef.current.scrollIntoView({ behavior: "smooth" });
     }
   }, [messages.length, loading]);
 
@@ -95,7 +96,7 @@ const AssistantPage = () => {
   useEffect(() => {
     const lastAssistant = [...messages]
       .reverse()
-      .find((m) => m.role === 'assistant');
+      .find((m) => m.role === "assistant");
 
     if (!lastAssistant) return;
 
@@ -107,7 +108,7 @@ const AssistantPage = () => {
 
     let url = urlMatch[0];
     if (!/^https?:\/\//i.test(url)) {
-      url = 'https://' + url;
+      url = "https://" + url;
     }
 
     if (url !== browserUrl) {
@@ -126,7 +127,7 @@ const AssistantPage = () => {
 
   const handleKeyDown = useCallback(
     (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
+      if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         if (!loading && bootDone) {
           send();
@@ -157,7 +158,7 @@ const AssistantPage = () => {
       let url = browserInput.trim();
       if (!url) return;
       if (!/^https?:\/\//i.test(url)) {
-        url = 'https://' + url;
+        url = "https://" + url;
       }
       setBrowserUrl(url);
       setBrowserInput(url);
@@ -169,17 +170,14 @@ const AssistantPage = () => {
 
   // --- New session / project handlers ---
 
-  const handleNewSession = useCallback(() => {
-    setSessionItems((prev) => {
-      const id = `session-${sessionCounter}`;
-      const label = `Session ${sessionCounter}`;
-      const next = [...prev, { id, label }];
-      setActiveSessionId(id);
-      setSessionCounter((n) => n + 1);
-      resetError();
-      return next;
-    });
-  }, [sessionCounter, resetError]);
+  const handleNewSession = useCallback(async () => {
+    clearSessionsError();
+    const created = await createNewSession();
+    if (created && created.id) {
+      setActiveSessionId(created.id);
+    }
+    setSessionMenuOpenId(null);
+  }, [clearSessionsError, createNewSession, setActiveSessionId]);
 
   const handleNewProject = useCallback(() => {
     setProjectItems((prev) => {
@@ -190,6 +188,52 @@ const AssistantPage = () => {
     });
   }, [projectCounter]);
 
+  const handleSelectSession = useCallback(
+    (id) => {
+      clearSessionsError();
+      resetError();
+      setActiveSessionId(id);
+      setSessionMenuOpenId(null);
+    },
+    [clearSessionsError, resetError, setActiveSessionId]
+  );
+
+  const handleRenameSession = useCallback(
+    (session) => {
+      const currentTitle = session.title || session.id;
+      const next = window.prompt("Rename session:", currentTitle);
+      if (!next || next.trim() === "" || next === currentTitle) {
+        setSessionMenuOpenId(null);
+        return;
+      }
+      renameSession(session.id, next.trim());
+      setSessionMenuOpenId(null);
+    },
+    [renameSession]
+  );
+
+  const handleDeleteSession = useCallback(
+    (session) => {
+      if (PINNED_SESSION_IDS.has(session.id)) {
+        window.alert(
+          "This is a pinned system session. You can rename it, but not delete it."
+        );
+        setSessionMenuOpenId(null);
+        return;
+      }
+      const ok = window.confirm(
+        `Delete session "${session.title || session.id}" and its messages?`
+      );
+      if (!ok) {
+        setSessionMenuOpenId(null);
+        return;
+      }
+      deleteSession(session.id);
+      setSessionMenuOpenId(null);
+    },
+    [deleteSession]
+  );
+
   return (
     <div className="hf-assistant-page">
       <header className="hf-assistant-header">
@@ -198,21 +242,21 @@ const AssistantPage = () => {
           className="hf-assistant-history-toggle"
           onClick={() => setSidebarCollapsed((v) => !v)}
         >
-          {sidebarCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
+          {sidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
         </button>
       </header>
 
       <main
         className={
-          'hf-assistant-main' +
-          (sidebarCollapsed ? ' hf-assistant-main--no-history' : '')
+          "hf-assistant-main" +
+          (sidebarCollapsed ? " hf-assistant-main--no-history" : "")
         }
       >
         {/* Left column: session sidebar */}
         <aside
           className={
-            'hf-assistant-history' +
-            (sidebarCollapsed ? ' hf-assistant-history--hidden' : '')
+            "hf-assistant-history" +
+            (sidebarCollapsed ? " hf-assistant-history--hidden" : "")
           }
         >
           <div className="hf-side-header">
@@ -223,43 +267,44 @@ const AssistantPage = () => {
             <button
               type="button"
               className={
-                'hf-side-tab' + (activeTab === 'chats' ? ' is-active' : '')
+                "hf-side-tab" + (activeTab === "chats" ? " is-active" : "")
               }
-              onClick={() => setActiveTab('chats')}
+              onClick={() => setActiveTab("chats")}
             >
               Chats
             </button>
             <button
               type="button"
               className={
-                'hf-side-tab' + (activeTab === 'projects' ? ' is-active' : '')
+                "hf-side-tab" + (activeTab === "projects" ? " is-active" : "")
               }
-              onClick={() => setActiveTab('projects')}
+              onClick={() => setActiveTab("projects")}
             >
               Projects
             </button>
             <button
               type="button"
               className={
-                'hf-side-tab' + (activeTab === 'models' ? ' is-active' : '')
+                "hf-side-tab" + (activeTab === "models" ? " is-active" : "")
               }
-              onClick={() => setActiveTab('models')}
+              onClick={() => setActiveTab("models")}
             >
               Models
             </button>
           </div>
 
           <div className="hf-side-actions">
-            {activeTab === 'chats' && (
+            {activeTab === "chats" && (
               <button
                 type="button"
                 className="hf-assistant-toolbar-chip hf-side-add-button"
                 onClick={handleNewSession}
+                disabled={sessionsLoading}
               >
                 + New session
               </button>
             )}
-            {activeTab === 'projects' && (
+            {activeTab === "projects" && (
               <button
                 type="button"
                 className="hf-assistant-toolbar-chip hf-side-add-button"
@@ -270,37 +315,91 @@ const AssistantPage = () => {
             )}
           </div>
 
-          {/* Chats tab: real sessions */}
-          {activeTab === 'chats' && (
+          {/* Chats tab: real sessions from backend */}
+          {activeTab === "chats" && (
             <div className="hf-side-list">
-              {sessionItems.map((s) => (
+              {sessionsError && (
+                <div className="hf-side-item is-error">{sessionsError}</div>
+              )}
+
+              {sessionsLoading && sessions.length === 0 && (
+                <div className="hf-side-item is-disabled">
+                  Loading sessions…
+                </div>
+              )}
+
+              {sessions.length === 0 && !sessionsLoading && !sessionsError && (
+                <div className="hf-side-item is-disabled">
+                  No sessions yet. Create one to get started.
+                </div>
+              )}
+
+              {sessions.map((s) => (
                 <div
                   key={s.id}
                   className={
-                    'hf-side-item' +
-                    (s.id === activeSessionId ? ' is-active' : '')
+                    "hf-side-item" +
+                    (s.id === activeSessionId ? " is-active" : "")
                   }
                   role="button"
                   tabIndex={0}
-                  onClick={() => {
-                    setActiveSessionId(s.id);
-                    resetError();
-                  }}
+                  onClick={() => handleSelectSession(s.id)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      setActiveSessionId(s.id);
-                      resetError();
-                    }
+                    if (e.key === "Enter" || e.key === " ")
+                      handleSelectSession(s.id);
                   }}
                 >
-                  {s.label}
+                  <span className="hf-side-item-label">
+                    {s.title || s.sessionId || s.id}
+                  </span>
+
+                  {/* ⋯ overflow trigger */}
+                  <button
+                    type="button"
+                    className="hf-side-item-options"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSessionMenuOpenId((prev) =>
+                        prev === s.id ? null : s.id
+                      );
+                    }}
+                    aria-label={`Session options for ${
+                      s.title || s.sessionId || s.id
+                    }`}
+                  >
+                    ⋯
+                  </button>
+
+                  {/* Overflow menu */}
+                  {sessionMenuOpenId === s.id && (
+                    <div
+                      className="hf-side-item-menu"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => handleRenameSession(s)}
+                      >
+                        Rename
+                      </button>
+                      {!PINNED_SESSION_IDS.has(s.id) && (
+                        <button
+                          type="button"
+                          className="is-danger"
+                          onClick={() => handleDeleteSession(s)}
+                        >
+                          Delete
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
           )}
 
           {/* Projects tab */}
-          {activeTab === 'projects' && (
+          {activeTab === "projects" && (
             <div className="hf-side-list">
               {projectItems.length === 0 && (
                 <div className="hf-side-item is-disabled">
@@ -316,20 +415,19 @@ const AssistantPage = () => {
           )}
 
           {/* Models tab – duplicate model selector view */}
-          {activeTab === 'models' && (
+          {activeTab === "models" && (
             <div className="hf-side-list">
               {MODEL_OPTIONS.map((m) => (
                 <div
                   key={m}
                   className={
-                    'hf-side-item' + (activeModel === m ? ' is-active' : '')
+                    "hf-side-item" + (activeModel === m ? " is-active" : "")
                   }
                   role="button"
                   tabIndex={0}
                   onClick={() => setActiveModel(m)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ')
-                      setActiveModel(m);
+                    if (e.key === "Enter" || e.key === " ") setActiveModel(m);
                   }}
                 >
                   {m}
@@ -345,13 +443,13 @@ const AssistantPage = () => {
                 <span
                   key={m}
                   className={
-                    'hf-model-chip ' + (activeModel === m ? 'is-active' : '')
+                    "hf-model-chip " + (activeModel === m ? "is-active" : "")
                   }
                   role="button"
                   tabIndex={0}
                   onClick={() => setActiveModel(m)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') setActiveModel(m);
+                    if (e.key === "Enter" || e.key === " ") setActiveModel(m);
                   }}
                 >
                   {m}
@@ -360,10 +458,10 @@ const AssistantPage = () => {
             </div>
 
             <p className="hf-side-note">
-              (Every request now carries <code>model=&quot;{activeModel}
-              &quot;</code> and <code>session_id=&quot;{activeSessionId}
-              &quot;</code> so the backend can keep separate context per
-              model/session.)
+              (Every request now carries{" "}
+              <code>model=&quot;{activeModel}&quot;</code> and{" "}
+              <code>session_id=&quot;{activeSessionId}&quot;</code> so the
+              backend can keep separate context per model/session.)
             </p>
           </div>
         </aside>
@@ -378,30 +476,30 @@ const AssistantPage = () => {
                   HexForge Assistant • Boot Sequence
                 </div>
                 <ul className="hf-boot-lines">
-                  <li className={bootStage >= 1 ? 'is-visible' : ''}>
+                  <li className={bootStage >= 1 ? "is-visible" : ""}>
                     [1/4] Initializing assistant core…
                   </li>
-                  <li className={bootStage >= 2 ? 'is-visible' : ''}>
-                    [2/4] Loading tools: <code>!os</code>, <code>!uptime</code>,{' '}
-                    <code>!df</code>, <code>!docker</code>…
+                  <li className={bootStage >= 2 ? "is-visible" : ""}>
+                    [2/4] Loading tools: <code>!os</code>,{" "}
+                    <code>!uptime</code>, <code>!df</code>,{" "}
+                    <code>!docker</code>…
                   </li>
-                  <li className={bootStage >= 3 ? 'is-visible' : ''}>
+                  <li className={bootStage >= 3 ? "is-visible" : ""}>
                     [3/4] Linking Script Lab, Store, Blog, Lab Browser…
                   </li>
-                  <li className={bootStage >= 4 ? 'is-visible' : ''}>
-                    [4/4] Model online:{' '}
-                    <strong>HexForge&nbsp;Scribe</strong>
+                  <li className={bootStage >= 4 ? "is-visible" : ""}>
+                    [4/4] Model online: <strong>HexForge&nbsp;Scribe</strong>
                   </li>
                 </ul>
                 <div className="hf-boot-footer">
                   <span
                     className={
-                      'hf-boot-status-dot ' +
-                      (bootStage >= 4 ? 'is-ready' : '')
+                      "hf-boot-status-dot " +
+                      (bootStage >= 4 ? "is-ready" : "")
                     }
                   />
                   <span className="hf-boot-status-label">
-                    {bootStage < 4 ? 'Warming up…' : 'Ready'}
+                    {bootStage < 4 ? "Warming up…" : "Ready"}
                   </span>
                 </div>
               </div>
@@ -413,7 +511,7 @@ const AssistantPage = () => {
             <button
               type="button"
               className="hf-assistant-toolbar-chip"
-              onClick={() => handleToolClick('!os')}
+              onClick={() => handleToolClick("!os")}
               disabled={loading || !bootDone}
             >
               !os
@@ -421,7 +519,7 @@ const AssistantPage = () => {
             <button
               type="button"
               className="hf-assistant-toolbar-chip"
-              onClick={() => handleToolClick('!uptime')}
+              onClick={() => handleToolClick("!uptime")}
               disabled={loading || !bootDone}
             >
               !uptime
@@ -429,7 +527,7 @@ const AssistantPage = () => {
             <button
               type="button"
               className="hf-assistant-toolbar-chip"
-              onClick={() => handleToolClick('!df')}
+              onClick={() => handleToolClick("!df")}
               disabled={loading || !bootDone}
             >
               !df
@@ -437,7 +535,7 @@ const AssistantPage = () => {
             <button
               type="button"
               className="hf-assistant-toolbar-chip"
-              onClick={() => handleToolClick('!docker')}
+              onClick={() => handleToolClick("!docker")}
               disabled={loading || !bootDone}
             >
               !docker
@@ -449,14 +547,14 @@ const AssistantPage = () => {
               <div
                 key={msg.id}
                 className={
-                  'hf-assistant-message ' +
-                  (msg.role === 'assistant'
-                    ? 'hf-assistant-message--assistant'
-                    : 'hf-assistant-message--user')
+                  "hf-assistant-message " +
+                  (msg.role === "assistant"
+                    ? "hf-assistant-message--assistant"
+                    : "hf-assistant-message--user")
                 }
               >
                 <div className="hf-assistant-message-role">
-                  {msg.role === 'assistant' ? 'Assistant' : 'You'}
+                  {msg.role === "assistant" ? "Assistant" : "You"}
                 </div>
                 <div className="hf-assistant-message-body">
                   {msg.content}
@@ -484,8 +582,8 @@ const AssistantPage = () => {
               className="hf-assistant-input"
               placeholder={
                 bootDone
-                  ? 'Type a question or command…'
-                  : 'Assistant is booting…'
+                  ? "Type a question or command…"
+                  : "Assistant is booting…"
               }
               aria-label="Assistant message"
               value={input}

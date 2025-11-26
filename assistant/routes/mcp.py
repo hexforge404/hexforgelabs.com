@@ -25,14 +25,16 @@ if not parsed_url.scheme or not parsed_url.netloc:
 
 router = APIRouter()
 
-# === 🧠 Chat tool aliases ===
 command_aliases = {
     "usb": "usb-list",
     "os": "os-info",
     "logs": "logs",
+
+    # 🛠 FIXED
     "df": "df",
+    "docker": "docker_ps",
+
     "uptime": "uptime",
-    "docker": "docker",
     "user": "user",
     "ping": "ping",
     "freecad": "launch-freecad",
