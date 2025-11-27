@@ -146,8 +146,6 @@ const userAuthRoutes = require('./routes/userAuth');
 const assistantSessionsRoutes = require('./routes/assistantSessions');
 const assistantProjectsRouter = require("./routes/assistantProjects");
 
-
-
 app.use("/api/assistant-projects", assistantProjectsRouter);
 app.use('/api/mcp', mcpRoutes);
 app.use('/api/products', apiLimiter, productRoutes);

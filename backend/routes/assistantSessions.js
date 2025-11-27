@@ -163,7 +163,10 @@ router.get("/:sessionId", async (req, res) => {
   }
 });
 
-// backend/routes/assistantSessions.js (example PATCH)
+
+
+// backend/routes/assistantSessions.js
+
 router.patch("/:sessionId/metadata", async (req, res) => {
   try {
     const { sessionId } = req.params;
@@ -177,7 +180,7 @@ router.patch("/:sessionId/metadata", async (req, res) => {
 
     const session = await AssistantSession.findOneAndUpdate(
       { sessionId },
-      update,
+      { $set: update },          // 👈 important
       { new: true }
     );
 
@@ -191,6 +194,7 @@ router.patch("/:sessionId/metadata", async (req, res) => {
     res.status(500).json({ error: "Failed to update session metadata." });
   }
 });
+
 
 
 // POST /api/assistant-sessions/:sessionId/append

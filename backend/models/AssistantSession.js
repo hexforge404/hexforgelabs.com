@@ -42,36 +42,36 @@ const AssistantSessionSchema = new mongoose.Schema(
       default: [],
     },
 
-    // Link to a project (optional)
+    // 🔗 Link to a project (AssistantProject._id)
     projectId: {
-      // Store AssistantProject._id as a string
-      type: String,
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "AssistantProject",
       default: null,
     },
 
     // Human-friendly label for this part/session
     partLabel: {
       type: String,
+      trim: true,
       default: "",
     },
 
-    // Content Engine integration for this specific part
+    // Content Engine integration
     enginePartId: {
       type: String,
+      trim: true,
       default: "",
     },
 
     // Full path to this part's assets (logs, screenshots, video)
     assetsPath: {
       type: String,
+      trim: true,
       default: "",
     },
   },
-  {
-    timestamps: true,
-  }
+  { timestamps: true }
 );
-
 
 module.exports = mongoose.model(
   "AssistantSession",

@@ -11,6 +11,7 @@ import "./AssistantPage.css";
 import { useAssistantProjects } from "../hooks/useAssistantProjects";
 
 
+
 // Available model chips
 const MODEL_OPTIONS = ["Lab Core", "Tool Runner", "HexForge Scribe"];
 
@@ -35,10 +36,10 @@ const AssistantPage = () => {
 
   // Sidebar active tab
   const [activeTab, setActiveTab] = useState("chats"); // 'chats' | 'projects' | 'models'
+  
+  const [attachLoading, setAttachLoading] = useState(false);
 
-  // Simple project list (visual only for now)
-  const [projectItems, setProjectItems] = useState([]);
-  const [projectCounter, setProjectCounter] = useState(1);
+
 
   // Active model for assistant routing
   const [activeModel, setActiveModel] = useState("HexForge Scribe");
@@ -49,6 +50,7 @@ const AssistantPage = () => {
 
   // Which session's overflow menu is open (for ⋯ menu)
   const [sessionMenuOpenId, setSessionMenuOpenId] = useState(null);
+  const [projectMenuOpenId, setProjectMenuOpenId] = useState(null);
 
   // 🔹 Session management hook (Mongo-backed)
   const {
@@ -63,15 +65,20 @@ const AssistantPage = () => {
     clearError: clearSessionsError,
   } = useAssistantSessions();
 
-    const {
+   const {
   projects,
   projectsLoading,
   projectsError,
   selectedProject,
   projectSessions,
-  loading: projectSessionsLoading,
-  error: projectSessionsError,
+  projectSessionsLoading,
+  projectSessionsError,
+  loadProjects,
+  createProject,
+  renameProject,
+  deleteProject,
   selectProject,
+  clearProjectsError: clearProjectsApiError,
 } = useAssistantProjects();
 
 
@@ -194,14 +201,144 @@ const AssistantPage = () => {
     setSessionMenuOpenId(null);
   }, [clearSessionsError, createNewSession, setActiveSessionId]);
 
-  const handleNewProject = useCallback(() => {
-    setProjectItems((prev) => {
-      const id = `project-${projectCounter}`;
-      const label = `Untitled project ${projectCounter}`;
-      setProjectCounter((n) => n + 1);
-      return [...prev, { id, label }];
-    });
-  }, [projectCounter]);
+      const handleNewProject = useCallback(async () => {
+  // create a basic project (local or backend)
+  const created = await createProject("Untitled project");
+
+  // Prompt for a name right after creation
+  const currentName = created?.name || "Untitled project";
+  const next = window.prompt("New project name:", currentName);
+
+  if (next && next.trim() && next.trim() !== currentName) {
+    const projectId = created._id || created.id || created.slug;
+    if (projectId) {
+      await renameProject(projectId, next.trim());
+    }
+  }
+}, [createProject, renameProject]);
+
+const handleRenameProject = useCallback(
+  (project) => {
+    if (!project) return;
+    const currentName = project.name || project.slug || "Untitled project";
+    const next = window.prompt("Rename project:", currentName);
+    if (!next || next.trim() === "" || next.trim() === currentName) {
+      setProjectMenuOpenId(null);
+      return;
+    }
+    const projectId = project._id || project.id || project.slug;
+    if (projectId) {
+      renameProject(projectId, next.trim());
+    }
+    setProjectMenuOpenId(null);
+  },
+  [renameProject]
+);
+
+const handleDeleteProject = useCallback(
+  (project) => {
+    if (!project) return;
+    const label = project.name || project.slug || "Untitled project";
+    const ok = window.confirm(
+      `Delete project "${label}"?\n\n(This won't delete any underlying sessions yet; it's just a label.)`
+    );
+    if (!ok) {
+      setProjectMenuOpenId(null);
+      return;
+    }
+
+    const projectId = project._id || project.id || project.slug;
+    if (projectId) {
+      deleteProject(projectId);
+    }
+
+    // Clear selection if we deleted the active project
+    if (
+      selectedProject &&
+      (selectedProject._id === project._id ||
+        selectedProject.id === project.id ||
+        selectedProject.slug === project.slug)
+    ) {
+      selectProject(null);
+    }
+
+    setProjectMenuOpenId(null);
+  },
+  [deleteProject, selectedProject, selectProject]
+);
+
+
+const handleAttachCurrentSession = useCallback(
+  async () => {
+    if (!selectedProject) {
+      window.alert("Select a project in the Projects tab first.");
+      return;
+    }
+    if (!activeSessionId) {
+      window.alert("You need an active chat session to attach.");
+      return;
+    }
+
+    // Optional friendly default label
+    const defaultLabel = selectedProject.name
+      ? `Part – ${selectedProject.name}`
+      : "Part label";
+
+    const partLabelInput = window.prompt(
+      "Part label for this session (optional):",
+      defaultLabel
+    );
+
+    const body = {
+      projectId: selectedProject._id, // store AssistantProject ObjectId on the session
+    };
+
+    if (partLabelInput && partLabelInput.trim()) {
+      body.partLabel = partLabelInput.trim();
+    }
+
+    setAttachLoading(true);
+    try {
+      const res = await fetch(
+        `/api/assistant-sessions/${encodeURIComponent(
+          activeSessionId
+        )}/metadata`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        }
+      );
+
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(
+          errBody.error || `Failed to attach session (${res.status})`
+        );
+      }
+
+      // Optionally read the response (we don't really need it right now)
+      await res.json().catch(() => null);
+
+      // Refresh the selected project's sessions so the right panel updates
+      await selectProject(selectedProject);
+
+      window.alert("Session attached to project.");
+    } catch (err) {
+      console.error("attachCurrentSession error:", err);
+      window.alert(
+        `Failed to attach current session:\n\n${err.message || String(err)}`
+      );
+    } finally {
+      setAttachLoading(false);
+    }
+  },
+  [activeSessionId, selectedProject, selectProject, setAttachLoading]
+);
+
+
+
+
 
   const handleSelectSession = useCallback(
     (id) => {
@@ -413,166 +550,244 @@ const AssistantPage = () => {
             </div>
           )}
 
-          {/* Projects tab */}
-{activeTab === "projects" && (
-  <div className="hf-assistant-projects">
-    {/* Project list */}
-    <div className="hf-assistant-projects-list">
-      <div className="hf-assistant-projects-header">
-        <span className="hf-assistant-projects-title">Projects</span>
-        {projectsLoading && (
-          <span className="hf-assistant-pill hf-assistant-pill--dim">
-            Loading…
-          </span>
-        )}
-      </div>
-
-      {projectsError && (
-        <div className="hf-assistant-error">{projectsError}</div>
-      )}
-
-      {projects.length === 0 && !projectsLoading && !projectsError && (
-        <div className="hf-assistant-empty">
-          No assistant projects yet.<br />
-          You can create them via the API or future UI tools.
-        </div>
-      )}
-
-      <div className="hf-assistant-projects-scroll">
-        {projects.map((project) => {
-          const isActive =
-            selectedProject &&
-            (selectedProject._id === project._id ||
-              selectedProject.slug === project.slug);
-
-          return (
-            <button
-              key={project._id || project.slug}
-              type="button"
-              className={
-                "hf-assistant-project-row" +
-                (isActive ? " hf-assistant-project-row--active" : "")
-              }
-              onClick={() => selectProject(project)}
-            >
-              <div className="hf-assistant-project-row-main">
-                <div className="hf-assistant-project-name">
-                  {project.name}
-                </div>
-                <div className="hf-assistant-project-meta">
-                  <span
-                    className={`hf-assistant-status-pill hf-assistant-status-pill--${
-                      project.status || "active"
-                    }`}
-                  >
-                    {project.status || "active"}
-                  </span>
-                  {project.tags && project.tags.length > 0 && (
-                    <span className="hf-assistant-tags">
-                      {project.tags.join(" • ")}
+                              {/* Projects tab */}
+          {activeTab === "projects" && (
+            <div className="hf-assistant-projects">
+              {/* Project list */}
+              <div className="hf-assistant-projects-list">
+                <div className="hf-assistant-projects-header">
+                  <span className="hf-assistant-projects-title">Projects</span>
+                  {projectsLoading && (
+                    <span className="hf-assistant-pill hf-assistant-pill--dim">
+                      Loading…
                     </span>
                   )}
                 </div>
-              </div>
-              <div className="hf-assistant-project-slug">
-                {project.slug}
-              </div>
-            </button>
-          );
-        })}
-      </div>
-    </div>
 
-    {/* Sessions for selected project */}
-    <div className="hf-assistant-project-sessions">
-      {!selectedProject && (
-        <div className="hf-assistant-empty hf-assistant-empty--centered">
-          Select a project on the left to see its sessions.
-        </div>
-      )}
+                {projectsError && (
+                  <div className="hf-assistant-error">{projectsError}</div>
+                )}
 
-      {selectedProject && (
-        <>
-          <div className="hf-assistant-project-sessions-header">
-            <div>
-              <div className="hf-assistant-project-sessions-title">
-                {selectedProject.name}
-              </div>
-              <div className="hf-assistant-project-sessions-subtitle">
-                {selectedProject.description ||
-                  selectedProject.slug ||
-                  ""}
-              </div>
-            </div>
-            {projectSessionsLoading && (
-              <span className="hf-assistant-pill hf-assistant-pill--dim">
-                Loading sessions…
-              </span>
-            )}
-          </div>
-
-          {projectSessionsError && (
-            <div className="hf-assistant-error">
-              {projectSessionsError}
-            </div>
-          )}
-
-          {projectSessions.length === 0 &&
-            !projectSessionsLoading &&
-            !projectSessionsError && (
-              <div className="hf-assistant-empty">
-                No sessions linked to this project yet.
-                <br />
-                (We’ll add “attach current session” controls soon.)
-              </div>
-            )}
-
-          {projectSessions.length > 0 && (
-            <div className="hf-assistant-project-sessions-list">
-              {projectSessions.map((s) => (
-                <div
-                  key={s.sessionId}
-                  className="hf-assistant-project-session-row"
-                  onClick={() => {
-                    handleSelectSession(s.sessionId);
-                    setActiveTab("chats");
-                  }}
-                >
-                  <div className="hf-assistant-project-session-main">
-                    <div className="hf-assistant-project-session-title">
-                      {s.partLabel || s.title || s.sessionId}
+                {projects.length === 0 &&
+                  !projectsLoading &&
+                  !projectsError && (
+                    <div className="hf-assistant-empty">
+                      No assistant projects yet.
+                      <br />
+                      You can create them via the UI or API.
                     </div>
-                    <div className="hf-assistant-project-session-meta">
-                      <span className="hf-assistant-pill hf-assistant-pill--tiny">
-                        {s.model || "unknown model"}
-                      </span>
-                      {s.enginePartId && (
-                        <span className="hf-assistant-pill hf-assistant-pill--tiny">
-                          {s.enginePartId}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="hf-assistant-project-session-path">
-                    {s.assetsPath || "No assets path set"}
-                  </div>
-                  <div className="hf-assistant-project-session-dates">
-                    <span>
-                      Updated:{" "}
-                      {s.updatedAt
-                        ? new Date(s.updatedAt).toLocaleString()
-                        : "—"}
-                    </span>
-                  </div>
+                  )}
+
+                <div className="hf-assistant-projects-scroll">
+                  {projects.map((project) => {
+                    const id = project._id || project.id || project.slug;
+                    const isActive =
+                      selectedProject &&
+                      (selectedProject._id === project._id ||
+                        selectedProject.id === project.id ||
+                        selectedProject.slug === project.slug);
+
+                    return (
+                      <div
+                        key={id}
+                        className={
+                          "hf-side-item hf-assistant-project-row" +
+                          (isActive ? " hf-assistant-project-row--active" : "")
+                        }
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => selectProject(project)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            selectProject(project);
+                          }
+                        }}
+                      >
+                        <div className="hf-assistant-project-row-main">
+                          {/* Top line: name + ⋯ menu */}
+                          <div className="hf-assistant-project-header">
+                            <div className="hf-assistant-project-name">
+                              {project.name || "Untitled project"}
+                            </div>
+
+                            <button
+                              type="button"
+                              className="hf-side-item-options"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setProjectMenuOpenId((prev) =>
+                                  prev === id ? null : id
+                                );
+                              }}
+                              aria-label={`Project options for ${
+                                project.name || project.slug || id
+                              }`}
+                            >
+                              ⋯
+                            </button>
+
+                            {projectMenuOpenId === id && (
+                              <div
+                                className="hf-side-item-menu"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleRenameProject(project)
+                                  }
+                                >
+                                  Rename
+                                </button>
+                                <button
+                                  type="button"
+                                  className="is-danger"
+                                  onClick={() =>
+                                    handleDeleteProject(project)
+                                  }
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Second line: status + tags (compact) */}
+                          <div className="hf-assistant-project-meta">
+                            <span
+                              className={`hf-assistant-status-pill hf-assistant-status-pill--${
+                                project.status || "active"
+                              }`}
+                            >
+                              {project.status || "active"}
+                            </span>
+
+                            {project.tags && project.tags.length > 0 && (
+                              <span className="hf-assistant-tags">
+                                {project.tags.join(" • ")}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              ))}
+              </div>
+
+              {/* Sessions for selected project */}
+              <div className="hf-assistant-project-sessions">
+                {!selectedProject && (
+                  <div className="hf-assistant-empty hf-assistant-empty--centered">
+                    Select a project on the left to see its sessions.
+                  </div>
+                )}
+
+                {selectedProject && (
+                  <>
+                    <div className="hf-assistant-project-sessions-header">
+                      <div>
+                        <div className="hf-assistant-project-sessions-title">
+                          {selectedProject.name}
+                        </div>
+                        <div className="hf-assistant-project-sessions-subtitle">
+                          {selectedProject.description ||
+                            selectedProject.slug ||
+                            ""}
+                        </div>
+                      </div>
+
+                      <div className="hf-assistant-project-sessions-actions">
+                        {projectSessionsLoading && (
+                          <span className="hf-assistant-pill hf-assistant-pill--dim">
+                            Loading…
+                          </span>
+                        )}
+
+                        {activeSessionId && (
+                          <button
+                            type="button"
+                            className="hf-assistant-attach-btn"
+                            onClick={handleAttachCurrentSession}
+                            disabled={
+                              attachLoading || projectSessionsLoading
+                            }
+                          >
+                            {attachLoading
+                              ? "Attaching…"
+                              : "Attach current session"}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {projectSessionsError && (
+                      <div className="hf-assistant-error">
+                        {projectSessionsError}
+                      </div>
+                    )}
+
+                    {projectSessions.length === 0 &&
+                      !projectSessionsLoading &&
+                      !projectSessionsError && (
+                        <div className="hf-assistant-empty">
+                          No sessions linked to this project yet.
+                          <br />
+                          Use “Attach current session” to link one.
+                        </div>
+                      )}
+
+                    {projectSessions.length > 0 && (
+                      <div className="hf-assistant-project-sessions-list">
+                        {projectSessions.map((s) => (
+                          <div
+                            key={s.sessionId}
+                            className="hf-assistant-project-session-row"
+                            onClick={() => {
+                              handleSelectSession(s.sessionId);
+                              setActiveTab("chats");
+                            }}
+                          >
+                            <div className="hf-assistant-project-session-main">
+                              <div className="hf-assistant-project-session-title">
+                                {s.partLabel || s.title || s.sessionId}
+                              </div>
+                              <div className="hf-assistant-project-session-meta">
+                                <span className="hf-assistant-pill hf-assistant-pill--tiny">
+                                  {s.model || "unknown model"}
+                                </span>
+                                {s.enginePartId && (
+                                  <span className="hf-assistant-pill hf-assistant-pill--tiny">
+                                    {s.enginePartId}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="hf-assistant-project-session-path">
+                              {s.assetsPath || "No assets path set"}
+                            </div>
+                            <div className="hf-assistant-project-session-dates">
+                              <span>
+                                Updated:{" "}
+                                {s.updatedAt
+                                  ? new Date(
+                                      s.updatedAt
+                                    ).toLocaleString()
+                                  : "—"}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
           )}
-        </>
-      )}
-    </div>
-  </div>
-)}
+
+
+
 
 
           {/* Models tab – duplicate model selector view */}
