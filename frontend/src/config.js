@@ -11,6 +11,10 @@ const API_BASE =
 const SITE_BASE =
   process.env.REACT_APP_SITE_BASE || "https://hexforgelabs.com";
 
+  // Base for backend API routes (nginx proxies /api → backend)
+export const API_BASE_URL =
+  process.env.REACT_APP_API_BASE_URL || "/api";
+
 export const ASSISTANT_URL = ASSISTANT_BASE;
 export const API_URL = API_BASE;
 

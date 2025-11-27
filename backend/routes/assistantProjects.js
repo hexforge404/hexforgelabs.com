@@ -1,168 +1,127 @@
 // backend/routes/assistantProjects.js
 const express = require("express");
-const router = express.Router();
-const mongoose = require("mongoose");
-
 const AssistantProject = require("../models/AssistantProject");
 const AssistantSession = require("../models/AssistantSession");
 
+const router = express.Router();
+
 // GET /api/assistant-projects
-// List all projects
 router.get("/", async (req, res) => {
   try {
-    const projects = await AssistantProject.find().sort({ createdAt: -1 }).lean();
+    const projects = await AssistantProject.find().sort({ updatedAt: -1 });
     res.json(projects);
   } catch (err) {
-    console.error("[assistant-projects] list error:", err);
-    res.status(500).json({ error: "Failed to load assistant projects." });
+    console.error("GET /assistant-projects error:", err);
+    res.status(500).json({ error: "Failed to load assistant projects" });
   }
 });
 
+// helper – very simple slugger
+function makeSlug(name) {
+  const base =
+    (name || "")
+      .toString()
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "project";
+
+  const rand = Math.random().toString(36).slice(2, 7);
+  return `${base}-${rand}`;
+}
+
 // POST /api/assistant-projects
-// Create a new project
 router.post("/", async (req, res) => {
   try {
-    const {
-      slug,
-      name,
-      description,
-      status,
-      tags,
-      engineProjectId,
-      assetsRootPath,
-    } = req.body;
-
-    if (!slug || !name) {
-      return res.status(400).json({ error: "slug and name are required." });
+    const { name, status, tags, description } = req.body || {};
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: "Project name is required" });
     }
 
     const project = new AssistantProject({
-      slug,
-      name,
-      description,
-      status,
-      tags,
-      engineProjectId,
-      assetsRootPath,
+      slug: makeSlug(name),
+      name: name.trim(),
+      status: status || "active",
+      tags: Array.isArray(tags) ? tags : [],
+      description: description || "",
     });
 
     await project.save();
     res.status(201).json(project);
   } catch (err) {
-    console.error("[assistant-projects] create error:", err);
-
-    if (err.code === 11000) {
-      return res.status(409).json({ error: "Project slug must be unique." });
-    }
-
-    res.status(500).json({ error: "Failed to create assistant project." });
-  }
-});
-
-// GET /api/assistant-projects/:id
-// Fetch a single project by Mongo _id OR slug
-router.get("/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    let project = null;
-
-    // If it looks like an ObjectId, try that first
-    if (mongoose.isValidObjectId(id)) {
-      project = await AssistantProject.findById(id);
-    }
-
-    // Otherwise (or if not found), fall back to slug
-    if (!project) {
-      project = await AssistantProject.findOne({ slug: id });
-    }
-
-    if (!project) {
-      return res.status(404).json({ error: "Project not found." });
-    }
-
-    res.json(project);
-  } catch (err) {
-    console.error("[assistant-projects] get error:", err);
-    res.status(500).json({ error: "Failed to load assistant project." });
+    console.error("POST /assistant-projects error:", err);
+    res.status(500).json({ error: "Failed to create assistant project" });
   }
 });
 
 // PATCH /api/assistant-projects/:id
-// Update basic project fields + engine pointers
 router.patch("/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const update = {};
+    const { name, status, tags, description } = req.body || {};
 
-    [
-      "slug",
-      "name",
-      "description",
-      "status",
-      "tags",
-      "engineProjectId",
-      "assetsRootPath",
-    ].forEach((key) => {
-      if (typeof req.body[key] !== "undefined") {
-        update[key] = req.body[key];
-      }
-    });
-
-    const project =
-      (await AssistantProject.findByIdAndUpdate(id, update, {
-        new: true,
-      })) ||
-      (await AssistantProject.findOneAndUpdate({ slug: id }, update, {
-        new: true,
-      }));
-
+    const project = await AssistantProject.findById(id);
     if (!project) {
-      return res.status(404).json({ error: "Project not found." });
+      return res.status(404).json({ error: "Project not found" });
     }
 
+    if (name && name.trim()) project.name = name.trim();
+    if (status) project.status = status;
+    if (Array.isArray(tags)) project.tags = tags;
+    if (typeof description === "string") project.description = description;
+
+    await project.save();
     res.json(project);
   } catch (err) {
-    console.error("[assistant-projects] update error:", err);
-    res.status(500).json({ error: "Failed to update assistant project." });
+    console.error("PATCH /assistant-projects/:id error:", err);
+    res.status(500).json({ error: "Failed to update assistant project" });
   }
 });
 
-// GET /api/assistant-projects/:id/sessions
-// All sessions attached to this project, with part labels + engine fields
+// DELETE /api/assistant-projects/:id
+router.delete("/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const project = await AssistantProject.findById(id);
+    if (!project) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+
+    await project.deleteOne();
+    // Optionally clear projectId from sessions:
+    // await AssistantSession.updateMany({ projectId: id }, { $set: { projectId: null } });
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("DELETE /assistant-projects/:id error:", err);
+    res.status(500).json({ error: "Failed to delete assistant project" });
+  }
+});
+
 // GET /api/assistant-projects/:id/sessions
 router.get("/:id/sessions", async (req, res) => {
   try {
     const { id } = req.params;
 
-    let project = null;
-
-    if (mongoose.isValidObjectId(id)) {
-      project = await AssistantProject.findById(id);
-    }
-    if (!project) {
-      project = await AssistantProject.findOne({ slug: id });
-    }
-
-    if (!project) {
-      return res.status(404).json({ error: "Project not found." });
-    }
-
-    const sessions = await AssistantSession.find({
-      projectId: String(project._id),   // 🔴 change is here
-    })
-      .sort({ updatedAt: -1 })
-      .lean();
-
-    res.json({
-      project,
-      sessions,
+    const sessions = await AssistantSession.find({ projectId: id }).sort({
+      updatedAt: -1,
     });
+
+    const payload = sessions.map((s) => ({
+      sessionId: s.sessionId,
+      title: s.title,
+      model: s.model,
+      enginePartId: s.enginePartId || null,
+      assetsPath: s.assetsPath || null,
+      partLabel: s.partLabel || null,
+      updatedAt: s.updatedAt,
+    }));
+
+    res.json(payload);
   } catch (err) {
-    console.error("[assistant-projects] sessions error:", err);
-    res.status(500).json({ error: "Failed to load project sessions." });
+    console.error("GET /assistant-projects/:id/sessions error:", err);
+    res.status(500).json({ error: "Failed to load project sessions" });
   }
 });
-
 
 module.exports = router;

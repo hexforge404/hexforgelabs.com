@@ -517,10 +517,57 @@
 }
 
 
+/* =========================
+   Projects Tab Styles
+   ========================= */
 /* Projects tab layout */
 .hf-assistant-projects {
-  display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.7fr);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  height: 100%;
+}
+
+
+.hf-assistant-projects-list,
+.hf-assistant-project-sessions {
+  background: rgba(15, 23, 42, 0.9);
+  border-radius: 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.hf-assistant-projects-header,
+.hf-assistant-project-sessions-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.hf-assistant-projects-title,
+.hf-assistant-project-sessions-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.hf-assistant-projects-scroll,
+.hf-assistant-project-sessions-list {
+  flex: 1;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+/* =========================
+   Projects Tab Styles
+   ========================= */
+/* Projects tab layout */
+.hf-assistant-projects {
+  display: flex;
+  flex-direction: column;
   gap: 0.75rem;
   height: 100%;
 }
@@ -557,19 +604,28 @@
   padding-right: 0.25rem;
 }
 
-/* project rows */
+/* Scroll container stays scrollable vertically */
+.hf-assistant-projects-scroll {
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* --- Project rows --- */
 .hf-assistant-project-row {
+  position: relative;              /* anchor for the overflow menu */
   width: 100%;
   text-align: left;
-  border: none;
   cursor: pointer;
-  padding: 0.5rem 0.6rem;
+  padding: 0.45rem 0.55rem;
   border-radius: 0.6rem;
   background: transparent;
   color: inherit;
   margin-bottom: 0.25rem;
-  transition: background 0.15s ease, border-color 0.15s ease;
   border: 1px solid transparent;
+  display: flex;
+  flex-direction: column;
+  overflow: visible;               /* allow menu to spill out */
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
 
 .hf-assistant-project-row:hover {
@@ -582,25 +638,185 @@
   border-color: rgba(45, 212, 191, 0.9);
 }
 
+/* Main content wrapper */
+.hf-assistant-project-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+/* Top line: name + menu button */
+.hf-assistant-project-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+/* Name */
 .hf-assistant-project-name {
   font-size: 0.85rem;
   font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
+/* Status + tags row */
 .hf-assistant-project-meta {
-  font-size: 0.7rem;
-  opacity: 0.8;
   display: flex;
-  gap: 0.25rem;
+  flex-wrap: wrap;
   align-items: center;
-  margin-top: 0.1rem;
+  gap: 0.3rem;
+  font-size: 0.7rem;
+  opacity: 0.9;
 }
 
-.hf-assistant-project-slug {
-  font-size: 0.7rem;
-  opacity: 0.7;
-  margin-top: 0.1rem;
+/* Tag text */
+.hf-assistant-tags {
+  opacity: 0.85;
 }
+
+/* Base pill style for status */
+.hf-assistant-status-pill {
+  font-size: 0.65rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.6);
+}
+
+/* status colors */
+.hf-assistant-status-pill--active {
+  border-color: rgba(16, 185, 129, 0.7);
+}
+
+.hf-assistant-status-pill--completed {
+  border-color: rgba(59, 130, 246, 0.7);
+}
+
+.hf-assistant-status-pill--paused {
+  border-color: rgba(234, 179, 8, 0.7);
+}
+
+.hf-assistant-status-pill--archived {
+  border-color: rgba(148, 163, 184, 0.7);
+}
+
+/* --- Project overflow menu: float over the selected row --- */
+.hf-assistant-projects .hf-side-item-menu {
+  position: absolute;
+  top: 50%;                     /* vertically centered on the row */
+  transform: translateY(-50%);
+  margin-top: 0;
+  z-index: 20;
+  min-width: 140px;
+  right: 0.35rem;
+}
+
+/* Make sure the ⋯ trigger sits above text for clicks */
+.hf-assistant-projects .hf-side-item-options {
+  position: relative;
+  z-index: 21;
+}
+
+/* little pills (shared) */
+.hf-assistant-pill {
+  font-size: 0.65rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.6);
+}
+
+.hf-assistant-pill--dim {
+  opacity: 0.8;
+}
+
+.hf-assistant-pill--tiny {
+  font-size: 0.6rem;
+  padding: 0.05rem 0.35rem;
+}
+
+
+/* Main content wrapper */
+.hf-assistant-project-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+/* Top line: name + menu button */
+.hf-assistant-project-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+/* Name */
+.hf-assistant-project-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Status + tags row */
+.hf-assistant-project-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.7rem;
+  opacity: 0.9;
+}
+
+/* Tag text */
+.hf-assistant-tags {
+  opacity: 0.85;
+}
+
+/* Base pill style for status */
+.hf-assistant-status-pill {
+  font-size: 0.65rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.6);
+}
+
+/* Existing color variants still apply: 
+   .hf-assistant-status-pill--active, --completed, --paused, --archived
+*/
+
+/* Project overflow menu now floats over the row */
+.hf-assistant-projects .hf-side-item-menu {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.4rem;
+  margin-top: 0;
+  z-index: 20;
+  min-width: 140px;
+}
+
+
+/* Project overflow menu: float over the selected row */
+.hf-assistant-projects .hf-side-item-menu {
+  position: absolute;
+  top: 50%;               /* center vertically in the row */
+  right: 0.5rem;
+  transform: translateY(-50%);  /* pull it up so it sits over the card */
+  margin-top: 0;          /* no extra push down */
+  z-index: 20;
+  min-width: 140px;
+}
+
+
+/* Optional: make sure the ⋯ itself sits above text */
+.hf-assistant-projects .hf-side-item-options {
+  position: relative;
+  z-index: 21;
+}
+
 
 /* little pills */
 .hf-assistant-pill {
@@ -689,4 +905,41 @@
   border-radius: 0.5rem;
   padding: 0.4rem 0.5rem;
   margin-bottom: 0.4rem;
+}
+
+.hf-assistant-project-sessions-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+/* Attach current session button */
+.hf-assistant-attach-btn {
+  padding: 0.25rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid rgba(45, 212, 191, 0.7);
+  background: linear-gradient(135deg, #22c55e, #14b8a6);
+  color: #020617;
+  font-size: 0.7rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    transform 0.1s ease-out,
+    box-shadow 0.15s ease-out,
+    filter 0.15s ease-out;
+}
+
+.hf-assistant-attach-btn:hover:enabled {
+  filter: brightness(1.05);
+  box-shadow: 0 0 0 1px rgba(45, 212, 191, 0.6);
+}
+
+.hf-assistant-attach-btn:active:enabled {
+  transform: translateY(1px);
+}
+
+.hf-assistant-attach-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
