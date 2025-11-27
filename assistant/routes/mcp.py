@@ -30,9 +30,10 @@ command_aliases = {
     "os": "os-info",
     "logs": "logs",
 
-    # 🛠 FIXED
-    "df": "df",
-    "docker": "docker_ps",
+    # 🛠 FIXED – map to actual registered tools
+    "df": "disk-usage",
+    "docker": "docker",
+    "docker_ps": "docker-ps",
 
     "uptime": "uptime",
     "user": "user",

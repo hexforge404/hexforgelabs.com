@@ -8,6 +8,8 @@ import React, {
 import { useAssistantChat } from "../hooks/useAssistantChat";
 import { useAssistantSessions } from "../hooks/useAssistantSessions";
 import "./AssistantPage.css";
+import { useAssistantProjects } from "../hooks/useAssistantProjects";
+
 
 // Available model chips
 const MODEL_OPTIONS = ["Lab Core", "Tool Runner", "HexForge Scribe"];
@@ -60,6 +62,19 @@ const AssistantPage = () => {
     error: sessionsError,
     clearError: clearSessionsError,
   } = useAssistantSessions();
+
+    const {
+  projects,
+  projectsLoading,
+  projectsError,
+  selectedProject,
+  projectSessions,
+  loading: projectSessionsLoading,
+  error: projectSessionsError,
+  selectProject,
+} = useAssistantProjects();
+
+
 
   // 🔹 Chat hook – pass mode + model + active sessionId
   const { messages, input, setInput, loading, error, send, resetError } =
@@ -399,20 +414,166 @@ const AssistantPage = () => {
           )}
 
           {/* Projects tab */}
-          {activeTab === "projects" && (
-            <div className="hf-side-list">
-              {projectItems.length === 0 && (
-                <div className="hf-side-item is-disabled">
-                  No projects yet. Create one to pin an assistant session.
+{activeTab === "projects" && (
+  <div className="hf-assistant-projects">
+    {/* Project list */}
+    <div className="hf-assistant-projects-list">
+      <div className="hf-assistant-projects-header">
+        <span className="hf-assistant-projects-title">Projects</span>
+        {projectsLoading && (
+          <span className="hf-assistant-pill hf-assistant-pill--dim">
+            Loading…
+          </span>
+        )}
+      </div>
+
+      {projectsError && (
+        <div className="hf-assistant-error">{projectsError}</div>
+      )}
+
+      {projects.length === 0 && !projectsLoading && !projectsError && (
+        <div className="hf-assistant-empty">
+          No assistant projects yet.<br />
+          You can create them via the API or future UI tools.
+        </div>
+      )}
+
+      <div className="hf-assistant-projects-scroll">
+        {projects.map((project) => {
+          const isActive =
+            selectedProject &&
+            (selectedProject._id === project._id ||
+              selectedProject.slug === project.slug);
+
+          return (
+            <button
+              key={project._id || project.slug}
+              type="button"
+              className={
+                "hf-assistant-project-row" +
+                (isActive ? " hf-assistant-project-row--active" : "")
+              }
+              onClick={() => selectProject(project)}
+            >
+              <div className="hf-assistant-project-row-main">
+                <div className="hf-assistant-project-name">
+                  {project.name}
                 </div>
-              )}
-              {projectItems.map((p) => (
-                <div key={p.id} className="hf-side-item is-disabled">
-                  {p.label}
+                <div className="hf-assistant-project-meta">
+                  <span
+                    className={`hf-assistant-status-pill hf-assistant-status-pill--${
+                      project.status || "active"
+                    }`}
+                  >
+                    {project.status || "active"}
+                  </span>
+                  {project.tags && project.tags.length > 0 && (
+                    <span className="hf-assistant-tags">
+                      {project.tags.join(" • ")}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="hf-assistant-project-slug">
+                {project.slug}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+
+    {/* Sessions for selected project */}
+    <div className="hf-assistant-project-sessions">
+      {!selectedProject && (
+        <div className="hf-assistant-empty hf-assistant-empty--centered">
+          Select a project on the left to see its sessions.
+        </div>
+      )}
+
+      {selectedProject && (
+        <>
+          <div className="hf-assistant-project-sessions-header">
+            <div>
+              <div className="hf-assistant-project-sessions-title">
+                {selectedProject.name}
+              </div>
+              <div className="hf-assistant-project-sessions-subtitle">
+                {selectedProject.description ||
+                  selectedProject.slug ||
+                  ""}
+              </div>
+            </div>
+            {projectSessionsLoading && (
+              <span className="hf-assistant-pill hf-assistant-pill--dim">
+                Loading sessions…
+              </span>
+            )}
+          </div>
+
+          {projectSessionsError && (
+            <div className="hf-assistant-error">
+              {projectSessionsError}
+            </div>
+          )}
+
+          {projectSessions.length === 0 &&
+            !projectSessionsLoading &&
+            !projectSessionsError && (
+              <div className="hf-assistant-empty">
+                No sessions linked to this project yet.
+                <br />
+                (We’ll add “attach current session” controls soon.)
+              </div>
+            )}
+
+          {projectSessions.length > 0 && (
+            <div className="hf-assistant-project-sessions-list">
+              {projectSessions.map((s) => (
+                <div
+                  key={s.sessionId}
+                  className="hf-assistant-project-session-row"
+                  onClick={() => {
+                    handleSelectSession(s.sessionId);
+                    setActiveTab("chats");
+                  }}
+                >
+                  <div className="hf-assistant-project-session-main">
+                    <div className="hf-assistant-project-session-title">
+                      {s.partLabel || s.title || s.sessionId}
+                    </div>
+                    <div className="hf-assistant-project-session-meta">
+                      <span className="hf-assistant-pill hf-assistant-pill--tiny">
+                        {s.model || "unknown model"}
+                      </span>
+                      {s.enginePartId && (
+                        <span className="hf-assistant-pill hf-assistant-pill--tiny">
+                          {s.enginePartId}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="hf-assistant-project-session-path">
+                    {s.assetsPath || "No assets path set"}
+                  </div>
+                  <div className="hf-assistant-project-session-dates">
+                    <span>
+                      Updated:{" "}
+                      {s.updatedAt
+                        ? new Date(s.updatedAt).toLocaleString()
+                        : "—"}
+                    </span>
+                  </div>
                 </div>
               ))}
             </div>
           )}
+        </>
+      )}
+    </div>
+  </div>
+)}
+
 
           {/* Models tab – duplicate model selector view */}
           {activeTab === "models" && (
@@ -543,24 +704,41 @@ const AssistantPage = () => {
           </div>
 
           <div className="hf-assistant-messages">
-            {messages.map((msg) => (
-              <div
-                key={msg.id}
-                className={
-                  "hf-assistant-message " +
-                  (msg.role === "assistant"
-                    ? "hf-assistant-message--assistant"
-                    : "hf-assistant-message--user")
-                }
-              >
-                <div className="hf-assistant-message-role">
-                  {msg.role === "assistant" ? "Assistant" : "You"}
+           {messages.map((msg) => {
+              const isUser = msg.role === "user";
+
+              // Normalize content
+              const content =
+                typeof msg.content === "string"
+                  ? msg.content
+                  : JSON.stringify(msg.content, null, 2);
+
+              // USER MESSAGE
+              if (isUser) {
+                return (
+                  <div
+                    key={msg.id || msg._id || Math.random()}
+                    className="hf-chat-message hf-chat-message--user"
+                  >
+                    {content}
+                  </div>
+                );
+              }
+
+              // ASSISTANT MESSAGE (with nice formatting + scrollable)
+              return (
+                <div
+                  key={msg.id || msg._id || Math.random()}
+                  className="hf-chat-message hf-chat-message--assistant"
+                >
+                  <pre className="hf-chat-message-body">
+                    {content}
+                  </pre>
                 </div>
-                <div className="hf-assistant-message-body">
-                  {msg.content}
-                </div>
-              </div>
-            ))}
+              );
+            })}
+
+
 
             {loading && (
               <div className="hf-assistant-message hf-assistant-message--assistant">

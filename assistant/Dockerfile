@@ -15,10 +15,17 @@ COPY ./assistant /app/assistant
 # Install system dependencies + Python deps
 # Install system dependencies + Python deps
 RUN apt-get update && \
-    apt-get install -y curl wget iputils-ping usbutils && \
+    apt-get install -y \
+        curl \
+        wget \
+        iputils-ping \
+        usbutils \
+        docker.io \
+    && rm -rf /var/lib/apt/lists/* && \
     pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r /app/assistant/requirements.txt && \
-    pip install --no-cache-dir httpx
+    pip install --no-cache-dir -r /app/assistant/requirements.txt
+
+
 
 
 # Expose internal port

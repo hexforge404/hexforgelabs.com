@@ -1,10 +1,27 @@
-// frontend/src/hooks/useAssistantChat.js
 import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import { ASSISTANT_URL, API_URL } from "../config";
 
 // Simple ID generator
 const makeId = () => `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+// Max size of what we persist into Mongo for a single message
+const MAX_SESSION_MESSAGE_LENGTH = 8000;
+
+function normalizeAssistantPayloadForStorage(payload) {
+  // Turn any tool / agent payload into readable text
+  let text =
+    typeof payload === "string" ? payload : JSON.stringify(payload, null, 2);
+
+  // Clamp if it's huge (like docker_ps labels)
+  if (text.length > MAX_SESSION_MESSAGE_LENGTH) {
+    text =
+      text.slice(0, MAX_SESSION_MESSAGE_LENGTH) +
+      "\n\n[... output truncated for session history – full tool result was longer ...]";
+  }
+
+  return text;
+}
 
 /**
  * HexForge Assistant Chat Hook (with full session persistence)
@@ -62,76 +79,89 @@ export function useAssistantChat({ model, sessionId, mode = "assistant" }) {
   // 2) Send a message
   // ---------------------------------------------------------
   const send = useCallback(
-    async (overrideText) => {
-      const text = (overrideText ?? input).trim();
-      if (!text || loading || !sessionId) return;
+  async (overrideText) => {
+    const text = (overrideText ?? input).trim();
+    if (!text || loading || !sessionId) return;
 
-      setLoading(true);
-      setError("");
+    setLoading(true);
+    setError("");
 
-      // UI: push user message immediately
-      const userMsg = { id: makeId(), role: "user", content: text };
-      setMessages((prev) => [...prev, userMsg]);
-      if (!overrideText) setInput("");
+    // 1) Push user message into UI immediately
+    const userMsg = { id: makeId(), role: "user", content: text };
+    setMessages((prev) => [...prev, userMsg]);
+    if (!overrideText) setInput("");
 
-      try {
-        // 1) Talk to assistant backend (FastAPI)
-        const assistantBase = ASSISTANT_URL.replace(/\/$/, "");
-        const res = await axios.post(
-          `${assistantBase}/chat`,
-          {
-            message: text,
-            mode,
-            model,
-            session_id: sessionId,
-          },
-          {
-            headers: { "Content-Type": "application/json" },
-          }
-        );
+    try {
+      // 2) Talk to assistant backend (FastAPI)
+      const assistantBase = ASSISTANT_URL.replace(/\/$/, "");
+      const res = await axios.post(
+        `${assistantBase}/chat`,
+        {
+          message: text,
+          mode,
+          model,
+          session_id: sessionId,
+        },
+        {
+          headers: { "Content-Type": "application/json" },
+        }
+      );
 
-        const data = res.data || {};
-        const content =
-          typeof data.response === "string"
-            ? data.response
-            : JSON.stringify(data, null, 2);
+      const data = res.data || {};
 
-        const assistantMsg = {
-          id: makeId(),
-          role: "assistant",
-          content,
-        };
+      // Raw response from backend – prefer `response` field if present
+      const rawResponse =
+        typeof data.response !== "undefined" ? data.response : data;
 
-        // 2) Update UI
-        setMessages((prev) => [...prev, assistantMsg]);
+      // What we actually show in the UI (pretty-printed string)
+      const displayContent =
+        typeof rawResponse === "string"
+          ? rawResponse
+          : JSON.stringify(rawResponse, null, 2);
 
-        // 3) Persist both messages to Node/Mongo
-        const apiBase = API_URL.replace(/\/$/, "");
-        await axios.post(
-          `${apiBase}/assistant-sessions/${sessionId}/append`,
-          {
-            model,
-            messages: [
-              { role: "user", content: text },
-              { role: "assistant", content },
-            ],
-          }
-        );
-      } catch (err) {
-        console.error("[assistant] send error:", err);
-        let msg = "Something went wrong talking to the assistant.";
+      const assistantMsg = {
+        id: makeId(),
+        role: "assistant",
+        content: displayContent,
+      };
 
-        if (err?.response?.data?.error)
-          msg = String(err.response.data.error);
-        else if (err.message) msg = err.message;
+      // 3) Update UI with assistant message
+      setMessages((prev) => [...prev, assistantMsg]);
 
-        setError(msg);
-      } finally {
-        setLoading(false);
+      // 4) Persist both messages to Node/Mongo (CLAMPED)
+      const apiBase = API_URL.replace(/\/$/, "");
+
+      const storedAssistantContent =
+        normalizeAssistantPayloadForStorage(displayContent);
+
+      await axios.post(
+        `${apiBase}/assistant-sessions/${sessionId}/append`,
+        {
+          model,
+          messages: [
+            { role: "user", content: text },
+            { role: "assistant", content: storedAssistantContent },
+          ],
+        }
+      );
+    } catch (err) {
+      console.error("[assistant] send error:", err);
+      let msg = "Something went wrong talking to the assistant.";
+
+      if (err?.response?.data?.error) {
+        msg = String(err.response.data.error);
+      } else if (err.message) {
+        msg = err.message;
       }
-    },
-    [input, loading, sessionId, mode, model]
-  );
+
+      setError(msg);
+    } finally {
+      setLoading(false);
+    }
+  },
+  [input, loading, sessionId, mode, model]
+);
+
 
   // ---------------------------------------------------------
   // Exported API
