@@ -5,9 +5,6 @@ logger.info("🧩 Dispatcher version: unified full tool map loaded")
 
 # --- Tool imports ---
 
-
-# assistant/tools/dispatcher.py
-
 # Tool imports
 from assistant.tools.system import get_os_info, get_user, get_uptime, get_disk_usage
 from assistant.tools.usb import list_usb_devices
@@ -15,6 +12,8 @@ from assistant.tools.logs import get_logs
 from assistant.tools.docker import get_docker_info
 from assistant.tools.system import ping_host  # OK
 from assistant.tools.agent import call_agent
+from assistant.tools.docker import get_docker_info, docker_ps
+
 
 from assistant.tools.launchers import launch_freecad, launch_app, launch_file
 
@@ -35,7 +34,6 @@ from assistant.tools.process import list_processes, kill_process
 # ❌ Security: remove or replace invalid imports
 from assistant.tools.security import scan_setuid_binaries, check_firewall_rules
 
-# Remove list_cron_jobs; scheduler has no such function
 # For monitoring, use existing functions in monitor
 from assistant.tools.monitor import detailed_cpu as get_cpu_info, system_metrics as get_mem_info
 
@@ -48,7 +46,6 @@ tool_map = {
     "user": get_user,
     "usb-list": list_usb_devices,
     "logs": get_logs,
-    "docker": get_docker_info,
     "agent": call_agent,
     "ping": ping_host,
     "uptime": get_uptime,
@@ -86,6 +83,12 @@ tool_map = {
     # File I/O
     "read-file": read_file,
     "write-file": write_file,
+
+    # 🔁 Backwards-compatible aliases (chat commands / older names)
+    "df": get_disk_usage,
+    "docker": get_docker_info,
+    "docker-ps": docker_ps,
+
 }
 
 

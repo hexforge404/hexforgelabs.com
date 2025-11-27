@@ -163,6 +163,36 @@ router.get("/:sessionId", async (req, res) => {
   }
 });
 
+// backend/routes/assistantSessions.js (example PATCH)
+router.patch("/:sessionId/metadata", async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const { projectId, partLabel, enginePartId, assetsPath } = req.body;
+
+    const update = {};
+    if (typeof projectId !== "undefined") update.projectId = projectId || null;
+    if (typeof partLabel !== "undefined") update.partLabel = partLabel;
+    if (typeof enginePartId !== "undefined") update.enginePartId = enginePartId;
+    if (typeof assetsPath !== "undefined") update.assetsPath = assetsPath;
+
+    const session = await AssistantSession.findOneAndUpdate(
+      { sessionId },
+      update,
+      { new: true }
+    );
+
+    if (!session) {
+      return res.status(404).json({ error: "Session not found." });
+    }
+
+    res.json(session);
+  } catch (err) {
+    console.error("[assistant-sessions] metadata update error:", err);
+    res.status(500).json({ error: "Failed to update session metadata." });
+  }
+});
+
+
 // POST /api/assistant-sessions/:sessionId/append
 router.post("/:sessionId/append", async (req, res) => {
   const { sessionId } = req.params;

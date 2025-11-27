@@ -144,7 +144,11 @@ const notionRoutes = require('./routes/notion');
 const mcpRoutes = require('./routes/mcp');
 const userAuthRoutes = require('./routes/userAuth');
 const assistantSessionsRoutes = require('./routes/assistantSessions');
+const assistantProjectsRouter = require("./routes/assistantProjects");
 
+
+
+app.use("/api/assistant-projects", assistantProjectsRouter);
 app.use('/api/mcp', mcpRoutes);
 app.use('/api/products', apiLimiter, productRoutes);
 app.use('/api/orders', apiLimiter, orderRoutes);
