@@ -63,6 +63,7 @@ const AssistantPage = () => {
     loading: sessionsLoading,
     error: sessionsError,
     clearError: clearSessionsError,
+    reloadSessions,
   } = useAssistantSessions();
 
    const {
@@ -321,6 +322,7 @@ const handleAttachCurrentSession = useCallback(
       await res.json().catch(() => null);
 
       // Refresh the selected project's sessions so the right panel updates
+      await reloadSessions();
       await selectProject(selectedProject);
 
       window.alert("Session attached to project.");
@@ -333,7 +335,7 @@ const handleAttachCurrentSession = useCallback(
       setAttachLoading(false);
     }
   },
-  [activeSessionId, selectedProject, selectProject, setAttachLoading]
+  [activeSessionId, selectedProject, selectProject, reloadSessions]
 );
 
 
@@ -342,6 +344,7 @@ const handleAttachCurrentSession = useCallback(
 
   const handleSelectSession = useCallback(
     (id) => {
+      console.log("[handleSelectSession] clicked", id);
       clearSessionsError();
       resetError();
       setActiveSessionId(id);
@@ -738,22 +741,27 @@ const handleAttachCurrentSession = useCallback(
                       )}
 
                     {projectSessions.length > 0 && (
-                      <div className="hf-assistant-project-sessions-list">
-                        {projectSessions.map((s) => (
+                    <div className="hf-assistant-project-sessions-list">
+                      {projectSessions.map((s) => {
+                        const rowSessionId = s.sessionId || s.id;
+
+                        return (
                           <div
-                            key={s.sessionId}
+                            key={rowSessionId}
                             className={
-                                "hf-assistant-project-session-row" + 
-                                (activeSessionId === s.sessionId ? " is-active" : "") 
-                              }
+                              "hf-assistant-project-session-row" +
+                              (activeSessionId === rowSessionId ? " is-active" : "")
+                            }
                             onClick={() => {
-                              handleSelectSession(s.sessionId);
+                              // 1) switch active session
+                              handleSelectSession(rowSessionId);
+                              // 2) jump you back to the Chats tab
                               setActiveTab("chats");
                             }}
                           >
                             <div className="hf-assistant-project-session-main">
                               <div className="hf-assistant-project-session-title">
-                                {s.partLabel || s.title || s.sessionId}
+                                {s.partLabel || s.title || rowSessionId}
                               </div>
                               <div className="hf-assistant-project-session-meta">
                                 <span className="hf-assistant-pill hf-assistant-pill--tiny">
@@ -766,23 +774,25 @@ const handleAttachCurrentSession = useCallback(
                                 )}
                               </div>
                             </div>
+
                             <div className="hf-assistant-project-session-path">
                               {s.assetsPath || "No assets path set"}
                             </div>
+
                             <div className="hf-assistant-project-session-dates">
                               <span>
                                 Updated:{" "}
-                                {s.updatedAt
-                                  ? new Date(
-                                      s.updatedAt
-                                    ).toLocaleString()
-                                  : "—"}
+                                {s.updatedAt ? new Date(s.updatedAt).toLocaleString() : "—"}
                               </span>
                             </div>
                           </div>
-                        ))}
-                      </div>
-                    )}
+                        );
+                      })}
+                    </div>
+                  )}
+
+
+
                   </>
                 )}
               </div>
