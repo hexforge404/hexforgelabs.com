@@ -214,20 +214,21 @@ router.post("/:sessionId/append", async (req, res) => {
 
   try {
     const doc = await AssistantSession.findOneAndUpdate(
-      { sessionId },
-      {
-        $setOnInsert: { sessionId },
-        $set: {
-          model: model || undefined,
-          title: title || undefined,
-        },
-        $push: { messages: { $each: cleanMessages } },
-      },
-      {
-        new: true,
-        upsert: true,
-      }
-    );
+  { sessionId },
+  {
+    $setOnInsert: { sessionId },           // 👈 add comma here
+    $set: {
+      model: model || undefined,
+      title: title || undefined,
+    },
+    $push: { messages: { $each: cleanMessages } },
+  },
+  {
+    new: true,
+    upsert: true,
+  }
+);
+
 
     return res.json({
       ok: true,

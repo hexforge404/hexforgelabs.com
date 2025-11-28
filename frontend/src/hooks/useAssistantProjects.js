@@ -1,7 +1,8 @@
 // frontend/src/hooks/useAssistantProjects.js
 import { useCallback, useEffect, useState } from "react";
 
-const API_BASE = "/api/assistant-projects";
+const API_BASE = "/api/assistant/projects";
+
 
 export function useAssistantProjects() {
   const [projects, setProjects] = useState([]);
