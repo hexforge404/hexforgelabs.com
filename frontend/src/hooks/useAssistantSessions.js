@@ -31,14 +31,21 @@ export function useAssistantSessions() {
   }, [activeSessionId]);
 
   // Helper: normalise backend session shape
-  const normaliseSession = (s) => ({
-    id: s.id || s.sessionId,
-    sessionId: s.sessionId || s.id,
-    title: s.title || s.sessionId || "Untitled session",
+  const normaliseSession = (s) => {
+  // Canonical ID for the assistant is the logical sessionId,
+  // not the Mongo _id. Force both id and sessionId to match it.
+  const sessionId = s.sessionId || s.id;
+
+  return {
+    id: sessionId,
+    sessionId,
+    title: s.title || sessionId || "Untitled session",
     model: s.model || "HexForge Scribe",
     createdAt: s.createdAt,
     updatedAt: s.updatedAt,
-  });
+  };
+};
+
 
   // 🔁 Load sessions from backend on mount
   useEffect(() => {
@@ -183,7 +190,38 @@ export function useAssistantSessions() {
     [activeSessionId, sessions]
   );
 
+  // Clear error message
   const clearError = useCallback(() => setError(""), []);
+
+ // frontend/src/hooks/useAssistantSessions.js
+
+const reloadSessions = useCallback(async () => {
+  try {
+    const res = await axios.get(`${apiBase}/assistant/sessions`);
+    const serverSessions = (res.data?.sessions || []).map(normaliseSession);
+
+    setSessions(serverSessions);
+
+    // Keep activeSessionId valid
+    setActiveSessionId((current) => {
+      if (!current) {
+        const first = serverSessions[0];
+        return first ? first.id : current;
+      }
+
+      if (!serverSessions.some((s) => s.id === current)) {
+        const fallback =
+          serverSessions.find((s) => s.id === "current") || serverSessions[0];
+        return fallback ? fallback.id : current;
+      }
+
+      return current;
+    });
+  } catch (err) {
+    console.error("[assistantSessions] reload error", err);
+  }
+}, []);
+
 
   return {
     sessions,          // [{id, title, model, ...}]
@@ -195,5 +233,6 @@ export function useAssistantSessions() {
     loading,
     error,
     clearError,
+    reloadSessions,
   };
 }

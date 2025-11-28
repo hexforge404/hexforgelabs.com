@@ -1,19 +1,21 @@
+// frontend/src/hooks/useAssistantChat.js
 import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
-import { ASSISTANT_URL, API_URL } from "../config";
+import { API_URL } from "../config";
+
+const apiBase = API_URL.replace(/\/$/, "");
 
 // Simple ID generator
 const makeId = () => `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
-// Max size of what we persist into Mongo for a single message
+// Max size of what we persist into Mongo for a single message (kept in case you
+// want to clamp inside the backend later)
 const MAX_SESSION_MESSAGE_LENGTH = 8000;
 
 function normalizeAssistantPayloadForStorage(payload) {
-  // Turn any tool / agent payload into readable text
   let text =
     typeof payload === "string" ? payload : JSON.stringify(payload, null, 2);
 
-  // Clamp if it's huge (like docker_ps labels)
   if (text.length > MAX_SESSION_MESSAGE_LENGTH) {
     text =
       text.slice(0, MAX_SESSION_MESSAGE_LENGTH) +
@@ -24,7 +26,7 @@ function normalizeAssistantPayloadForStorage(payload) {
 }
 
 /**
- * HexForge Assistant Chat Hook (with full session persistence)
+ * HexForge Assistant Chat Hook (with session persistence)
  *
  * Props:
  *   model      - "Tool Runner", "Lab Core", "HexForge Scribe"
@@ -52,8 +54,10 @@ export function useAssistantChat({ model, sessionId, mode = "assistant" }) {
 
     (async () => {
       try {
-        const base = API_URL.replace(/\/$/, "");
-        const res = await axios.get(`${base}/assistant-sessions/${sessionId}`);
+        const sid = encodeURIComponent(sessionId);
+        const res = await axios.get(
+          `${apiBase}/assistant/sessions/${sid}`
+        );
         const data = res.data || {};
 
         const loaded = (data.messages || []).map((m, idx) => ({
@@ -67,6 +71,10 @@ export function useAssistantChat({ model, sessionId, mode = "assistant" }) {
         }
       } catch (err) {
         console.error("[assistant] failed to load session", err);
+        if (!cancelled) {
+          // Don’t hard-error the UI, just show empty history
+          setMessages([]);
+        }
       }
     })();
 
@@ -79,89 +87,89 @@ export function useAssistantChat({ model, sessionId, mode = "assistant" }) {
   // 2) Send a message
   // ---------------------------------------------------------
   const send = useCallback(
-  async (overrideText) => {
-    const text = (overrideText ?? input).trim();
-    if (!text || loading || !sessionId) return;
+    async (overrideInput) => {
+      if (loading) return;
 
-    setLoading(true);
-    setError("");
+      const raw =
+        typeof overrideInput === "string" ? overrideInput : input;
+      const text = (raw || "").trim();
+      if (!text) return;
 
-    // 1) Push user message into UI immediately
-    const userMsg = { id: makeId(), role: "user", content: text };
-    setMessages((prev) => [...prev, userMsg]);
-    if (!overrideText) setInput("");
+      const sid = sessionId || "current";
 
-    try {
-      // 2) Talk to assistant backend (FastAPI)
-      const assistantBase = ASSISTANT_URL.replace(/\/$/, "");
-      const res = await axios.post(
-        `${assistantBase}/chat`,
-        {
-          message: text,
-          mode,
-          model,
-          session_id: sessionId,
-        },
-        {
-          headers: { "Content-Type": "application/json" },
-        }
-      );
+      setLoading(true);
+      setError("");
 
-      const data = res.data || {};
-
-      // Raw response from backend – prefer `response` field if present
-      const rawResponse =
-        typeof data.response !== "undefined" ? data.response : data;
-
-      // What we actually show in the UI (pretty-printed string)
-      const displayContent =
-        typeof rawResponse === "string"
-          ? rawResponse
-          : JSON.stringify(rawResponse, null, 2);
-
-      const assistantMsg = {
+      // 1) Optimistically add user message to UI
+      const userMsg = {
         id: makeId(),
-        role: "assistant",
-        content: displayContent,
+        role: "user",
+        content: text,
       };
+      setMessages((prev) => [...prev, userMsg]);
+      setInput("");
 
-      // 3) Update UI with assistant message
-      setMessages((prev) => [...prev, assistantMsg]);
+      try {
+        // 2) Call Node backend, which will:
+        //    - proxy to Python assistant
+        //    - persist messages in Mongo
+        const res = await fetch(
+          `${apiBase}/assistant/sessions/${encodeURIComponent(
+            sid
+          )}/append`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              mode,
+              model,
+              input: text,
+            }),
+          }
+        );
 
-      // 4) Persist both messages to Node/Mongo (CLAMPED)
-      const apiBase = API_URL.replace(/\/$/, "");
-
-      const storedAssistantContent =
-        normalizeAssistantPayloadForStorage(displayContent);
-
-      await axios.post(
-        `${apiBase}/assistant-sessions/${sessionId}/append`,
-        {
-          model,
-          messages: [
-            { role: "user", content: text },
-            { role: "assistant", content: storedAssistantContent },
-          ],
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(
+            body.error || `Assistant request failed (${res.status})`
+          );
         }
-      );
-    } catch (err) {
-      console.error("[assistant] send error:", err);
-      let msg = "Something went wrong talking to the assistant.";
 
-      if (err?.response?.data?.error) {
-        msg = String(err.response.data.error);
-      } else if (err.message) {
-        msg = err.message;
+        const data = await res.json();
+
+        const rawResponse =
+          typeof data.response !== "undefined" ? data.response : data;
+
+        const displayContent =
+          typeof rawResponse === "string"
+            ? rawResponse
+            : JSON.stringify(rawResponse, null, 2);
+
+        const assistantMsg = {
+          id: makeId(),
+          role: "assistant",
+          content: displayContent,
+        };
+
+        // 3) Update UI with assistant message
+        setMessages((prev) => [...prev, assistantMsg]);
+      } catch (err) {
+        console.error("[assistant] send error:", err);
+        let msg = "Something went wrong talking to the assistant.";
+
+        if (err?.response?.data?.error) {
+          msg = String(err.response.data.error);
+        } else if (err.message) {
+          msg = err.message;
+        }
+
+        setError(msg);
+      } finally {
+        setLoading(false);
       }
-
-      setError(msg);
-    } finally {
-      setLoading(false);
-    }
-  },
-  [input, loading, sessionId, mode, model]
-);
-
+    },
+    [input, loading, sessionId, mode, model]
+  );
 
   // ---------------------------------------------------------
   // Exported API
