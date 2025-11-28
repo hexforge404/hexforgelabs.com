@@ -943,3 +943,24 @@
   opacity: 0.6;
   cursor: default;
 }
+
+.hf-assistant-project-session-row {
+  width: 100%;
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.45rem;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(15, 23, 42, 0.9);
+  margin-bottom: 0.35rem;
+  cursor: pointer;
+  font-size: 0.82rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+}
+
+.hf-assistant-project-session-row.is-active {
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.45);
+  background: radial-gradient(circle at top, #0f172a 0, #020617 60%);
+}

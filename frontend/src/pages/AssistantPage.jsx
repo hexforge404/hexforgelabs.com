@@ -300,7 +300,7 @@ const handleAttachCurrentSession = useCallback(
     setAttachLoading(true);
     try {
       const res = await fetch(
-        `/api/assistant-sessions/${encodeURIComponent(
+        `/api/assistant/sessions/${encodeURIComponent(
           activeSessionId
         )}/metadata`,
         {
@@ -742,7 +742,10 @@ const handleAttachCurrentSession = useCallback(
                         {projectSessions.map((s) => (
                           <div
                             key={s.sessionId}
-                            className="hf-assistant-project-session-row"
+                            className={
+                                "hf-assistant-project-session-row" + 
+                                (activeSessionId === s.sessionId ? " is-active" : "") 
+                              }
                             onClick={() => {
                               handleSelectSession(s.sessionId);
                               setActiveTab("chats");

@@ -143,10 +143,11 @@ const memoryRoutes = require("./routes/memory");
 const notionRoutes = require('./routes/notion');
 const mcpRoutes = require('./routes/mcp');
 const userAuthRoutes = require('./routes/userAuth');
-const assistantSessionsRoutes = require('./routes/assistantSessions');
+const assistantSessionsRouter = require("./routes/assistantSessions");
 const assistantProjectsRouter = require("./routes/assistantProjects");
 
-app.use("/api/assistant-projects", assistantProjectsRouter);
+app.use("/api/assistant/projects", assistantProjectsRouter);
+app.use("/api/assistant/sessions", assistantSessionsRouter);
 app.use('/api/mcp', mcpRoutes);
 app.use('/api/products', apiLimiter, productRoutes);
 app.use('/api/orders', apiLimiter, orderRoutes);
@@ -165,7 +166,6 @@ app.use('/api/tools', toolRoutes);
 app.use('/api/uploads', uploadsRouter);
 app.use('/api/script-lab', apiLimiter, scriptLabRoutes);
 app.use('/api/users', userAuthRoutes);
-app.use('/api/assistant-sessions', apiLimiter, assistantSessionsRoutes);
 
 // ======================
 // HEALTH CHECK
