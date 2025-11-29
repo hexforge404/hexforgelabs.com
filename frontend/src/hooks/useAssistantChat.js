@@ -1,15 +1,15 @@
 // frontend/src/hooks/useAssistantChat.js
 import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
-import { API_URL } from "../config";
+import { API_URL, ASSISTANT_URL } from "../config";
 
 const apiBase = API_URL.replace(/\/$/, "");
+const assistantBase = ASSISTANT_URL.replace(/\/$/, "");
 
 // Simple ID generator
 const makeId = () => `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
-// Max size of what we persist into Mongo for a single message (kept in case you
-// want to clamp inside the backend later)
+// Max size of what we persist into Mongo for a single message
 const MAX_SESSION_MESSAGE_LENGTH = 8000;
 
 function normalizeAssistantPayloadForStorage(payload) {
@@ -31,7 +31,7 @@ function normalizeAssistantPayloadForStorage(payload) {
  * Props:
  *   model      - "Tool Runner", "Lab Core", "HexForge Scribe"
  *   sessionId  - "session-7", "skull-badusb", etc.
- *   mode       - always "assistant" for now
+ *   mode       - "assistant" or "chat"
  */
 export function useAssistantChat({ model, sessionId, mode = "assistant" }) {
   const [messages, setMessages] = useState([]);
@@ -110,33 +110,30 @@ export function useAssistantChat({ model, sessionId, mode = "assistant" }) {
       setInput("");
 
       try {
-        // 2) Call Node backend, which will:
-        //    - proxy to Python assistant
-        //    - persist messages in Mongo
-        const res = await fetch(
-          `${apiBase}/assistant/sessions/${encodeURIComponent(
-            sid
-          )}/append`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              mode,
-              model,
-              input: text,
-            }),
-          }
-        );
+        // 2) Call Python assistant via /mcp/chat
+        const chatRes = await fetch(`${assistantBase}/chat`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            // Backend expects `message` (NOT `input`)
+            message: text,
+            model,
+            mode,
+            session_id: sid,
+          }),
+        });
 
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
+
+        if (!chatRes.ok) {
+          const body = await chatRes.json().catch(() => ({}));
           throw new Error(
-            body.error || `Assistant request failed (${res.status})`
+            body.error || `Assistant request failed (${chatRes.status})`
           );
         }
 
-        const data = await res.json();
+        const data = await chatRes.json();
 
+        // Prefer `response` field if present
         const rawResponse =
           typeof data.response !== "undefined" ? data.response : data;
 
@@ -153,20 +150,42 @@ export function useAssistantChat({ model, sessionId, mode = "assistant" }) {
 
         // 3) Update UI with assistant message
         setMessages((prev) => [...prev, assistantMsg]);
+
+        // 4) Persist both messages to Node/Mongo (best-effort)
+        try {
+          const storedAssistantContent =
+            normalizeAssistantPayloadForStorage(displayContent);
+
+          await axios.post(
+            `${apiBase}/assistant/sessions/${encodeURIComponent(sid)}/append`,
+            {
+              model,
+              messages: [
+                { role: "user", content: text },
+                { role: "assistant", content: storedAssistantContent },
+              ],
+            }
+          );
+        } catch (persistErr) {
+          console.error(
+            "[assistant] failed to persist session history:",
+            persistErr
+          );
+          // Do NOT surface to user; chat already worked.
+        }
       } catch (err) {
         console.error("[assistant] send error:", err);
-        let msg = "Something went wrong talking to the assistant.";
+        let msg = "The assistant glitched out. Try again in a moment.";
 
-        if (err?.response?.data?.error) {
-          msg = String(err.response.data.error);
-        } else if (err.message) {
-          msg = err.message;
+        if (err?.message?.includes("Failed to fetch")) {
+          msg = "Cannot reach assistant service. Check server or network.";
+        } else if (err?.message?.startsWith("Assistant request failed (5")) {
+          msg = "Assistant backend threw a 5xx error. Check logs on the server.";
         }
 
         setError(msg);
-      } finally {
-        setLoading(false);
       }
+      setLoading(false);
     },
     [input, loading, sessionId, mode, model]
   );
