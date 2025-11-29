@@ -4,11 +4,12 @@ import React, {
   useRef,
   useEffect,
   useState,
-} from 'react';
-import { useAssistantChat } from '../hooks/useAssistantChat';
-import './ChatPage.css';
+} from "react";
+import { useAssistantChat } from "../hooks/useAssistantChat";
+import "./ChatPage.css";
 
 const ChatPage = () => {
+  const chatSessionIdRef = useRef(`chat-${Date.now()}`);
   const {
     messages,
     input,
@@ -17,7 +18,11 @@ const ChatPage = () => {
     error,
     send,
     resetError,
-  } = useAssistantChat({ mode: 'chat' });
+  } = useAssistantChat({
+    mode: "assistant",                // 👈 use a valid mode
+    sessionId: chatSessionIdRef.current,
+    model: "HexForge Scribe",
+  });
 
   const inputRef = useRef(null);
   const bottomRef = useRef(null);

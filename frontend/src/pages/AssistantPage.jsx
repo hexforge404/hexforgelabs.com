@@ -721,6 +721,11 @@ const handleAttachCurrentSession = useCallback(
                               : "Attach current session"}
                           </button>
                         )}
+                        {!activeSessionId && (
+                          <div className="hf-assistant-helper-text">
+                            Start a chat or select a session first.
+                          </div>
+                        )}
                       </div>
                     </div>
 
