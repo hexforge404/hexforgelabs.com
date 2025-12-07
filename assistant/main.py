@@ -54,6 +54,12 @@ SCRIPT_LAB_TOKEN = os.getenv("SCRIPT_LAB_TOKEN", "")  # shared secret with backe
 
 BACKEND_BASE_URL = os.getenv("BACKEND_BASE_URL", "http://hexforge-backend:8000")
 
+CONTENT_ENGINE_URL = os.getenv(
+    "CONTENT_ENGINE_URL",
+    "http://10.0.0.200:8010"   # 100% correct for your live setup
+)
+
+
 
 # 🧠 In-memory per-session history (RAM only for now)
 SESSION_HISTORY: Dict[str, List[dict]] = {}
@@ -380,6 +386,7 @@ async def _handle_chat(req: Request):
         print("Chat handler error:", e)
         traceback.print_exc()
         return JSONResponse({"response": f"❌ Chat handler error: {e}"})
+
 
 
 

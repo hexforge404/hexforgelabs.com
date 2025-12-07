@@ -104,6 +104,7 @@ services:
       OLLAMA_URL: http://ollama:11434
       SCRIPT_LAB_URL: http://hexforge-backend:8000/api/script-lab
       SCRIPT_LAB_TOKEN: ${SCRIPT_LAB_TOKEN}
+      CONTENT_ENGINE_URL: http://10.0.0.200:8002
     depends_on:
       backend:
         condition: service_healthy

@@ -147,7 +147,7 @@ const assistantSessionsRouter = require("./routes/assistantSessions");
 const assistantProjectsRouter = require("./routes/assistantProjects");
 
 app.use("/api/assistant/projects", assistantProjectsRouter);
-app.use("/api/assistant/sessions", apiLimiter, assistantSessionsRouter);
+app.use("/api/assistant-sessions", apiLimiter, assistantSessionsRouter);
 app.use('/api/mcp', mcpRoutes);
 app.use('/api/products', apiLimiter, productRoutes);
 app.use('/api/orders', apiLimiter, orderRoutes);
@@ -177,6 +177,17 @@ app.get('/health', (req, res) => {
     uptime: process.uptime()
   });
 });
+
+// Simple health check
+app.get("/api/health", (req, res) => {
+  res.json({
+    status: "ok",
+    service: "hexforge-backend",
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
+  });
+});
+
 
 // ======================
 // DATABASE CONNECTION
