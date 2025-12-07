@@ -5,24 +5,26 @@ import React, {
   useEffect,
   useState,
 } from "react";
-import { useAssistantChat } from "../hooks/useAssistantChat";
+import { useContentEngineChat } from "../hooks/useContentEngineChat";
 import "./ChatPage.css";
 
 const ChatPage = () => {
   const chatSessionIdRef = useRef(`chat-${Date.now()}`);
-  const {
-    messages,
-    input,
-    setInput,
-    loading,
-    error,
-    send,
-    resetError,
-  } = useAssistantChat({
-    mode: "assistant",                // 👈 use a valid mode
-    sessionId: chatSessionIdRef.current,
-    model: "HexForge Scribe",
-  });
+const {
+  messages,
+  input,
+  setInput,
+  isLoading,
+  sendMessage,
+  resetSession,
+} = useContentEngineChat({
+  mode: "assistant",
+  sessionId: chatSessionIdRef.current,
+  model: "HexForge Scribe",
+});
+
+  
+
 
   const inputRef = useRef(null);
   const bottomRef = useRef(null);
@@ -43,30 +45,30 @@ const ChatPage = () => {
   }, [messages.length]);
 
   const handleChange = useCallback(
-    (e) => {
-      if (error) resetError();
-      setInput(e.target.value);
-    },
-    [error, resetError, setInput]
-  );
+  (e) => {
+    setInput(e.target.value);
+  },
+  [setInput]
+);
 
-  const handleKeyDown = useCallback(
-    (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        if (!loading && bootDone) {
-          send();
-        }
+const handleKeyDown = useCallback(
+  (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      if (!isLoading && bootDone) {
+        sendMessage();
       }
-    },
-    [send, loading, bootDone]
-  );
-
-  const handleClickSend = useCallback(() => {
-    if (!loading && bootDone) {
-      send();
     }
-  }, [send, loading, bootDone]);
+  },
+  [sendMessage, isLoading, bootDone]
+);
+
+const handleClickSend = useCallback(() => {
+  if (!isLoading && bootDone) {
+    sendMessage();
+  }
+}, [sendMessage, isLoading, bootDone]);
+
 
   return (
     <div className="hf-chat-page">
@@ -88,18 +90,18 @@ const ChatPage = () => {
               </div>
             )}
 
-            {messages.map((msg) => (
+              {messages.map((msg, idx) => (
               <div
-                key={msg.id}
+                key={idx}
                 className={
-                  'hf-chat-message ' +
-                  (msg.role === 'assistant'
-                    ? 'hf-chat-message--assistant'
-                    : 'hf-chat-message--user')
+                  "hf-chat-message " +
+                  (msg.role === "assistant"
+                    ? "hf-chat-message--assistant"
+                    : "hf-chat-message--user")
                 }
               >
                 <div className="hf-chat-message-role">
-                  {msg.role === 'assistant' ? 'Assistant' : 'You'}
+                  {msg.role === "assistant" ? "Assistant" : "You"}
                 </div>
                 <div className="hf-chat-message-body">
                   {msg.content}
@@ -107,7 +109,8 @@ const ChatPage = () => {
               </div>
             ))}
 
-            {loading && (
+
+            {isLoading && (
               <div className="hf-chat-message hf-chat-message--assistant">
                 <div className="hf-chat-message-role">Assistant</div>
                 <div className="hf-chat-message-body hf-chat-typing">
@@ -116,7 +119,7 @@ const ChatPage = () => {
               </div>
             )}
 
-            {error && <div className="hf-chat-error">{error}</div>}
+           
 
             <div ref={bottomRef} />
           </div>
@@ -128,19 +131,19 @@ const ChatPage = () => {
             className="hf-chat-input"
             placeholder={
               bootDone
-                ? 'Ask or command…'
+                ? 'Ask or command… (prefix with "blog-draft" to send to content engine)'
                 : 'Connecting to HexForge Scribe…'
             }
             value={input}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
-            disabled={loading || !bootDone}
+            disabled={isLoading || !bootDone}
             rows={1}
           />
           <button
             className="hf-chat-send"
             onClick={handleClickSend}
-            disabled={loading || !bootDone || !input.trim()}
+            disabled={isLoading || !bootDone || !input.trim()}
             aria-label="Send message"
           >
             ▶

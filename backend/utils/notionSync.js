@@ -24,8 +24,8 @@ async function syncToNotion(entry, target = "assistant_log") {
     Tool: { rich_text: [{ text: { content: entry.tool } }] },
     Result: { rich_text: [{ text: { content: resultText } }] },
     Timestamp: { date: { start: entry.timestamp } },
-    Tag: { multi_select: [{ name: "Synced" }] },
-    ...(entry.id && { ID: { rich_text: [{ text: { content: entry.id } }] } })
+    Tags: { multi_select: [{ name: "Synced" }] },
+    ...(entry.id && { Id: { rich_text: [{ text: { content: entry.id } }] } })
   };
 
   try {
@@ -52,7 +52,7 @@ async function readFromNotion(target = "assistant_log", filter = null) {
       tool: page.properties?.Tool?.rich_text?.[0]?.text?.content || "Unknown",
       result: page.properties?.Result?.rich_text?.[0]?.text?.content || "",
       timestamp: page.properties?.Timestamp?.date?.start || null,
-      tags: page.properties?.Tag?.multi_select?.map(t => t.name) || [],
+      tags: page.properties?.Tags?.multi_select?.map(t => t.name) || [],
       notion_page_url: page.url,
     }));
   } catch (err) {
@@ -79,7 +79,11 @@ async function deleteByTool(tool, target = "assistant_log") {
 }
 
 async function upsertByTool(entry, target = "assistant_log") {
-  const match = (await readFromNotion(target)).find(e => e.tool === entry.tool);
+  const results = await readFromNotion(target, {
+    property: "Tool",
+    rich_text: { equals: entry.tool }
+  });
+  const match = results[0];
   if (match) entry.notion_page_id = match.id;
   return syncToNotion(entry, target);
 }
@@ -136,9 +140,11 @@ async function generateKnowledgeEntry({ title, body, tags = [] }) {
   }
 }
 
+// Assumes file is already uploaded to https://hexforgelabs.com/uploads/
 async function attachFileToPage(pageId, filePath) {
   if (!pageId || !fs.existsSync(filePath)) return;
   const fileName = path.basename(filePath);
+  const uploadBaseUrl = process.env.UPLOAD_BASE_URL || "https://hexforgelabs.com/uploads";
 
   try {
     await notion.blocks.children.append({
@@ -149,7 +155,7 @@ async function attachFileToPage(pageId, filePath) {
           type: "file",
           file: {
             type: "external",
-            external: { url: `https://hexforgelabs.com/uploads/${fileName}` }
+            external: { url: `${uploadBaseUrl}/${fileName}` }
           }
         }
       ]
@@ -183,6 +189,71 @@ const NotionRoutes = {
   }
 };
 
+// Decide which Notion DB to use for a memory entry
+function resolveMemoryTargetForNotion(entry) {
+  // Manual override if you ever send one
+  if (entry.notionTarget) return entry.notionTarget;
+
+  const category = (entry.category || "").toLowerCase();
+  const tags = (entry.tags || []).map(t => t.toLowerCase());
+
+  // 🧠 System / tooling stuff → assistant log
+  if (["system", "network", "tool-launch", "file", "status"].includes(category)) {
+    return "assistant_log";
+  }
+
+  // 🛠️ Hardware log flavor
+  if (category.includes("hardware") || tags.includes("hardware")) {
+    return "hardware_logs";
+  }
+
+  // 📘 Knowledge / docs
+  if (category.includes("knowledge") || tags.includes("kb") || tags.includes("doc")) {
+    return "knowledge_base";
+  }
+
+  // 🧪 Build recipes / tasks / tracker
+  if (tags.includes("recipe") || category.includes("recipe")) return "build_recipes";
+  if (tags.includes("task") || tags.includes("todo")) return "build_tasks";
+  if (tags.includes("tracker") || category.includes("tracker")) return "build_tracker";
+
+  // 📦 Inventory
+  if (tags.includes("inventory") || category.includes("inventory")) return "inventory";
+
+  // 🌀 Laser
+  if (tags.includes("laser") || tags.includes("engrave")) return "laser_archive";
+
+  // 🛒 Market / sales
+  if (tags.includes("market") || tags.includes("mvp") || category.includes("market")) {
+    return "market_tasks";
+  }
+
+  // Default catch-all
+  return "assistant_log";
+}
+
+async function syncMemoryEntryToNotion(entry) {
+  try {
+    const target = resolveMemoryTargetForNotion(entry);
+    const tool = entry.tool || entry.name;
+    if (!tool) {
+      throw new Error("[🧠 Notion] syncMemoryEntryToNotion: 'tool' is required and missing.");
+    }
+    await upsertByTool(
+      {
+        tool,
+        timestamp: entry.timestamp,
+        result: entry.result ?? entry,
+        id: entry.id || undefined,
+      },
+      target
+    );
+  } catch (err) {
+    console.error("[🧠 Notion] syncMemoryEntryToNotion failed:", err.message || err);
+    throw err;
+  }
+}
+
 module.exports = {
   syncToNotion,
   readFromNotion,
@@ -195,5 +266,6 @@ module.exports = {
   testNotionConnection,
   generateKnowledgeEntry,
   attachFileToPage,
-  NotionRoutes
+  NotionRoutes,
+  syncMemoryEntryToNotion
 };
