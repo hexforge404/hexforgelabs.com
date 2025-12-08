@@ -3,6 +3,7 @@ import axios from 'axios';
 import './AdminPage.css';
 import API_BASE_URL from '../utils/apiBase';
 import { successToast, errorToast, warningToast } from '../utils/toastUtils';
+import InventoryViewer from '../components/InventoryViewer';
 
 const EMPTY_PRODUCT = {
   name: '',
@@ -31,6 +32,7 @@ const EMPTY_BLOG = {
 export default function AdminPage() {
   const [activeTab, setActiveTab] = useState('products');
 
+  // Products / Orders / Blog
   const [products, setProducts] = useState([]);
   const [existingNames, setExistingNames] = useState([]);
   const [editingProductId, setEditingProductId] = useState(null);
@@ -76,7 +78,7 @@ export default function AdminPage() {
         setPosts(blogData);
       } catch (err) {
         console.error(err);
-        setError(`Failed to load data: ${err.message}`);
+        setError(`Failed to load admin data: ${err.message}`);
       } finally {
         setLoading(false);
       }
@@ -317,7 +319,6 @@ export default function AdminPage() {
   // ---------- ORDERS ----------
   const handleStatusChange = async (orderId, newStatus) => {
     try {
-      // Hit the dedicated /status route on the backend
       const response = await axios.patch(
         `${API_BASE_URL}/orders/${orderId}/status`,
         { status: newStatus }
@@ -455,6 +456,12 @@ export default function AdminPage() {
           onClick={() => setActiveTab('blog')}
         >
           Blog Posts
+        </button>
+        <button
+          className={activeTab === 'inventory' ? 'tab active' : 'tab'}
+          onClick={() => setActiveTab('inventory')}
+        >
+          Inventory
         </button>
       </div>
 
@@ -913,6 +920,9 @@ export default function AdminPage() {
           </div>
         </div>
       )}
+
+      {/* ---------- INVENTORY TAB (NOTION) ---------- */}
+      {activeTab === 'inventory' && <InventoryViewer />}
     </div>
   );
 }
