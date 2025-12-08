@@ -18,6 +18,8 @@ from assistant.tools.agent import call_agent, AGENTS
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "mistral")
 AGENT_API_URL = os.getenv("AGENT_API_URL", "https://agent.hexforgelabs.com")
 OLLAMA_API_URL = os.getenv("OLLAMA_API_URL", "http://ollama:11434/api/generate")
+CONTENT_ENGINE_URL = os.getenv("CONTENT_ENGINE_URL", "http://10.0.0.200:8002")
+
 
 parsed_url = urlparse(AGENT_API_URL)
 if not parsed_url.scheme or not parsed_url.netloc:
@@ -26,36 +28,26 @@ if not parsed_url.scheme or not parsed_url.netloc:
 router = APIRouter()
 
 command_aliases = {
-    "usb": "usb-list",
-    "os": "os-info",
-    "logs": "logs",
+    # === Core system info ===
+    "os": "os-info",          # /tool/os-info
+    "usb": "usb-list",        # /tool/usb-list
+    "logs": "logs",           # /tool/logs
+    "uptime": "uptime",       # /tool/uptime
+    "df": "df",               # /tool/df
+    "docker": "docker",       # /tool/docker
+    "status": "status",       # /tool/status
+    "whoami": "whoami",       # /tool/whoami
+    "memory": "memory",       # /tool/memory
 
-    # 🛠 FIXED – map to actual registered tools
-    "df": "disk-usage",
-    "docker": "docker",
-    "docker_ps": "docker-ps",
+    # === Monitoring / eye-candy ===
+    "btop": "btop",           # /tool/btop
+    "neofetch": "neofetch",   # /tool/neofetch
 
-    "uptime": "uptime",
-    "user": "user",
-    "ping": "ping",
-    "freecad": "launch-freecad",
-    "open": "launch-app",
-    "openfile": "launch-file",
-    "btop": "run-btop",
-    "neofetch": "run-neofetch",
-    "status": "check-all-tools",
-    "archive": "archive-files",
-    "extract": "extract-archive",
-    "packages": "list-packages",
-    "ps": "list-processes",
-    "kill": "kill-process",
-    "setuid": "scan-setuid-binaries",
-    "firewall": "check-firewall-rules",
-    "cpu": "get-cpu-info",
-    "mem": "get-mem-info",
-    "read": "read-file",
-    "write": "write-file",
+    # === Debug helpers ===
+    "debug": "debug",         # /tool/debug
+    "tools": "list",          # /tool/list  (all registered tools)
 }
+
 
 # === 🩺 Health ===
 @router.get("/mcp/health")
@@ -98,14 +90,45 @@ async def mcp_chat(req: MCPChatRequest):
     prompt = req.text()
     if not prompt:
         return JSONResponse(
-            content={"detail": "Missing 'prompt' or 'message' field."}, status_code=422
+            content={"detail": "Missing 'prompt' or 'message' field."},
+            status_code=422,
         )
 
     print(f"[DEBUG] Incoming prompt: {prompt}")
 
     try:
         result = None
-        if prompt.startswith("!"):
+
+        # 🔹 1) Blog-draft → send to content engine
+        if prompt.lower().startswith("blog-draft"):
+            # everything after the keyword becomes the blog text
+            blog_text = prompt[len("blog-draft"):].lstrip(" :-")
+            if not blog_text:
+                blog_text = prompt  # fallback – just send the whole thing
+
+            payload = {
+                "text": blog_text,
+                "project": "assistant-chat",
+                "part": "dev",
+            }
+
+            print(f"[BLOG] POST {CONTENT_ENGINE_URL}/blog-json | payload={payload}")
+
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                resp = await client.post(
+                    f"{CONTENT_ENGINE_URL}/blog-json",
+                    json=payload,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+
+            result = {
+                "message": "Blog draft sent to content engine.",
+                "engine_response": data,
+            }
+
+        # 🔹 2) Bang commands
+        elif prompt.startswith("!"):
             parts = prompt[1:].split(" ", 1)
             cmd = parts[0]
             arg = parts[1].strip() if len(parts) > 1 else ""
@@ -114,11 +137,23 @@ async def mcp_chat(req: MCPChatRequest):
 
             if cmd == "ping":
                 result = await tool_dispatcher("ping", {"target": arg or "8.8.8.8"})
+
+            elif cmd == "help":
+                result = (
+                    "🧠 **HexForge Assistant Commands**\n"
+                    "`!os`, `!usb`, `!logs`, `!ping <host>`, `!uptime`, "
+                    "`!df`, `!docker`, `!status`, `!whoami`, `!memory`, "
+                    "`!btop`, `!neofetch`, `!debug`, `!tools`"
+                )
+
             elif cmd in command_aliases:
                 tool = command_aliases[cmd]
                 result = await tool_dispatcher(tool, {})
+
             else:
                 result = {"error": f"Unknown command: {cmd}"}
+
+        # 🔹 3) Normal chat → agent model
         else:
             result = await tool_dispatcher("agent", {"prompt": prompt})
             await save_memory_entry("agent", result, extra_tags=["chat"])
@@ -138,6 +173,8 @@ async def mcp_chat(req: MCPChatRequest):
             },
             status_code=500,
         )
+
+
 
 
 # === 🧠 POST /mcp/stream ===
@@ -172,19 +209,84 @@ async def mcp_stream(req: MCPChatRequest):
     return StreamingResponse(generator_with_memory(), media_type="text/event-stream")
 
 
+
 # === 🤖 POST /mcp/invoke/agent ===
 @router.post("/mcp/invoke/agent")
 async def mcp_invoke_agent(req: MCPAgentRequest):
+    """
+    Agent entrypoint used by the /chat page.
+
+    - If prompt starts with 'blog-draft', send to Content Engine /blog-json
+    - Otherwise, call the local agent (Ollama) via call_agent(...)
+    """
+    prompt = (req.prompt or "").strip()
+    if not prompt:
+        return {
+            "status": "error",
+            "agent": req.agent,
+            "error": "Empty prompt",
+        }
+
     try:
-        output = await call_agent(prompt=req.prompt, agent=req.agent)
+        # 1) Blog-draft → HexForge Content Engine
+        if prompt.lower().startswith("blog-draft"):
+            # everything after 'blog-draft' is the blog text
+            blog_text = prompt[len("blog-draft"):].lstrip(" :-")
+            if not blog_text:
+                blog_text = prompt  # fallback – send whole prompt
+
+            payload = {
+                "text": blog_text,
+                "project": "assistant-chat",
+                "part": "dev",
+            }
+
+            print(f"[BLOG] /mcp/invoke/agent → {CONTENT_ENGINE_URL}/blog-json")
+            print(f"[BLOG] payload={payload}")
+
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                resp = await client.post(
+                    f"{CONTENT_ENGINE_URL}/blog-json",
+                    json=payload,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+
+            # IMPORTANT: keep status === "success" so your hook treats this as success
+            return {
+                "status": "success",
+                "agent": req.agent,
+                "tool": "content-engine",
+                "output": {
+                    "message": "✅ Blog draft sent to HexForge Content Engine.",
+                    "engine_response": data,
+                },
+            }
+
+        # 2) Normal chat → agent (Ollama)
+        output = await call_agent(prompt=prompt, agent=req.agent)
+
         return {
             "status": "success",
             "agent": req.agent,
             "tool": "agent",
             "output": output,
         }
+
+    except httpx.HTTPError as e:
+        # Explicit HTTP errors from content engine
+        return {
+            "status": "error",
+            "agent": req.agent,
+            "error": f"Content Engine HTTP error: {e}",
+        }
     except Exception as e:
-        return {"status": "error", "agent": req.agent, "error": str(e)}
+        return {
+            "status": "error",
+            "agent": req.agent,
+            "error": str(e),
+        }
+
 
 
 # === 🤖 POST /mcp/invoke/agent/stream ===

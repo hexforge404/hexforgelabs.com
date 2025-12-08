@@ -2,25 +2,29 @@
 const express = require("express");
 const { Client } = require("@notionhq/client");
 
+// 🧠 Notion sync utilities (memory → notion, files, log entries)
 const {
   NotionRoutes,
   syncToNotion,
   deleteByTool,
 } = require("../utils/notionSync");
 
+// 🔍 Discovery utilities
 const {
   listAllNotionObjects,
   getNotionObject,
-} = require("../utils/notionDiscovery"); // 🔍 discovery helpers
+} = require("../utils/notionDiscovery");
 
+// 🔧 Database IDs loaded from config/notionResources.js
 const notionResources = require("../config/notionResources");
 
 const router = express.Router();
 const notion = new Client({ auth: process.env.NOTION_TOKEN });
 
-/* ============================
- *  🧠 Memory & Knowledge routes
- * ============================ */
+/* ============================================================================
+ * 🧠 KNOWLEDGE + FILE ATTACHMENT
+ * ============================================================================
+ */
 
 // POST /api/notion/knowledge-entry
 router.post("/knowledge-entry", NotionRoutes.createKnowledgeEntry);
@@ -28,9 +32,12 @@ router.post("/knowledge-entry", NotionRoutes.createKnowledgeEntry);
 // POST /api/notion/attach-file
 router.post("/attach-file", NotionRoutes.attachFile);
 
-// === 🧠 Memory → Notion sync endpoints ===
+/* ============================================================================
+ * 🧠 MEMORY SYNC / DELETE
+ * ============================================================================
+ */
 
-// One-shot write. Does NOT look up existing entries.
+// POST /api/notion/memory-sync
 router.post("/memory-sync", async (req, res) => {
   const { entry, target = "assistant_log" } = req.body || {};
 
@@ -56,6 +63,7 @@ router.post("/memory-sync", async (req, res) => {
   }
 });
 
+// DELETE /api/notion/memory-delete
 router.delete("/memory-delete", async (req, res) => {
   const { tool, target = "assistant_log" } = req.body || {};
 
@@ -67,23 +75,19 @@ router.delete("/memory-delete", async (req, res) => {
     await deleteByTool(tool, target);
     return res.json({ status: "ok", mode: "delete" });
   } catch (err) {
-    console.error(
-      "[🧠 Notion] /memory-delete error:",
-      err,
-      "Request body:",
-      req.body
-    );
+    console.error("[🧠 Notion] /memory-delete error:", err, req.body);
     return res.status(500).json({ error: err.message });
   }
 });
 
-/* ============================
- *  🔍 Discovery helpers
- * ============================ */
+/* ============================================================================
+ * 🔍 DATABASE / PAGE DISCOVERY
+ * ============================================================================
+ */
 
-// GET /api/notion/discover?type=database|page|both&query=...
+// GET /api/notion/discover
 router.get("/discover", async (req, res) => {
-  const type = (req.query.type || "database").toLowerCase(); // database | page | both
+  const type = (req.query.type || "database").toLowerCase();
   const query = req.query.query || "";
 
   try {
@@ -112,26 +116,23 @@ router.get("/object/:id", async (req, res) => {
   }
 });
 
-/* ============================
- *  📚 Direct DB helpers
- * ============================ */
+/* ============================================================================
+ * 📚 DIRECT DATABASE CONNECTORS (Admin Panel + Assistant)
+ * ============================================================================
+ */
 
 // GET /api/notion/assistant-log
 router.get("/assistant-log", async (req, res) => {
   try {
     const dbId = notionResources.assistantLogDbId;
-    if (!dbId) {
-      return res
-        .status(500)
-        .json({ error: "Assistant log DB id not configured" });
-    }
+    if (!dbId) return res.status(500).json({ error: "Assistant log DB not configured" });
 
     const response = await notion.databases.query({
       database_id: dbId,
-      page_size: 20,
+      page_size: 50,
       sorts: [
         {
-          timestamp: "last_edited_time",
+          property: "Last edited time",
           direction: "descending",
         },
       ],
@@ -140,9 +141,7 @@ router.get("/assistant-log", async (req, res) => {
     res.json(response);
   } catch (err) {
     console.error("[Notion] /assistant-log error:", err.body || err);
-    res
-      .status(500)
-      .json({ error: "Failed to fetch assistant log from Notion" });
+    res.status(500).json({ error: "Failed to fetch assistant log from Notion" });
   }
 });
 
@@ -150,11 +149,7 @@ router.get("/assistant-log", async (req, res) => {
 router.get("/knowledge-base", async (req, res) => {
   try {
     const dbId = notionResources.knowledgeBaseDbId;
-    if (!dbId) {
-      return res
-        .status(500)
-        .json({ error: "Knowledge base DB id not configured" });
-    }
+    if (!dbId) return res.status(500).json({ error: "Knowledge base DB not configured" });
 
     const response = await notion.databases.query({
       database_id: dbId,
@@ -164,33 +159,25 @@ router.get("/knowledge-base", async (req, res) => {
     res.json(response);
   } catch (err) {
     console.error("[Notion] /knowledge-base error:", err.body || err);
-    res
-      .status(500)
-      .json({ error: "Failed to fetch knowledge base from Notion" });
+    res.status(500).json({ error: "Failed to fetch knowledge base" });
   }
 });
 
-// GET /api/notion/inventory
+// GET /api/notion/inventory  ← Used by Admin Inventory Viewer & Assistant Tools
 router.get("/inventory", async (req, res) => {
   try {
     const dbId = notionResources.inventoryDbId;
-    if (!dbId) {
-      return res
-        .status(500)
-        .json({ error: "Inventory DB id not configured" });
-    }
+    if (!dbId) return res.status(500).json({ error: "Inventory DB not configured" });
 
     const response = await notion.databases.query({
       database_id: dbId,
-      page_size: 100,
+      page_size: 200,
     });
 
     res.json(response);
   } catch (err) {
     console.error("[Notion] /inventory error:", err.body || err);
-    res
-      .status(500)
-      .json({ error: "Failed to fetch inventory from Notion" });
+    res.status(500).json({ error: "Failed to fetch inventory from Notion" });
   }
 });
 

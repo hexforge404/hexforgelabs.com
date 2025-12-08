@@ -13,3 +13,5 @@ from .security import *
 from .launchers import *
 from .devtools import *
 from .usb import *
+from . import notion_inventory       # noqa: F401  # register Notion inventory tools
+from . import notion_knowledge_base  # noqa: F401  # register Notion knowledge base tools
