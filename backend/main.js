@@ -145,9 +145,10 @@ const mcpRoutes = require('./routes/mcp');
 const userAuthRoutes = require('./routes/userAuth');
 const assistantSessionsRouter = require("./routes/assistantSessions");
 const assistantProjectsRouter = require("./routes/assistantProjects");
+const mediaRoutes = require("./routes/media");
 
 
-
+app.use("/api/media", apiLimiter, mediaRoutes);
 app.use("/api/assistant/projects", assistantProjectsRouter);
 app.use("/api/assistant-sessions", apiLimiter, assistantSessionsRouter);
 app.use('/api/mcp', mcpRoutes);
