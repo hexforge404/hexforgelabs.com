@@ -98,4 +98,17 @@ router.post("/stt", (req, res) => forward(req, res, "/stt", "POST"));
 // Image loop
 router.post("/image-loop", (req, res) => forward(req, res, "/image-loop", "POST"));
 
+// 3D job queue
+router.post("/3d", async (req, res) => {
+  const r = await client().post("/3d/queue", req.body);
+  res.status(r.status).json(r.data);
+});
+
+// Laser vectorization  job queue
+router.post("/laser/vectorize", async (req, res) => {
+  const r = await client().post("/laser/vectorize", req.body);
+  res.status(r.status).json(r.data);
+});
+
+
 module.exports = router;
