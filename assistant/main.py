@@ -34,6 +34,13 @@ from .tools import (
 )
 from .tools.system import ping_host
 
+from assistant.routes.tools import heightmap
+from fastapi.exceptions import RequestValidationError
+from fastapi.encoders import jsonable_encoder
+from starlette.status import HTTP_422_UNPROCESSABLE_ENTITY
+
+
+
 
 # 🌍 Environment
 # Base model + per-chip overrides so the frontend model selector can matter later.
@@ -81,7 +88,7 @@ async def lifespan(app: FastAPI):
 # 🚀 FastAPI Init
 app = FastAPI(title="HexForge Lab Assistant API", lifespan=lifespan)
 app.include_router(mcp.router)
-
+app.include_router(heightmap.router, prefix="/tool")
 
 # === Schemas ===
 class ChatRequest(BaseModel):
@@ -99,6 +106,16 @@ class PingRequest(BaseModel):
 class CommandRequest(BaseModel):
     command: str
 
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    def _bytes(b: bytes) -> str:
+        return f"<bytes {len(b)}>"
+    return JSONResponse(
+        status_code=HTTP_422_UNPROCESSABLE_ENTITY,
+        content={"detail": jsonable_encoder(exc.errors(), custom_encoder={bytes: _bytes})},
+    )
 
 # === Helpers ===
 async def try_subprocess(cmd, tool_name: str):

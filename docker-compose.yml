@@ -105,12 +105,6 @@ services:
       context: .
       dockerfile: ./assistant/Dockerfile
     container_name: hexforge-assistant
-    environment:
-      OLLAMA_MODEL: mistral:latest
-      OLLAMA_URL: http://ollama:11434
-      SCRIPT_LAB_URL: http://hexforge-backend:8000/api/script-lab
-      SCRIPT_LAB_TOKEN: ${SCRIPT_LAB_TOKEN}
-      CONTENT_ENGINE_URL: http://hexforge-backend:8000/api/media
     depends_on:
       backend:
         condition: service_healthy
@@ -118,13 +112,21 @@ services:
         condition: service_healthy
     networks:
       - hexforge-network
-    #ports:
-      #- "11436:11435"  # host:container
+    ports:
+      - "11436:11435"  # host:container
     expose:
       - "11435"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - /home/deuvuser/.ssh/hexforge_sandbox:/root/.ssh/hexforge_sandbox:ro
+      - /home/devuser/.ssh/hexforge_sandbox:/root/.ssh/hexforge_sandbox:ro
+      - /mnt/hdd-storage/ai-tools/engines/hexforge3d:/data/hexforge3d
+    environment:
+      HEXFORGE3D_ENGINE_DIR: /data/hexforge3d
+      OLLAMA_MODEL: mistral:latest
+      OLLAMA_URL: http://ollama:11434
+      SCRIPT_LAB_URL: http://hexforge-backend:8000/api/script-lab
+      SCRIPT_LAB_TOKEN: ${SCRIPT_LAB_TOKEN}
+      CONTENT_ENGINE_URL: http://hexforge-backend:8000/api/media
     privileged: true
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:11435/health"]
@@ -162,7 +164,7 @@ volumes:
     driver: local
   ollama-data:
     driver: local
-
+  
 
 networks:
   hexforge-network:
