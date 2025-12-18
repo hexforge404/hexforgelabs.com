@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import datetime
 import inspect
 import json
-import datetime
+import os
+import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 
 from assistant.tools.heightmap_engine import generate_relief
@@ -14,6 +16,7 @@ router = APIRouter(tags=["tools"])
 
 
 @router.post("/heightmap")
+@router.post("/heightmap/v1")
 async def heightmap_tool(
     image: UploadFile = File(...),
     mode: str = Form("relief"),
@@ -23,6 +26,9 @@ async def heightmap_tool(
     thickness: float = Form(2.0),
     name: str = Form("hexforge"),
 ):
+    trace_id = uuid.uuid4().hex
+    api_version = "v1"
+
     if not image.filename:
         raise HTTPException(status_code=400, detail="Missing filename")
 
@@ -30,6 +36,36 @@ async def heightmap_tool(
     out_dir = Path("/data/hexforge3d/output")
     tmp_dir.mkdir(parents=True, exist_ok=True)
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    # --- engine readiness checks ---
+    engine_python = Path("/data/hexforge3d/venv/bin/python")
+    if not engine_python.exists():
+        return JSONResponse(
+            status_code=503,
+            content={
+                "ok": False,
+                "api_version": api_version,
+                "trace_id": trace_id,
+                "error": {
+                    "code": "ENGINE_NOT_READY",
+                    "message": f"Missing engine python at {engine_python}",
+                },
+            },
+        )
+
+    if not os.access(str(out_dir), os.W_OK):
+        return JSONResponse(
+            status_code=503,
+            content={
+                "ok": False,
+                "api_version": api_version,
+                "trace_id": trace_id,
+                "error": {
+                    "code": "OUTPUT_NOT_WRITABLE",
+                    "message": f"Output directory not writable: {out_dir}",
+                },
+            },
+        )
 
     in_path = tmp_dir / image.filename
 
@@ -65,7 +101,7 @@ async def heightmap_tool(
 
         result = generate_relief(**safe_kwargs)
 
-               # Normalize output
+        # Normalize output
         if isinstance(result, dict):
             payload = result
         elif isinstance(result, (list, tuple)):
@@ -75,6 +111,8 @@ async def heightmap_tool(
 
         response_obj = {
             "ok": True,
+            "api_version": api_version,
+            "trace_id": trace_id,
             "received": {
                 "filename": image.filename,
                 "bytes": len(content),
@@ -101,14 +139,20 @@ async def heightmap_tool(
                 encoding="utf-8",
             )
         except Exception as e:
-            response_obj.setdefault("warnings", []).append(
-                f"manifest_write_failed: {e}"
-            )
+            response_obj.setdefault("warnings", []).append(f"manifest_write_failed: {e}")
 
         return JSONResponse(response_obj)
 
     except Exception as e:
-        raise HTTPException(
+        return JSONResponse(
             status_code=500,
-            detail=f"Heightmap generation failed: {e}",
+            content={
+                "ok": False,
+                "api_version": api_version,
+                "trace_id": trace_id,
+                "error": {
+                    "code": "HEIGHTMAP_FAILED",
+                    "message": str(e),
+                },
+            },
         )
