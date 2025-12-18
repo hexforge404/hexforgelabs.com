@@ -1,10 +1,10 @@
 import os
+import json
+import time
+import platform
 import subprocess
 from pathlib import Path
-
-# ------------------------------------------------------------
-# Engine configuration
-# ------------------------------------------------------------
+from typing import Tuple, Dict, Any, Optional
 
 ENGINE_DIR = Path(os.getenv("HEXFORGE3D_ENGINE_DIR", "/data/hexforge3d"))
 PY = ENGINE_DIR / "venv" / "bin" / "python"
@@ -12,89 +12,75 @@ PY = ENGINE_DIR / "venv" / "bin" / "python"
 INPUT = ENGINE_DIR / "input"
 OUTPUT = ENGINE_DIR / "output"
 
+ENGINE_VERSION = os.getenv("HEXFORGE3D_ENGINE_VERSION", "hexforge3d@v1")
 
-# ------------------------------------------------------------
-# Internal runner
-# ------------------------------------------------------------
 
-def _run(cmd, cwd: Path):
-    """
-    Run a subprocess command and capture stdout/stderr.
-    Raises a RuntimeError with full context on failure.
-    """
-    p = subprocess.run(
-        cmd,
-        cwd=str(cwd),
-        text=True,
-        capture_output=True,
-    )
-
+def _run(cmd, cwd: str) -> str:
+    # capture output so FastAPI can return useful errors
+    p = subprocess.run(cmd, cwd=cwd, text=True, capture_output=True)
     if p.returncode != 0:
         raise RuntimeError(
-            "Command failed:\n"
-            f"{' '.join(cmd)}\n\n"
-            f"STDOUT:\n{p.stdout}\n\n"
-            f"STDERR:\n{p.stderr}"
+            f"Command failed: {' '.join(cmd)}\n\nSTDOUT:\n{p.stdout}\n\nSTDERR:\n{p.stderr}"
         )
-
     return p.stdout
 
 
-# ------------------------------------------------------------
-# Public API
-# ------------------------------------------------------------
+def _iso_utc(ts: Optional[float] = None) -> str:
+    ts = ts if ts is not None else time.time()
+    # ISO-ish UTC without microseconds
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(ts))
+
+
+def _safe_json_dump(path: Path, data: Dict[str, Any]) -> None:
+    path.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
+
 
 def generate_relief(
     image_path: str,
     name: str = "asset",
-    size_mm=(80, 80),
+    size_mm: Tuple[float, float] = (80, 80),
     thickness: float = 2.0,
-    relief: float = 4.0,
+    relief: float = 3.0,
     invert: bool = True,
-):
+    preview: bool = True,
+) -> Dict[str, Any]:
     """
-    Generate a grayscale heightmap and a relief STL from an image.
-
-    Returns paths and final dimensions.
+    Generates:
+      - heightmap PNG
+      - relief STL
+      - optional preview renders (iso/top/front) if your pipeline produces them
+      - manifest JSON describing all outputs
     """
-
-    # Ensure directories exist
     INPUT.mkdir(parents=True, exist_ok=True)
     OUTPUT.mkdir(parents=True, exist_ok=True)
 
-    # Copy input image into engine workspace
-    img_dst = INPUT / f"{name}.png"
+    # Normalize name a bit (avoid spaces ruining filenames)
+    safe_name = "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in name).strip("_") or "asset"
+
+    # Copy input image into engine input folder
+    img_dst = INPUT / f"{safe_name}.png"
     img_dst.write_bytes(Path(image_path).read_bytes())
 
-    # Output files
-    hm = OUTPUT / f"{name}_hm.png"
-    stl = OUTPUT / f"{name}_relief.stl"
+    # Outputs
+    hm = OUTPUT / f"{safe_name}_hm.png"
+    stl = OUTPUT / f"{safe_name}_relief.stl"
+    manifest_path = OUTPUT / f"{safe_name}_manifest.json"
 
-    # --------------------------------------------------------
-    # Step 1: Image → Heightmap
-    # --------------------------------------------------------
-
+    # 1) Heightmap
     cmd_hm = [
-        str(PY),
-        "bin/gray2heightmap.py",
+        str(PY), "bin/gray2heightmap.py",
         str(img_dst),
         "-o", str(hm),
         "--autocontrast",
         "--max-px", "1024",
     ]
-
     if invert:
         cmd_hm.append("--invert")
+    _run(cmd_hm, cwd=str(ENGINE_DIR))
 
-    _run(cmd_hm, cwd=ENGINE_DIR)
-
-    # --------------------------------------------------------
-    # Step 2: Heightmap → STL
-    # --------------------------------------------------------
-
+    # 2) STL
     cmd_stl = [
-        str(PY),
-        "bin/gray2stl.py",
+        str(PY), "bin/gray2stl.py",
         str(img_dst),
         "-o", str(stl),
         "--size-mm", f"{size_mm[0]},{size_mm[1]}",
@@ -103,20 +89,73 @@ def generate_relief(
         "--autocontrast",
         "--max-px", "512",
     ]
-
     if invert:
         cmd_stl.append("--invert")
+    _run(cmd_stl, cwd=str(ENGINE_DIR))
 
-    _run(cmd_stl, cwd=ENGINE_DIR)
+    # 3) Preview files (expected naming convention from your current results)
+    previews: Dict[str, str] = {}
+    if preview:
+        iso = OUTPUT / f"{safe_name}_preview_iso.png"
+        top = OUTPUT / f"{safe_name}_preview_top.png"
+        front = OUTPUT / f"{safe_name}_preview_front.png"
 
-    # --------------------------------------------------------
-    # Result payload
-    # --------------------------------------------------------
+        # Only include if they actually exist (keeps it robust)
+        if iso.exists():
+            previews["iso"] = str(iso)
+        if top.exists():
+            previews["top"] = str(top)
+        if front.exists():
+            previews["front"] = str(front)
 
+    # 4) Manifest
+    created_utc = _iso_utc()
+    dims_xyz = [float(size_mm[0]), float(size_mm[1]), float(thickness + relief)]
+
+    manifest: Dict[str, Any] = {
+        "schema": "hexforge3d.manifest.v1",
+        "engine_version": ENGINE_VERSION,
+        "created_utc": created_utc,
+        "mode": "relief",
+        "name": safe_name,
+        "params": {
+            "size_mm": [float(size_mm[0]), float(size_mm[1])],
+            "thickness": float(thickness),
+            "relief": float(relief),
+            "invert": bool(invert),
+            "preview": bool(preview),
+        },
+        "dimensions_mm": dims_xyz,
+        "engine": {
+            "engine_dir": str(ENGINE_DIR),
+            "python": str(PY),
+            "platform": platform.platform(),
+        },
+        "inputs": {
+            "source_image": str(Path(image_path)),
+            "engine_image_copy": str(img_dst),
+        },
+        "outputs": {
+            "heightmap": str(hm),
+            "stl": str(stl),
+            "previews": previews,
+            "basenames": {
+                "heightmap": hm.name,
+                "stl": stl.name,
+                **({f"preview_{k}": Path(v).name for k, v in previews.items()} if previews else {}),
+            },
+        },
+    }
+
+    _safe_json_dump(manifest_path, manifest)
+
+    # Return (API response)
     return {
         "heightmap": str(hm),
         "stl": str(stl),
-        "size_mm": [size_mm[0], size_mm[1], thickness + relief],
+        "previews": previews,
+        "manifest": str(manifest_path),
+        "size_mm": dims_xyz,
         "engine_dir": str(ENGINE_DIR),
         "python": str(PY),
     }
