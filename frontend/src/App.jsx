@@ -34,6 +34,7 @@ import AccountPage from 'pages/AccountPage';      // ✅ member account
 
 import { ToastContainer } from 'react-toastify';
 import { errorToast, successToast } from './utils/toastUtils';
+import HeightmapPage from "./pages/HeightmapPage";
 
 import './App.css';
 
@@ -267,6 +268,7 @@ const MainApp = () => {
             <Route path="/assistant" element={<AssistantPage />} />
             <Route path="/script-lab" element={<ScriptLabPage />} />
             <Route path="/memory" element={<MemoryPage />} />
+            <Route path="/heightmap" element={<HeightmapPage />} />
 
             {/* Member accounts */}
             <Route
