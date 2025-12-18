@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import inspect
+import json
+import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from fastapi.responses import JSONResponse
 
-from assistant.tools.heightmap_engine import generate_relief  # your existing pipeline
+from assistant.tools.heightmap_engine import generate_relief
 
 router = APIRouter(tags=["tools"])
 
@@ -14,19 +16,18 @@ router = APIRouter(tags=["tools"])
 @router.post("/heightmap")
 async def heightmap_tool(
     image: UploadFile = File(...),
-    mode: str = Form("relief"),          # "relief" | "heightmap" (whatever you support)
-    max_height: float = Form(4.0),       # aka relief height in mm
+    mode: str = Form("relief"),
+    max_height: float = Form(4.0),
     invert: bool = Form(True),
-    size_mm: int = Form(80),             # square output, 80mm default
-    thickness: float = Form(2.0),        # base thickness in mm
-    name: str = Form("hexforge"),        # output name prefix
+    size_mm: int = Form(80),
+    thickness: float = Form(2.0),
+    name: str = Form("hexforge"),
 ):
-    # ---- basic validation ----
     if not image.filename:
         raise HTTPException(status_code=400, detail="Missing filename")
 
     tmp_dir = Path("/tmp/hexforge-heightmap")
-    out_dir = tmp_dir / "output"
+    out_dir = Path("/data/hexforge3d/output")
     tmp_dir.mkdir(parents=True, exist_ok=True)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -41,21 +42,20 @@ async def heightmap_tool(
     in_path.write_bytes(content)
 
     try:
-        # ---- CALL YOUR REAL PIPELINE (signature-safe) ----
         kwargs = {
             "image_path": str(in_path),
-            "image": str(in_path),              # some implementations use `image`
-            "input_path": str(in_path),         # or `input_path`
+            "image": str(in_path),
+            "input_path": str(in_path),
             "name": name,
             "size_mm": (size_mm, size_mm),
             "thickness": thickness,
             "relief": max_height,
-            "max_height": max_height,           # some use `max_height`
+            "max_height": max_height,
             "invert": invert,
             "mode": mode,
-            "output_dir": str(out_dir),         # common alt name
-            "out_dir": str(out_dir),            # the one that caused your crash earlier
-            "out_path": str(out_dir),           # sometimes used as dir/prefix
+            "output_dir": str(out_dir),
+            "out_dir": str(out_dir),
+            "out_path": str(out_dir),
             "output_path": str(out_dir),
         }
 
@@ -65,7 +65,7 @@ async def heightmap_tool(
 
         result = generate_relief(**safe_kwargs)
 
-        # Normalize output
+               # Normalize output
         if isinstance(result, dict):
             payload = result
         elif isinstance(result, (list, tuple)):
@@ -73,23 +73,42 @@ async def heightmap_tool(
         else:
             payload = {"output": str(result)}
 
-        return JSONResponse(
-            {
-                "ok": True,
-                "received": {
-                    "filename": image.filename,
-                    "bytes": len(content),
-                    "mode": mode,
-                    "max_height": max_height,
-                    "invert": invert,
-                    "size_mm": size_mm,
-                    "thickness": thickness,
-                    "name": name,
-                },
-                "used_kwargs": safe_kwargs,  # 🔥 super useful while debugging
-                "result": payload,
+        response_obj = {
+            "ok": True,
+            "received": {
+                "filename": image.filename,
+                "bytes": len(content),
+                "mode": mode,
+                "max_height": max_height,
+                "invert": invert,
+                "size_mm": size_mm,
+                "thickness": thickness,
+                "name": name,
+            },
+            "used_kwargs": safe_kwargs,
+            "result": payload,
+        }
+
+        # ---- write manifest (never crash request) ----
+        try:
+            manifest_path = out_dir / f"{name}_manifest.json"
+            manifest_payload = {
+                **response_obj,
+                "generated_at": datetime.datetime.utcnow().isoformat() + "Z",
             }
-        )
+            manifest_path.write_text(
+                json.dumps(manifest_payload, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+        except Exception as e:
+            response_obj.setdefault("warnings", []).append(
+                f"manifest_write_failed: {e}"
+            )
+
+        return JSONResponse(response_obj)
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Heightmap generation failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Heightmap generation failed: {e}",
+        )
