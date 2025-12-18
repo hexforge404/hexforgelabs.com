@@ -36,6 +36,8 @@ services:
       - ./nginx/assistant.conf:/etc/nginx/conf.d/assistant.conf:ro
       - ./nginx/snippets:/etc/nginx/snippets:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
+      - /mnt/hdd-storage/ai-tools/engines/hexforge3d:/var/www/hexforge3d:ro
+      - /mnt/hdd-storage/hexforge-store/nginx/auth:/etc/nginx/auth:ro
 
       # Shared uploads folder (for /images/* -> /uploads/)
       - ./uploads:/uploads
