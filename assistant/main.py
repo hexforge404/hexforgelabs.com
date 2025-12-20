@@ -34,7 +34,7 @@ from .tools import (
 )
 from .tools.system import ping_host
 
-from assistant.routes.tools import heightmap
+from assistant.routes import heightmap
 from fastapi.exceptions import RequestValidationError
 from fastapi.encoders import jsonable_encoder
 from starlette.status import HTTP_422_UNPROCESSABLE_ENTITY
@@ -88,7 +88,9 @@ async def lifespan(app: FastAPI):
 # 🚀 FastAPI Init
 app = FastAPI(title="HexForge Lab Assistant API", lifespan=lifespan)
 app.include_router(mcp.router)
-app.include_router(heightmap.router, prefix="/tool")
+app.include_router(heightmap.router)
+
+ 
 
 # === Schemas ===
 class ChatRequest(BaseModel):
