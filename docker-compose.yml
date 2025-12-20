@@ -36,7 +36,7 @@ services:
       - ./nginx/assistant.conf:/etc/nginx/conf.d/assistant.conf:ro
       - ./nginx/snippets:/etc/nginx/snippets:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
-      - /mnt/hdd-storage/ai-tools/engines/hexforge3d:/var/www/hexforge3d:ro
+      - /mnt/hdd-storage/ai-tools/engines/hexforge3d:/var/www/hexforge3d
       - /mnt/hdd-storage/hexforge-store/nginx/auth:/etc/nginx/auth:ro
 
       # Shared uploads folder (for /images/* -> /uploads/)
@@ -124,6 +124,9 @@ services:
       - /mnt/hdd-storage/ai-tools/engines/hexforge3d:/data/hexforge3d
     environment:
       HEXFORGE3D_ENGINE_DIR: /data/hexforge3d
+      HEIGHTMAP_OUTPUT_DIR: /data/hexforge3d/output
+      HEIGHTMAP_JOBS_DIR: /data/hexforge3d/jobs/heightmap
+      HEIGHTMAP_TMP_DIR: /tmp/hexforge-heightmap
       OLLAMA_MODEL: mistral:latest
       OLLAMA_URL: http://ollama:11434
       SCRIPT_LAB_URL: http://hexforge-backend:8000/api/script-lab

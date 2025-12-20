@@ -9,8 +9,9 @@ from typing import Tuple, Dict, Any, Optional
 ENGINE_DIR = Path(os.getenv("HEXFORGE3D_ENGINE_DIR", "/data/hexforge3d"))
 PY = ENGINE_DIR / "venv" / "bin" / "python"
 
-INPUT = ENGINE_DIR / "input"
-OUTPUT = ENGINE_DIR / "output"
+INPUT  = Path(os.getenv("HEXFORGE3D_INPUT_DIR",  str(ENGINE_DIR / "input")))
+OUTPUT = Path(os.getenv("HEXFORGE3D_OUTPUT_DIR", str(ENGINE_DIR / "output")))
+
 
 ENGINE_VERSION = os.getenv("HEXFORGE3D_ENGINE_VERSION", "hexforge3d@v1")
 

@@ -28,3 +28,11 @@ yarn-error.log*
 .DS_Store
 Thumbs.db
 nginx/default.conf.bak-*
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# React build output (never commit)
+frontend/build/
