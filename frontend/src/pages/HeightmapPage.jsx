@@ -1,3 +1,4 @@
+// HeightmapPage.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import "./HeightmapPage.css";
 
@@ -12,10 +13,65 @@ const ASSETS_BASE = (process.env.REACT_APP_HEIGHTMAP_ASSETS_URL || "/assets/heig
   ""
 );
 
+/**
+ * Turn backend-provided paths into absolute, correct-host URLs.
+ *
+ * Rules:
+ * - absolute http(s): keep
+ * - "/assets/heightmap/..." OR "assets/heightmap/..." -> use ASSETS_BASE + filename
+ * - "/tool/..." -> TOOLS_BASE + path
+ * - "/..." (unknown root-relative) -> assume same host as TOOLS_BASE (safer than current origin)
+ * - "foo/bar.png" -> "/foo/bar.png" on TOOLS_BASE host
+ */
+function resolvePublicUrl(urlOrPath) {
+  if (!urlOrPath) return null;
+  const s = String(urlOrPath).trim();
+  if (!s) return null;
+
+  // already absolute
+  if (/^https?:\/\//i.test(s)) return s;
+
+  // common: backend returns "/assets/heightmap/xyz.png"
+  if (s.startsWith("/assets/heightmap/")) {
+    const file = s.split("/").pop();
+    return file ? `${ASSETS_BASE}/${file}` : null;
+  }
+
+  // sometimes returned without leading slash
+  if (s.startsWith("assets/heightmap/")) {
+    const file = s.split("/").pop();
+    return file ? `${ASSETS_BASE}/${file}` : null;
+  }
+
+  // status_url and other tool endpoints
+  if (s.startsWith("/tool/")) {
+    return TOOLS_BASE ? `${TOOLS_BASE}${s}` : s;
+  }
+
+  // any other root-relative path: safest to bind to TOOLS_BASE host (not the current page host)
+  if (s.startsWith("/")) {
+    return TOOLS_BASE ? `${TOOLS_BASE}${s}` : s;
+  }
+
+  // plain relative path fragment -> treat as path on TOOLS_BASE host
+  return TOOLS_BASE ? `${TOOLS_BASE}/${s.replace(/^\/+/, "")}` : `/${s.replace(/^\/+/, "")}`;
+}
+
 function toHeightmapAssetUrl(enginePathOrUrl) {
   if (!enginePathOrUrl) return null;
   const s = String(enginePathOrUrl).trim();
+  if (!s) return null;
+
+  // already absolute URL
   if (/^https?:\/\//i.test(s)) return s;
+
+  // if it's already a public URL path, use ASSETS_BASE host (not current origin)
+  if (s.startsWith("/assets/heightmap/") || s.startsWith("assets/heightmap/")) {
+    const file = s.split("/").pop();
+    return file ? `${ASSETS_BASE}/${file}` : null;
+  }
+
+  // otherwise assume it's an engine path and take filename
   const file = s.split("/").pop();
   if (!file) return null;
   return `${ASSETS_BASE}/${file}`;
@@ -84,21 +140,79 @@ export default function HeightmapPage() {
   const [jobsLoading, setJobsLoading] = useState(false);
   const [jobsError, setJobsError] = useState("");
 
+  // Results UI tabs
+  const [resultTab, setResultTab] = useState("heightmap"); // "heightmap" | "previews"
+
   const result = useMemo(() => resp?.result || resp || null, [resp]);
 
-  const previewUrl = useMemo(() => toHeightmapAssetUrl(result?.heightmap), [result]);
-  const stlUrl = useMemo(() => toHeightmapAssetUrl(result?.stl), [result]);
-  const manifestUrl = useMemo(() => toHeightmapAssetUrl(result?.manifest), [result]);
+  const publicPack = useMemo(
+    () => (result && typeof result === "object" ? result.public : null),
+    [result]
+  );
+
+  // Cache-buster for <img> tags (helps when CDN/browser caches aggressively)
+  const imgBust = useMemo(() => {
+    const t = resp?.job?.updated_at || Date.now();
+    return `t=${encodeURIComponent(String(t))}`;
+  }, [resp]);
+
+  // Primary outputs (prefer public URLs)
+  const previewUrl = useMemo(() => {
+    const u = publicPack?.heightmap_url;
+    if (u) return resolvePublicUrl(u);
+    return toHeightmapAssetUrl(result?.heightmap);
+  }, [publicPack, result]);
+
+  const stlUrl = useMemo(() => {
+    const u = publicPack?.stl_url;
+    if (u) return resolvePublicUrl(u);
+    return toHeightmapAssetUrl(result?.stl);
+  }, [publicPack, result]);
+
+  // Prefer job_manifest_url; fallback to preview manifest; final fallback to engine path
+  const manifestUrl = useMemo(() => {
+    const u = publicPack?.job_manifest_url || publicPack?.blender_previews_manifest_url;
+    if (u) return resolvePublicUrl(u);
+    return toHeightmapAssetUrl(result?.manifest);
+  }, [publicPack, result]);
+
+  // Blender previews (prefer published public URLs)
+  const blenderPreviews = useMemo(() => {
+    const pub = publicPack?.blender_previews_urls;
+    if (pub && typeof pub === "object") {
+      return {
+        hero: resolvePublicUrl(pub.hero),
+        iso: resolvePublicUrl(pub.iso),
+        top: resolvePublicUrl(pub.top),
+        side: resolvePublicUrl(pub.side),
+      };
+    }
+
+    // Old format: engine paths -> ASSETS_BASE/<filename>
+    const raw = result?.blender_previews || null;
+    if (!raw || typeof raw !== "object") return null;
+
+    const mapped = {};
+    for (const [k, v] of Object.entries(raw)) {
+      mapped[k] = toHeightmapAssetUrl(v);
+    }
+    return mapped;
+  }, [publicPack, result]);
+
+  const blenderStatus = useMemo(() => result?.blender_previews_status || "", [result]);
 
   async function pollJob(statusUrl, timeoutMs = 10 * 60 * 1000) {
     const start = Date.now();
+    const absStatusUrl = resolvePublicUrl(statusUrl);
+
+    if (!absStatusUrl) throw new Error("Missing status URL from server.");
 
     while (true) {
       if (Date.now() - start > timeoutMs) {
         throw new Error("Timed out waiting for the job to finish.");
       }
 
-      const { r, data } = await safeJsonFetch(`${TOOLS_BASE}${statusUrl}`, { method: "GET" });
+      const { r, data } = await safeJsonFetch(absStatusUrl, { method: "GET" });
 
       if (!r.ok || !data?.ok) {
         const msg = pickFastApiError(data, `Status check failed (${r.status})`);
@@ -111,7 +225,6 @@ export default function HeightmapPage() {
       if (job.status === "done") return job;
       if (job.status === "failed") throw new Error(job.error || "Job failed.");
 
-      // slightly slower polling = nicer on mobile + Cloudflare
       await new Promise((res) => setTimeout(res, 1500));
     }
   }
@@ -123,9 +236,7 @@ export default function HeightmapPage() {
 
     if (!file) return setError("Select an image first.");
     if (!name.trim()) return setError("Name is required.");
-    if (!TOOLS_BASE) {
-      return setError("Tools base URL not configured. Set REACT_APP_TOOLS_BASE_URL.");
-    }
+    if (!TOOLS_BASE) return setError("Tools base URL not configured. Set REACT_APP_TOOLS_BASE_URL.");
 
     const fd = new FormData();
     fd.append("image", file);
@@ -153,9 +264,9 @@ export default function HeightmapPage() {
       const job = await pollJob(data.status_url);
 
       setResp({ ok: true, result: job.result, job });
+      setResultTab("heightmap");
 
-      // refresh past jobs after completion
-      await refreshJobs(true);
+      await refreshJobs({ resetPaging: true });
     } catch (e) {
       setError(e?.message || "Request failed.");
     } finally {
@@ -174,9 +285,10 @@ export default function HeightmapPage() {
     setResp(null);
     setError("");
     setJobStatus(null);
+    setResultTab("heightmap");
   }
 
-  async function refreshJobs(resetPaging = false) {
+  async function refreshJobs({ resetPaging = false, nextOffset = null } = {}) {
     if (!TOOLS_BASE) return;
 
     setJobsLoading(true);
@@ -184,7 +296,8 @@ export default function HeightmapPage() {
 
     try {
       const limit = 10;
-      const offset = resetPaging ? 0 : jobsMeta.offset;
+      const offset =
+        typeof nextOffset === "number" ? nextOffset : resetPaging ? 0 : jobsMeta.offset;
 
       const { r, data } = await safeJsonFetch(
         `${TOOLS_BASE}/tool/heightmap/v1/jobs?limit=${limit}&offset=${offset}`,
@@ -199,11 +312,8 @@ export default function HeightmapPage() {
       const pack = data.jobs;
       setJobsMeta({ total: pack.total, limit: pack.limit, offset: pack.offset });
 
-      if (resetPaging) {
-        setJobs(pack.items || []);
-      } else {
-        setJobs((prev) => [...prev, ...(pack.items || [])]);
-      }
+      if (resetPaging) setJobs(pack.items || []);
+      else setJobs((prev) => [...prev, ...(pack.items || [])]);
     } catch (e) {
       setJobsError(e?.message || "Failed to load past jobs.");
     } finally {
@@ -230,6 +340,7 @@ export default function HeightmapPage() {
     const job = data.job;
     setResp({ ok: true, result: job.result, job });
     setJobStatus({ id: job.id, status: job.status, progress: job.progress ?? 0 });
+    setResultTab("heightmap");
   }
 
   async function deleteJob(jobId) {
@@ -247,17 +358,24 @@ export default function HeightmapPage() {
       return;
     }
 
-    // remove from UI
     setJobs((prev) => prev.filter((j) => j.id !== jobId));
   }
 
   useEffect(() => {
-    // load first page once
-    refreshJobs(true);
+    refreshJobs({ resetPaging: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const canLoadMore = jobs.length < (jobsMeta.total || 0);
+
+  // Flips ONLY the on-page preview to look "normal" while keeping the underlying file unchanged.
+  const previewStyle = useMemo(() => {
+    return invert ? { filter: "invert(1)" } : undefined;
+  }, [invert]);
+
+  const previewImgSrc = previewUrl
+    ? `${previewUrl}${previewUrl.includes("?") ? "&" : "?"}${imgBust}`
+    : null;
 
   return (
     <div className="hf-hm-page">
@@ -270,11 +388,7 @@ export default function HeightmapPage() {
         <div className="hf-hm-grid">
           <label className="hf-hm-label">
             <span>Image</span>
-            <input
-              type="file"
-              accept="image/*"
-              onChange={(e) => setFile(e.target.files?.[0] || null)}
-            />
+            <input type="file" accept="image/*" onChange={(e) => setFile(e.target.files?.[0] || null)} />
           </label>
 
           <label className="hf-hm-label">
@@ -301,43 +415,30 @@ export default function HeightmapPage() {
 
             <label className="hf-hm-label">
               <span>Max Height (mm)</span>
-              <input
-                type="number"
-                step="0.1"
-                value={maxHeight}
-                onChange={(e) => setMaxHeight(Number(e.target.value))}
-              />
+              <input type="number" step="0.1" value={maxHeight} onChange={(e) => setMaxHeight(Number(e.target.value))} />
             </label>
 
             <label className="hf-hm-label">
               <span>Size (mm)</span>
-              <input
-                type="number"
-                step="1"
-                value={sizeMm}
-                onChange={(e) => setSizeMm(Number(e.target.value))}
-              />
+              <input type="number" step="1" value={sizeMm} onChange={(e) => setSizeMm(Number(e.target.value))} />
             </label>
 
             <label className="hf-hm-label">
               <span>Thickness (mm)</span>
-              <input
-                type="number"
-                step="0.1"
-                value={thickness}
-                onChange={(e) => setThickness(Number(e.target.value))}
-              />
+              <input type="number" step="0.1" value={thickness} onChange={(e) => setThickness(Number(e.target.value))} />
             </label>
 
             <label className="hf-hm-label hf-hm-check">
               <span>Invert</span>
-              <input
-                type="checkbox"
-                checked={invert}
-                onChange={(e) => setInvert(e.target.checked)}
-              />
+              <input type="checkbox" checked={invert} onChange={(e) => setInvert(e.target.checked)} />
             </label>
           </div>
+
+          {invert && (
+            <div className="hf-muted" style={{ marginTop: "0.5rem" }}>
+              Preview is visually inverted for readability; downloaded files are unchanged.
+            </div>
+          )}
         </details>
 
         <div className="hf-hm-actions">
@@ -354,9 +455,7 @@ export default function HeightmapPage() {
               <span className={`hf-pill ${jobStatus?.status || resp?.job?.status || "unknown"}`}>
                 {(jobStatus?.status || resp?.job?.status) ?? "unknown"}
               </span>
-              <span className="hf-hm-jobtext">
-                Job • {(jobStatus?.progress ?? resp?.job?.progress ?? 0)}%
-              </span>
+              <span className="hf-hm-jobtext">Job • {(jobStatus?.progress ?? resp?.job?.progress ?? 0)}%</span>
             </div>
           )}
 
@@ -370,25 +469,66 @@ export default function HeightmapPage() {
           <div className="hf-hm-card">
             <div className="hf-hm-links">
               {stlUrl && (
-                <a className="hf-hm-link" href={stlUrl} download>
-                  ⬇ Download STL
+                <a className="hf-hm-link" href={stlUrl} target="_blank" rel="noreferrer">
+                  ⬇ Open STL
                 </a>
               )}
               {manifestUrl && (
-                <a className="hf-hm-link" href={manifestUrl} download>
-                  ⬇ Download Manifest
+                <a className="hf-hm-link" href={manifestUrl} target="_blank" rel="noreferrer">
+                  ⬇ Open Manifest
                 </a>
               )}
               {previewUrl && (
                 <a className="hf-hm-link" href={previewUrl} target="_blank" rel="noreferrer">
-                  👁 Open Preview
+                  👁 Open Heightmap
+                </a>
+              )}
+              {blenderPreviews?.hero && (
+                <a className="hf-hm-link" href={blenderPreviews.hero} target="_blank" rel="noreferrer">
+                  🧊 Open 3D Preview
                 </a>
               )}
             </div>
 
-            {previewUrl && (
+            <div className="hf-hm-tabs">
+              <button
+                className={`hf-hm-tab ${resultTab === "heightmap" ? "active" : ""}`}
+                onClick={() => setResultTab("heightmap")}
+              >
+                Heightmap
+              </button>
+              <button
+                className={`hf-hm-tab ${resultTab === "previews" ? "active" : ""}`}
+                onClick={() => setResultTab("previews")}
+                disabled={!blenderPreviews}
+                title={!blenderPreviews ? "No 3D previews for this job." : ""}
+              >
+                3D Previews {blenderStatus ? `• ${blenderStatus}` : ""}
+              </button>
+            </div>
+
+            {resultTab === "heightmap" && previewImgSrc && (
               <div className="hf-hm-preview">
-                <img src={previewUrl} alt="Heightmap preview" />
+                <img src={previewImgSrc} alt="Heightmap preview" style={previewStyle} />
+              </div>
+            )}
+
+            {resultTab === "previews" && (
+              <div className="hf-hm-previews">
+                {!blenderPreviews && (
+                  <div className="hf-muted">
+                    No Blender previews found for this job (older job, or preview generation failed).
+                  </div>
+                )}
+
+                {blenderPreviews && (
+                  <div className="hf-hm-previews-grid">
+                    <PreviewTile label="Hero render" url={blenderPreviews.hero} bust={imgBust} />
+                    <PreviewTile label="Isometric render" url={blenderPreviews.iso} bust={imgBust} />
+                    <PreviewTile label="Top render" url={blenderPreviews.top} bust={imgBust} />
+                    <PreviewTile label="Side render" url={blenderPreviews.side} bust={imgBust} />
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -407,7 +547,7 @@ export default function HeightmapPage() {
             <h2>Past jobs</h2>
 
             <div className="hf-hm-jobs-actions">
-              <button className="hf-hm-btn small" onClick={() => refreshJobs(true)} disabled={jobsLoading}>
+              <button className="hf-hm-btn small" onClick={() => refreshJobs({ resetPaging: true })} disabled={jobsLoading}>
                 {jobsLoading ? "Refreshing…" : "Refresh"}
               </button>
             </div>
@@ -449,11 +589,7 @@ export default function HeightmapPage() {
           <div className="hf-hm-more">
             <button
               className="hf-hm-btn"
-              onClick={() => {
-                setJobsMeta((m) => ({ ...m, offset: (m.offset || 0) + (m.limit || 10) }));
-                // load next page using updated offset after state settles
-                setTimeout(() => refreshJobs(false), 0);
-              }}
+              onClick={() => refreshJobs({ resetPaging: false, nextOffset: (jobsMeta.offset || 0) + (jobsMeta.limit || 10) })}
               disabled={jobsLoading || !canLoadMore}
             >
               {canLoadMore ? (jobsLoading ? "Loading…" : "Load more") : "No more"}
@@ -466,5 +602,29 @@ export default function HeightmapPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+function PreviewTile({ label, url, bust }) {
+  const [broken, setBroken] = useState(false);
+
+  if (!url || broken) {
+    return (
+      <div className="hf-hm-preview-tile disabled">
+        <div className="hf-hm-preview-title">{label}</div>
+        <div className="hf-muted">{!url ? "Missing" : "Failed to load"}</div>
+      </div>
+    );
+  }
+
+  const src = `${url}${url.includes("?") ? "&" : "?"}${bust || ""}`;
+
+  return (
+    <a className="hf-hm-preview-tile" href={url} target="_blank" rel="noreferrer">
+      <div className="hf-hm-preview-title">{label}</div>
+      <div className="hf-hm-preview-thumb">
+        <img src={src} alt={label} loading="lazy" onError={() => setBroken(true)} />
+      </div>
+    </a>
   );
 }

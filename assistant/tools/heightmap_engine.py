@@ -4,7 +4,9 @@ import time
 import platform
 import subprocess
 from pathlib import Path
-from typing import Tuple, Dict, Any, Optional
+from typing import Tuple, Dict, Any, Optional 
+from assistant.tools.render_previews import render_stl_previews
+
 
 ENGINE_DIR = Path(os.getenv("HEXFORGE3D_ENGINE_DIR", "/data/hexforge3d"))
 PY = ENGINE_DIR / "venv" / "bin" / "python"
@@ -139,7 +141,7 @@ def generate_relief(
         "outputs": {
             "heightmap": str(hm),
             "stl": str(stl),
-            "previews": previews,
+            "previews": previews,  # existing legacy preview dict
             "basenames": {
                 "heightmap": hm.name,
                 "stl": stl.name,
@@ -147,6 +149,34 @@ def generate_relief(
             },
         },
     }
+
+    # ------------------------------------------------------------
+    # Blender previews (iso/top/side/hero) - best effort only
+    # ------------------------------------------------------------
+    previews_dir = None
+    try:
+        previews_dir = OUTPUT / f"previews_{stl.stem}"
+        previews_res = render_stl_previews(str(stl), str(previews_dir), size=900)
+
+        # Put them in outputs as well (keeps manifest consistent)
+        manifest["outputs"]["blender_previews"] = {
+            "iso": f"{previews_dir.name}/iso.png",
+            "top": f"{previews_dir.name}/top.png",
+            "side": f"{previews_dir.name}/side.png",
+            "hero": f"{previews_dir.name}/hero.png",
+        }
+        manifest["outputs"]["blender_previews_manifest"] = f"{previews_dir.name}/previews.json"
+        manifest["outputs"]["blender_previews_status"] = "ok" if previews_res.get("ok") else "failed"
+
+        if not previews_res.get("ok"):
+            err = (previews_res.get("stderr") or previews_res.get("stdout") or "").strip()
+            manifest["outputs"]["blender_previews_error"] = err[-2000:] if err else "unknown_error"
+            manifest.setdefault("warnings", []).append("blender_previews_failed")
+
+    except Exception as e:
+        manifest["outputs"]["blender_previews_status"] = "failed"
+        manifest["outputs"]["blender_previews_error"] = f"exception: {e}"
+        manifest.setdefault("warnings", []).append("blender_previews_exception")
 
     _safe_json_dump(manifest_path, manifest)
 
@@ -159,4 +189,5 @@ def generate_relief(
         "size_mm": dims_xyz,
         "engine_dir": str(ENGINE_DIR),
         "python": str(PY),
+        "previews_dir": str(previews_dir) if previews_dir else None,
     }
