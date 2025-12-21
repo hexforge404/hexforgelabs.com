@@ -277,6 +277,106 @@
   height: auto;
 }
 
+/* Tabs */
+.hf-hm-tabs {
+  display: flex;
+  gap: 0.6rem;
+  margin: 0.25rem 0 0.85rem;
+  flex-wrap: wrap;
+}
+
+.hf-hm-tab {
+  border: 1px solid rgba(120, 180, 255, 0.18);
+  background: rgba(0, 0, 0, 0.25);
+  color: #e5f5ff;
+  padding: 0.55rem 0.85rem;
+  border-radius: 999px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.hf-hm-tab:hover {
+  border-color: rgba(110, 230, 255, 0.28);
+}
+
+.hf-hm-tab.active {
+  background: linear-gradient(180deg, rgba(40, 220, 255, 0.22), rgba(2, 10, 24, 0.35));
+  border-color: rgba(60, 230, 255, 0.28);
+}
+
+.hf-hm-tab:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Previews */
+.hf-hm-previews {
+  margin-top: 0.35rem;
+}
+
+.hf-hm-previews-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.85rem;
+}
+
+@media (min-width: 760px) {
+  .hf-hm-previews-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.hf-hm-preview-tile {
+  display: block;
+  border-radius: 16px;
+  border: 1px solid rgba(120, 180, 255, 0.12);
+  background: rgba(2, 7, 18, 0.35);
+  padding: 0.75rem;
+  text-decoration: none;
+  color: inherit;
+  transition: transform 0.08s ease, border-color 0.12s ease;
+}
+
+.hf-hm-preview-tile:hover {
+  transform: translateY(-1px);
+  border-color: rgba(110, 230, 255, 0.28);
+}
+
+.hf-hm-preview-tile.disabled {
+  opacity: 0.55;
+}
+
+.hf-hm-preview-title {
+  font-weight: 900;
+  margin-bottom: 0.55rem;
+}
+
+.hf-hm-preview-thumb {
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid rgba(120, 180, 255, 0.12);
+  background: rgba(0, 0, 0, 0.35);
+  min-height: 220px; /* ensures it doesn't collapse while image loads */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hf-hm-preview-thumb img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.hf-hm-preview-fallback {
+  width: 100%;
+  min-height: 220px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Jobs list */
 .hf-hm-jobs-head {
   display: flex;
   align-items: center;
