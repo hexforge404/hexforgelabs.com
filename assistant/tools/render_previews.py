@@ -6,23 +6,24 @@ import subprocess
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-
 BLENDER_BIN = os.getenv("BLENDER_BIN", "blender")
 
+# Determine default script path relative to this file.
+# The previous version hard‑coded `/app/assistant/blender_scripts/render_previews.py`,
+# which breaks if the repository is mounted elsewhere.  We compute it from __file__.
+_DEFAULT_SCRIPT_PATH = Path(__file__).resolve().parents[1] / "blender_scripts" / "render_previews.py"
 SCRIPT_PATH = os.getenv(
     "BLENDER_PREVIEW_SCRIPT",
-    "/app/assistant/blender_scripts/render_previews.py",
+    str(_DEFAULT_SCRIPT_PATH),
 )
 
 # Prevent Blender from hanging forever in a container
 BLENDER_TIMEOUT_SECS = int(os.getenv("BLENDER_PREVIEW_TIMEOUT_SECS", "180"))
 
-
 def _tail(s: Optional[str], n: int = 4000) -> str:
     if not s:
         return ""
     return s[-n:]
-
 
 def _safe_load_manifest(path: Path) -> Optional[Dict[str, Any]]:
     try:
@@ -31,7 +32,6 @@ def _safe_load_manifest(path: Path) -> Optional[Dict[str, Any]]:
         return json.loads(path.read_text(encoding="utf-8"))
     except Exception:
         return None
-
 
 def render_stl_previews(stl_path: str, out_dir: str, size: int = 900) -> dict:
     """
@@ -55,7 +55,8 @@ def render_stl_previews(stl_path: str, out_dir: str, size: int = 900) -> dict:
     out_path = Path(out_dir).resolve()
     out_path.mkdir(parents=True, exist_ok=True)
 
-    basename = "previews"  # keep predictable output names
+    # Keep predictable output names; manifest uses "previews.json"
+    basename = "previews"
     previews_json_path = out_path / "previews.json"
 
     cmd = [
