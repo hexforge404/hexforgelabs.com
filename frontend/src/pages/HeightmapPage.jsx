@@ -469,8 +469,9 @@ export default function HeightmapPage() {
           <div className="hf-hm-card">
             <div className="hf-hm-links">
               {stlUrl && (
-                <a className="hf-hm-link" href={stlUrl} target="_blank" rel="noreferrer">
-                  ⬇ Open STL
+                // Use download attribute so browsers download the STL directly rather than opening a blank tab.
+                <a className="hf-hm-link" href={stlUrl} download>
+                  ⬇ Download STL
                 </a>
               )}
               {manifestUrl && (
@@ -480,16 +481,16 @@ export default function HeightmapPage() {
               )}
               {previewUrl && (
                 <a className="hf-hm-link" href={previewUrl} target="_blank" rel="noreferrer">
-                  👁 Open Heightmap
+                  Open Heightmap
                 </a>
               )}
               {blenderPreviews?.hero && (
                 <a className="hf-hm-link" href={blenderPreviews.hero} target="_blank" rel="noreferrer">
-                  🧊 Open 3D Preview
+                  Open 3D Preview
                 </a>
               )}
             </div>
-
+            
             <div className="hf-hm-tabs">
               <button
                 className={`hf-hm-tab ${resultTab === "heightmap" ? "active" : ""}`}
