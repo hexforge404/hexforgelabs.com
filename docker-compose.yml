@@ -45,8 +45,10 @@ services:
       - backend
       - assistant
       - media_api
+      - glyphengine
     networks:
       - hexforge-network
+    restart: unless-stopped
 
 
 
@@ -78,6 +80,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    restart: unless-stopped
       
       
       
@@ -101,6 +104,7 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
+
 
   assistant:
     build:
@@ -160,6 +164,59 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+      start_period: 20s
+
+  glyphengine:
+    build:
+      context: /mnt/hdd-storage/hexforge-glyphengine
+      dockerfile: Dockerfile
+    image: hexforge-glyphengine
+    container_name: hexforge-glyphengine
+
+    environment:
+      SURFACE_OUTPUT_DIR: /data/hexforge3d/surface
+      SURFACE_PUBLIC_PREFIX: /assets/surface
+      ROOT_PATH: /api/surface
+
+    # If your Dockerfile already uses USER appuser, you can omit this.
+    # Keeping it explicit is nice for future-you.
+    user: "10001:10001"
+
+    # Shared engine data (surface output lives here)
+    volumes:
+      - /mnt/hdd-storage/ai-tools/engines/hexforge3d:/data/hexforge3d
+
+    # Optional: make only /data/hexforge3d/surface writable, keep rest read-only.
+    # Uncomment this pattern if you want tighter isolation:
+    # volumes:
+    #   - /mnt/hdd-storage/ai-tools/engines/hexforge3d/surface:/data/hexforge3d/surface
+    #   - /mnt/hdd-storage/ai-tools/engines/hexforge3d:/data/hexforge3d:ro
+
+    # Optional hardening (turn on once you're stable)
+    # read_only: true
+
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=512m
+
+    networks:
+      - hexforge-network
+
+    restart: unless-stopped
+
+    expose:
+      - "8092"
+
+    # IMPORTANT: this is your shared "hexforge" filesystem group (not docker)
+    group_add:
+      - "1001"
+
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8092/api/surface/health > /dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
 
 
 

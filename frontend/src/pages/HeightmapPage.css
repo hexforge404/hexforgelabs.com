@@ -73,29 +73,6 @@
   margin-bottom: 1.25rem;
 }
 
-/* ✅ Machine progress bar (inside the PROGRESS stat tile) */
-.hf-hm-progressBar{
-  margin-top: 0.55rem;
-  height: 8px;
-  border-radius: 999px;
-  border: 1px solid rgba(120,180,255,0.14);
-  background: rgba(0,0,0,0.22);
-  overflow: hidden;
-}
-.hf-hm-progressFill{
-  height: 100%;
-  width: 0%;
-  background: linear-gradient(90deg, rgba(60,230,255,0.18), rgba(60,230,255,0.55));
-}
-
-/* ✅ Keyboard focus for clickable archive rows */
-.hf-hm-jobrow:focus-visible{
-  outline: none;
-  border-color: rgba(60,230,255,0.45);
-  box-shadow: 0 0 0 3px rgba(60,230,255,0.14);
-}
-
-
 /* Machine bar */
 
 .hf-hm-machinebar{
@@ -884,7 +861,7 @@
   background: rgba(60,230,255,0.05);
 }
 
-/* ✅ Selected highlight */
+/* Selected highlight */
 .hf-hm-jobrow.selected{
   border-color: rgba(60,230,255,0.40);
   background: rgba(60,230,255,0.10);
