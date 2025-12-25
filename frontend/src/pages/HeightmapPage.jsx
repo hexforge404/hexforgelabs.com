@@ -13,16 +13,12 @@ const ASSETS_BASE = (process.env.REACT_APP_HEIGHTMAP_ASSETS_URL || "/assets/heig
   ""
 );
 
-// Supports subfolders under /assets/heightmap/<tail...>
-const ASSETS_PREFIX_1 = "/assets/heightmap/";
-const ASSETS_PREFIX_2 = "assets/heightmap/";
-
 /**
  * Turn backend-provided paths into absolute, correct-host URLs.
  *
  * Rules:
  * - absolute http(s): keep
- * - "/assets/heightmap/..." OR "assets/heightmap/..." -> use ASSETS_BASE + tail (KEEP subfolders)
+ * - "/assets/heightmap/..." OR "assets/heightmap/..." -> use ASSETS_BASE + (path after assets/heightmap/)
  * - "/tool/..." -> TOOLS_BASE + path
  * - "/..." (unknown root-relative) -> assume same host as TOOLS_BASE (safer than current origin)
  * - "foo/bar.png" -> "/foo/bar.png" on TOOLS_BASE host
@@ -35,16 +31,16 @@ function resolvePublicUrl(urlOrPath) {
   // already absolute
   if (/^https?:\/\//i.test(s)) return s;
 
-  // common: backend returns "/assets/heightmap/xyz.png" (support subpaths)
-  if (s.startsWith(ASSETS_PREFIX_1)) {
-    const tail = s.slice(ASSETS_PREFIX_1.length);
-    return tail ? `${ASSETS_BASE}/${tail}` : null;
+  // common: backend returns "/assets/heightmap/xyz.png" OR "/assets/heightmap/sub/xyz.png"
+  if (s.startsWith("/assets/heightmap/")) {
+    const rel = s.replace(/^\/assets\/heightmap\//, "");
+    return rel ? `${ASSETS_BASE}/${rel}` : null;
   }
 
   // sometimes returned without leading slash
-  if (s.startsWith(ASSETS_PREFIX_2)) {
-    const tail = s.slice(ASSETS_PREFIX_2.length);
-    return tail ? `${ASSETS_BASE}/${tail}` : null;
+  if (s.startsWith("assets/heightmap/")) {
+    const rel = s.replace(/^assets\/heightmap\//, "");
+    return rel ? `${ASSETS_BASE}/${rel}` : null;
   }
 
   // status_url and other tool endpoints
@@ -61,6 +57,17 @@ function resolvePublicUrl(urlOrPath) {
   return TOOLS_BASE ? `${TOOLS_BASE}/${s.replace(/^\/+/, "")}` : `/${s.replace(/^\/+/, "")}`;
 }
 
+/**
+ * Maps an engine path or url to the public assets URL.
+ * Important: preserves subfolders under assets/heightmap.
+ *
+ * Examples:
+ * - "/assets/heightmap/foo.png" -> `${ASSETS_BASE}/foo.png`
+ * - "/assets/heightmap/job-123/foo.png" -> `${ASSETS_BASE}/job-123/foo.png`
+ * - "assets/heightmap/job-123/foo.png" -> `${ASSETS_BASE}/job-123/foo.png`
+ * - "/mnt/.../assets/heightmap/job-123/foo.png" -> `${ASSETS_BASE}/job-123/foo.png`
+ * - "foo.png" -> `${ASSETS_BASE}/foo.png`
+ */
 function toHeightmapAssetUrl(enginePathOrUrl) {
   if (!enginePathOrUrl) return null;
   const s = String(enginePathOrUrl).trim();
@@ -69,17 +76,18 @@ function toHeightmapAssetUrl(enginePathOrUrl) {
   // already absolute URL
   if (/^https?:\/\//i.test(s)) return s;
 
-  // if it's already a public URL path, use ASSETS_BASE host (KEEP subpaths)
-  if (s.startsWith(ASSETS_PREFIX_1)) {
-    const tail = s.slice(ASSETS_PREFIX_1.length);
-    return tail ? `${ASSETS_BASE}/${tail}` : null;
-  }
-  if (s.startsWith(ASSETS_PREFIX_2)) {
-    const tail = s.slice(ASSETS_PREFIX_2.length);
-    return tail ? `${ASSETS_BASE}/${tail}` : null;
+  // if it's already a public URL path, preserve relative path beneath assets/heightmap
+  if (s.includes("/assets/heightmap/")) {
+    const rel = s.split("/assets/heightmap/").pop();
+    return rel ? `${ASSETS_BASE}/${rel.replace(/^\/+/, "")}` : null;
   }
 
-  // otherwise assume it's an engine path and take filename only
+  if (s.startsWith("assets/heightmap/")) {
+    const rel = s.replace(/^assets\/heightmap\//, "");
+    return rel ? `${ASSETS_BASE}/${rel.replace(/^\/+/, "")}` : null;
+  }
+
+  // otherwise assume it's an engine path and take filename
   const file = s.split("/").pop();
   if (!file) return null;
   return `${ASSETS_BASE}/${file}`;
@@ -170,41 +178,21 @@ function deriveMachineChecklist({ file, resp, jobStatus, previewUrl, stlUrl, ble
   };
 }
 
-/** ============
- * localStorage helpers (premium UX: remembers last settings)
- * ============ */
-const LS_KEY = "hf_heightmap_settings_v1";
-function loadSettings() {
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    if (!raw) return null;
-    const obj = JSON.parse(raw);
-    return obj && typeof obj === "object" ? obj : null;
-  } catch {
-    return null;
-  }
-}
-function saveSettings(partial) {
-  try {
-    const current = loadSettings() || {};
-    const next = { ...current, ...partial };
-    localStorage.setItem(LS_KEY, JSON.stringify(next));
-  } catch {
-    // ignore
-  }
-}
-
 export default function HeightmapPage() {
-  // Basic inputs
   const [file, setFile] = useState(null);
   const [name, setName] = useState(makeDefaultName());
 
-  // Advanced options (default values; will be overwritten by localStorage if present)
+  // ✅ NEW: optional subfolder for outputs (future-proof; backend can ignore today)
+  const [subfolder, setSubfolder] = useState("");
+
+  // Advanced options
   const [mode, setMode] = useState("relief");
   const [maxHeight, setMaxHeight] = useState(4.0);
   const [invert, setInvert] = useState(true);
   const [sizeMm, setSizeMm] = useState(80);
   const [thickness, setThickness] = useState(2.0);
+
+  // (Optional: keep in state even if backend ignores today; useful for tool-panel UI)
   const [denoise, setDenoise] = useState(false);
 
   const [loading, setLoading] = useState(false);
@@ -224,27 +212,6 @@ export default function HeightmapPage() {
 
   // ✅ selected row highlight
   const [selectedJobId, setSelectedJobId] = useState(null);
-
-  // Load saved settings once
-  useEffect(() => {
-    const s = loadSettings();
-    if (!s) return;
-
-    if (typeof s.mode === "string") setMode(s.mode);
-    if (Number.isFinite(Number(s.maxHeight))) setMaxHeight(Number(s.maxHeight));
-    if (typeof s.invert === "boolean") setInvert(s.invert);
-    if (Number.isFinite(Number(s.sizeMm))) setSizeMm(Number(s.sizeMm));
-    if (Number.isFinite(Number(s.thickness))) setThickness(Number(s.thickness));
-    if (typeof s.denoise === "boolean") setDenoise(s.denoise);
-  }, []);
-
-  // Persist settings when changed
-  useEffect(() => saveSettings({ mode }), [mode]);
-  useEffect(() => saveSettings({ maxHeight }), [maxHeight]);
-  useEffect(() => saveSettings({ invert }), [invert]);
-  useEffect(() => saveSettings({ sizeMm }), [sizeMm]);
-  useEffect(() => saveSettings({ thickness }), [thickness]);
-  useEffect(() => saveSettings({ denoise }), [denoise]);
 
   const result = useMemo(() => resp?.result || resp || null, [resp]);
 
@@ -291,7 +258,7 @@ export default function HeightmapPage() {
       };
     }
 
-    // Old format: engine paths -> ASSETS_BASE/<filename> (or /assets/heightmap/<tail>)
+    // Old format: engine paths -> ASSETS_BASE/<rel>
     const raw = result?.blender_previews || null;
     if (!raw || typeof raw !== "object") return null;
 
@@ -396,7 +363,11 @@ export default function HeightmapPage() {
     fd.append("invert", String(invert));
     fd.append("size_mm", String(sizeMm));
     fd.append("thickness", String(thickness));
-    fd.append("denoise", String(denoise)); // safe even if backend ignores
+    // Safe: backend may ignore if not supported yet.
+    fd.append("denoise", String(denoise));
+
+    // ✅ NEW: optional output subfolder (backend may ignore today)
+    if (subfolder.trim()) fd.append("subfolder", subfolder.trim());
 
     setLoading(true);
     try {
@@ -414,17 +385,11 @@ export default function HeightmapPage() {
 
       const job = await pollJob(data.status_url);
 
-      const nextResp = { ok: true, result: job.result, job };
-      setResp(nextResp);
+      setResp({ ok: true, result: job.result, job });
+      setResultTab("surface");
 
-      // ✅ highlight current job in archive if it exists
+      // highlight current job in archive if it exists
       setSelectedJobId(job.id);
-
-      // ✅ auto tab switch: if geometry previews exist, show inspection tab
-      const pub = job?.result?.public?.blender_previews_urls;
-      const hasPreviews =
-        !!pub?.hero || !!pub?.iso || !!pub?.top || !!pub?.side || !!job?.result?.blender_previews;
-      setResultTab(hasPreviews ? "inspection" : "surface");
 
       await refreshJobs({ resetPaging: true });
     } catch (e) {
@@ -437,6 +402,7 @@ export default function HeightmapPage() {
   function reset() {
     setFile(null);
     setName(makeDefaultName());
+    setSubfolder("");
     setMode("relief");
     setMaxHeight(4.0);
     setInvert(true);
@@ -448,16 +414,6 @@ export default function HeightmapPage() {
     setJobStatus(null);
     setResultTab("surface");
     setSelectedJobId(null);
-
-    // also persist reset defaults
-    saveSettings({
-      mode: "relief",
-      maxHeight: 4.0,
-      invert: true,
-      sizeMm: 80,
-      thickness: 2.0,
-      denoise: false,
-    });
   }
 
   async function refreshJobs({ resetPaging = false, nextOffset = null } = {}) {
@@ -510,16 +466,12 @@ export default function HeightmapPage() {
     }
 
     const job = data.job;
-    const nextResp = { ok: true, result: job.result, job };
-    setResp(nextResp);
+    setResp({ ok: true, result: job.result, job });
     setJobStatus({ id: job.id, status: job.status, progress: job.progress ?? 0 });
-    setSelectedJobId(job.id);
+    setResultTab("surface");
 
-    // ✅ auto tab switch if previews exist
-    const pub = job?.result?.public?.blender_previews_urls;
-    const hasPreviews =
-      !!pub?.hero || !!pub?.iso || !!pub?.top || !!pub?.side || !!job?.result?.blender_previews;
-    setResultTab(hasPreviews ? "inspection" : "surface");
+    // highlight selection
+    setSelectedJobId(job.id);
   }
 
   async function deleteJob(jobId) {
@@ -557,14 +509,8 @@ export default function HeightmapPage() {
     ? `${previewUrl}${previewUrl.includes("?") ? "&" : "?"}${imgBust}`
     : null;
 
-  // ✅ Viewport now falls back to server preview when no local file is selected
-  const viewportImg = previewLocalUrl || previewImgSrc;
-
   const machineStatus = machine.status || (loading ? "running" : "");
-  const machineProgress = Math.max(
-    0,
-    Math.min(100, Number(machine.progress ?? (loading ? jobStatus?.progress : 0)) || 0)
-  );
+  const machineProgress = machine.progress ?? 0;
 
   // helpers: clamp input so slider+number never desync into NaN
   const setClampedMaxHeight = (v) => {
@@ -616,22 +562,12 @@ export default function HeightmapPage() {
 
             <div className="hf-hm-stat">
               <div className="hf-hm-stat-k">JOB</div>
-              <div className="hf-hm-stat-v">
-                {shortId(jobStatus?.id || resp?.job?.id) || "—"}
-              </div>
+              <div className="hf-hm-stat-v">{shortId(jobStatus?.id || resp?.job?.id) || "—"}</div>
             </div>
 
             <div className="hf-hm-stat">
               <div className="hf-hm-stat-k">PROGRESS</div>
               <div className="hf-hm-stat-v">{Number(machineProgress || 0)}%</div>
-
-              {/* ✅ NEW: real progress bar */}
-              <div className="hf-hm-progressBar" aria-hidden="true">
-                <div
-                  className="hf-hm-progressFill"
-                  style={{ width: `${machineProgress}%` }}
-                />
-              </div>
             </div>
 
             <div className="hf-hm-stat">
@@ -661,20 +597,12 @@ export default function HeightmapPage() {
         <div className="hf-hm-grid">
           <label className="hf-hm-label">
             <span>INPUT IMAGE</span>
-            <input
-              type="file"
-              accept="image/*"
-              onChange={(e) => setFile(e.target.files?.[0] || null)}
-            />
+            <input type="file" accept="image/*" onChange={(e) => setFile(e.target.files?.[0] || null)} />
           </label>
 
           <label className="hf-hm-label">
             <span>JOB NAME</span>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="hexforge_logo_relief"
-            />
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="hexforge_logo_relief" />
           </label>
         </div>
 
@@ -690,7 +618,17 @@ export default function HeightmapPage() {
               </select>
             </label>
 
-            {/* Slider + Number hybrid */}
+            {/* ✅ NEW: optional subfolder */}
+            <label className="hf-hm-label">
+              <span>OUTPUT SUBFOLDER (optional)</span>
+              <input
+                type="text"
+                value={subfolder}
+                onChange={(e) => setSubfolder(e.target.value)}
+                placeholder="e.g. tree-of-life / client-xyz / decals"
+              />
+            </label>
+
             <label className="hf-hm-label">
               <span>MAX HEIGHT (mm)</span>
               <div className="hf-hm-sliderRow">
@@ -759,20 +697,12 @@ export default function HeightmapPage() {
 
             <label className="hf-hm-label hf-hm-check">
               <span>INVERT</span>
-              <input
-                type="checkbox"
-                checked={invert}
-                onChange={(e) => setInvert(e.target.checked)}
-              />
+              <input type="checkbox" checked={invert} onChange={(e) => setInvert(e.target.checked)} />
             </label>
 
             <label className="hf-hm-label hf-hm-check">
               <span>DENOISE</span>
-              <input
-                type="checkbox"
-                checked={denoise}
-                onChange={(e) => setDenoise(e.target.checked)}
-              />
+              <input type="checkbox" checked={denoise} onChange={(e) => setDenoise(e.target.checked)} />
             </label>
           </div>
 
@@ -793,11 +723,11 @@ export default function HeightmapPage() {
                   title="Plate scale represents SIZE (mm)"
                 >
                   <div className={`hf-hm-plateMask hf-hm-plateMask--${mode}`}>
-                    {viewportImg && (
+                    {previewLocalUrl && (
                       <div
                         className="hf-hm-plateImg"
                         style={{
-                          backgroundImage: `url(${viewportImg})`,
+                          backgroundImage: `url(${previewLocalUrl})`,
                           filter: invert
                             ? "invert(1) saturate(0.85) contrast(1.1)"
                             : "saturate(0.85) contrast(1.1)",
@@ -815,24 +745,14 @@ export default function HeightmapPage() {
                     <div className="hf-hm-ruler hf-hm-rulerLeft" aria-hidden="true" />
 
                     <div className="hf-hm-rulerLabel hf-hm-rulerLabelTopL">0</div>
-                    <div className="hf-hm-rulerLabel hf-hm-rulerLabelTopM">
-                      {Math.round(sizeMm / 2)}
-                    </div>
-                    <div className="hf-hm-rulerLabel hf-hm-rulerLabelTopR">
-                      {Math.round(sizeMm)}
-                    </div>
+                    <div className="hf-hm-rulerLabel hf-hm-rulerLabelTopM">{Math.round(sizeMm / 2)}</div>
+                    <div className="hf-hm-rulerLabel hf-hm-rulerLabelTopR">{Math.round(sizeMm)}</div>
 
                     <div className="hf-hm-rulerLabel hf-hm-rulerLabelLeftT">0</div>
-                    <div className="hf-hm-rulerLabel hf-hm-rulerLabelLeftM">
-                      {Math.round(sizeMm / 2)}
-                    </div>
-                    <div className="hf-hm-rulerLabel hf-hm-rulerLabelLeftB">
-                      {Math.round(sizeMm)}
-                    </div>
+                    <div className="hf-hm-rulerLabel hf-hm-rulerLabelLeftM">{Math.round(sizeMm / 2)}</div>
+                    <div className="hf-hm-rulerLabel hf-hm-rulerLabelLeftB">{Math.round(sizeMm)}</div>
 
-                    <div className="hf-hm-modeTag">
-                      {mode === "relief" ? "RELIEF PLATE" : "ENGRAVE DISC"}
-                    </div>
+                    <div className="hf-hm-modeTag">{mode === "relief" ? "RELIEF PLATE" : "ENGRAVE DISC"}</div>
                   </div>
                 </div>
               </div>
@@ -859,8 +779,8 @@ export default function HeightmapPage() {
                 </div>
 
                 <div className="hf-muted" style={{ fontSize: "0.85rem", lineHeight: 1.35 }}>
-                  Live preview is a fast “tool panel” approximation. Later we can add real 3D
-                  displacement preview (WebGL).
+                  Live preview is a fast “tool panel” approximation. Later we can add real 3D displacement
+                  preview (WebGL).
                 </div>
               </div>
             </div>
@@ -887,9 +807,7 @@ export default function HeightmapPage() {
               <span className={`hf-pill ${jobStatus?.status || resp?.job?.status || "unknown"}`}>
                 {(jobStatus?.status || resp?.job?.status || "unknown").toUpperCase()}
               </span>
-              <span className="hf-hm-jobtext">
-                JOB • {(jobStatus?.progress ?? resp?.job?.progress ?? 0)}%
-              </span>
+              <span className="hf-hm-jobtext">JOB • {(jobStatus?.progress ?? resp?.job?.progress ?? 0)}%</span>
             </div>
           )}
 
@@ -925,10 +843,7 @@ export default function HeightmapPage() {
             </div>
 
             <div className="hf-hm-tabs">
-              <button
-                className={`hf-hm-tab ${resultTab === "surface" ? "active" : ""}`}
-                onClick={() => setResultTab("surface")}
-              >
+              <button className={`hf-hm-tab ${resultTab === "surface" ? "active" : ""}`} onClick={() => setResultTab("surface")}>
                 INPUT SURFACE
               </button>
               <button
@@ -951,8 +866,7 @@ export default function HeightmapPage() {
               <div className="hf-hm-previews">
                 {!blenderPreviews && (
                   <div className="hf-muted">
-                    No geometry inspection renders found for this job (older job, or preview generation
-                    failed).
+                    No geometry inspection renders found for this job (older job, or preview generation failed).
                   </div>
                 )}
 
@@ -982,11 +896,7 @@ export default function HeightmapPage() {
             <h2>JOB ARCHIVE</h2>
 
             <div className="hf-hm-jobs-actions">
-              <button
-                className="hf-hm-btn small"
-                onClick={() => refreshJobs({ resetPaging: true })}
-                disabled={jobsLoading}
-              >
+              <button className="hf-hm-btn small" onClick={() => refreshJobs({ resetPaging: true })} disabled={jobsLoading}>
                 {jobsLoading ? "SYNCING…" : "↻ SYNC"}
               </button>
             </div>
@@ -999,22 +909,11 @@ export default function HeightmapPage() {
           <div className="hf-hm-jobs-list">
             {jobs.map((j) => {
               const pill = j.status || "unknown";
-              const inspectable = j.status === "done" || j.status === "failed"; // ✅ allow failed
+              const done = j.status === "done";
               const selected = selectedJobId === j.id;
 
               return (
-                <div
-                  key={j.id}
-                  className={`hf-hm-jobrow ${selected ? "selected" : ""}`}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => inspectable && loadJob(j.id)}
-                  onKeyDown={(e) => {
-                    if (!inspectable) return;
-                    if (e.key === "Enter" || e.key === " ") loadJob(j.id);
-                  }}
-                  title={!inspectable ? "Job not inspectable yet." : "Load job details"}
-                >
+                <div key={j.id} className={`hf-hm-jobrow ${selected ? "selected" : ""}`}>
                   <div className="hf-hm-jobmeta">
                     <div className="hf-hm-jobtitle">{(j.name || j.id || "").toUpperCase()}</div>
                     <div className="hf-hm-jobsub">
@@ -1025,12 +924,12 @@ export default function HeightmapPage() {
                     {j.error && <div className="hf-hm-joberr">{j.error}</div>}
                   </div>
 
-                  <div className="hf-hm-jobbtns" onClick={(e) => e.stopPropagation()}>
+                  <div className="hf-hm-jobbtns">
                     <button
                       className="hf-hm-btn small"
                       onClick={() => loadJob(j.id)}
-                      disabled={!inspectable}
-                      title={!inspectable ? "Job not complete yet." : ""}
+                      disabled={!done}
+                      title={!done ? "Job not complete yet." : ""}
                     >
                       INSPECT
                     </button>

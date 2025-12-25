@@ -25,7 +25,12 @@ from assistant.tools.heightmap_jobs import (
 )
 from assistant.tools.render_previews import render_stl_previews
 
-router = APIRouter(prefix="/tool", tags=["tools"])
+# assistant/routes/heightmap.py
+router = APIRouter(prefix="/heightmap", tags=["heightmap"])
+
+
+
+
 
 # --------------------------------------------------------------------------------------
 # Config
@@ -42,6 +47,8 @@ OUTPUT_DIR = Path(os.getenv("HEIGHTMAP_OUTPUT_DIR", "/data/hexforge3d/output"))
 TMP_DIR = Path(os.getenv("HEIGHTMAP_TMP_DIR", "/tmp/hexforge-heightmap"))
 ENGINE_PYTHON = Path(os.getenv("HEIGHTMAP_ENGINE_PYTHON", "/data/hexforge3d/venv/bin/python"))
 PUBLIC_ASSETS_PREFIX = os.getenv("HEIGHTMAP_PUBLIC_PREFIX", "/assets/heightmap")
+
+
 
 
 def _slug(s: str) -> str:
@@ -367,7 +374,7 @@ def run_heightmap_job_sync(job_id: str, input_path: str, params: dict[str, Any])
 # --------------------------------------------------------------------------------------
 # API: Create job
 # --------------------------------------------------------------------------------------
-@router.post("/heightmap/v1")
+@router.post("/v1")
 async def heightmap_tool_v1(
     image: UploadFile = File(...),
     mode: str = Form("relief"),
@@ -450,7 +457,8 @@ async def heightmap_tool_v1(
             "api_version": api_version,
             "trace_id": trace_id,
             "job_id": job["id"],
-            "status_url": f"/tool/heightmap/jobs/{job['id']}",
+            "status_url": f"/api/heightmap/jobs/{job['id']}",
+            "status_url_tool": f"/tool/heightmap/jobs/{job['id']}",
         }
     )
 
@@ -458,7 +466,7 @@ async def heightmap_tool_v1(
 # --------------------------------------------------------------------------------------
 # API: Job status (polling)
 # --------------------------------------------------------------------------------------
-@router.get("/heightmap/jobs/{job_id}")
+@router.get("/jobs/{job_id}")
 async def heightmap_job_status(job_id: str):
     job = read_job(job_id)
     if not job:
@@ -469,7 +477,7 @@ async def heightmap_job_status(job_id: str):
 # --------------------------------------------------------------------------------------
 # API: List/Get/Delete for UI "Past Jobs"
 # --------------------------------------------------------------------------------------
-@router.get("/heightmap/v1/jobs")
+@router.get("/v1/jobs")
 def hm_list_jobs(
     limit: int = Query(25, ge=1, le=200),
     offset: int = Query(0, ge=0),
@@ -477,7 +485,7 @@ def hm_list_jobs(
     return {"ok": True, "jobs": list_jobs(limit=limit, offset=offset)}
 
 
-@router.get("/heightmap/v1/jobs/{job_id}")
+@router.get("/v1/jobs/{job_id}")
 def hm_get_job(job_id: str):
     job = read_job(job_id)
     if not job:
@@ -486,9 +494,13 @@ def hm_get_job(job_id: str):
     return {"ok": True, "job": job}
 
 
-@router.delete("/heightmap/v1/jobs/{job_id}")
+@router.delete("/v1/jobs/{job_id}")
 def hm_delete_job(job_id: str):
     ok = delete_job(job_id)
     if not ok:
         raise HTTPException(status_code=404, detail="Job not found")
     return {"ok": True}
+
+@router.get("/health")
+def health():
+    return {"ok": True, "service": "heightmap", "api": "heightmap-v1"}

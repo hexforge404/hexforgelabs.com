@@ -88,7 +88,13 @@ async def lifespan(app: FastAPI):
 # 🚀 FastAPI Init
 app = FastAPI(title="HexForge Lab Assistant API", lifespan=lifespan)
 app.include_router(mcp.router)
-app.include_router(heightmap.router)
+
+# Internal tool path
+app.include_router(heightmap.router, prefix="/tool")
+
+# Public API path
+app.include_router(heightmap.router, prefix="/api")
+
 
  
 
