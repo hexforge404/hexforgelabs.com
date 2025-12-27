@@ -48,6 +48,12 @@ services:
       - glyphengine
     networks:
       - hexforge-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -kfsS -H 'Host: hexforgelabs.com' https://localhost/api/surface/health >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     restart: unless-stopped
 
 
@@ -203,8 +209,9 @@ services:
 
     restart: unless-stopped
 
-    expose:
-      - "8092"
+    ports:
+      - "8092:8092"
+
 
     # IMPORTANT: this is your shared "hexforge" filesystem group (not docker)
     group_add:
