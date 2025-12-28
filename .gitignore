@@ -36,3 +36,7 @@ __pycache__/
 
 # React build output (never commit)
 frontend/build/
+
+# Accidental terminal paste artifacts
+e message
+tage only what changed
