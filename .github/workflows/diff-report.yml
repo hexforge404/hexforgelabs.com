@@ -1,0 +1,148 @@
+name: Diff Report Validation
+
+on:
+  pull_request:
+    branches:
+      - main
+      - develop
+    types: [opened, synchronize, reopened]
+
+jobs:
+  check-diff-report:
+    name: Validate Diff Report
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for diff comparison
+          
+      - name: Fetch base branch
+        run: |
+          git fetch origin ${{ github.base_ref }}:${{ github.base_ref }}
+      
+      - name: Check for code changes
+        id: check_changes
+        run: |
+          # Check if there are code changes (not just docs)
+          CODE_CHANGES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -E '\.(js|jsx|ts|tsx|py|java|go|rs|c|cpp|h|sh|sql)$' || echo "")
+          
+          if [ -n "$CODE_CHANGES" ]; then
+            echo "has_code_changes=true" >> $GITHUB_OUTPUT
+            echo "Code changes detected:"
+            echo "$CODE_CHANGES"
+          else
+            echo "has_code_changes=false" >> $GITHUB_OUTPUT
+            echo "No code changes detected (docs-only PR)"
+          fi
+      
+      - name: Check for diff report
+        id: check_report
+        if: steps.check_changes.outputs.has_code_changes == 'true'
+        run: |
+          # Check if a new diff report was added in this PR
+          DIFF_REPORTS=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep '^docs/diffs/.*\.md$' || echo "")
+          
+          if [ -n "$DIFF_REPORTS" ]; then
+            echo "has_diff_report=true" >> $GITHUB_OUTPUT
+            echo "Diff report found:"
+            echo "$DIFF_REPORTS"
+          else
+            echo "has_diff_report=false" >> $GITHUB_OUTPUT
+            echo "No diff report found"
+          fi
+      
+      - name: Generate diff report if missing
+        if: steps.check_changes.outputs.has_code_changes == 'true' && steps.check_report.outputs.has_diff_report == 'false'
+        run: |
+          # Generate a diff report for reference
+          echo "Generating diff report for review..."
+          ./scripts/gen_diff_report.sh origin/${{ github.base_ref }} HEAD
+          
+          # List generated reports
+          echo "Generated reports:"
+          ls -la docs/diffs/
+      
+      - name: Upload generated diff report
+        if: steps.check_changes.outputs.has_code_changes == 'true' && steps.check_report.outputs.has_diff_report == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-diff-report
+          path: docs/diffs/*.md
+          retention-days: 30
+      
+      - name: Upload PR diff report
+        if: steps.check_changes.outputs.has_code_changes == 'true' && steps.check_report.outputs.has_diff_report == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-diff-report
+          path: docs/diffs/*.md
+          retention-days: 90
+      
+      - name: Fail if diff report missing
+        if: steps.check_changes.outputs.has_code_changes == 'true' && steps.check_report.outputs.has_diff_report == 'false'
+        run: |
+          echo "❌ Diff report is required for PRs with code changes!"
+          echo ""
+          echo "This PR contains code changes but no diff report was found."
+          echo ""
+          echo "To fix this:"
+          echo "1. Run: make diff"
+          echo "   or: ./scripts/gen_diff_report.sh"
+          echo "2. Review the generated report in docs/diffs/"
+          echo "3. Commit the diff report:"
+          echo "   git add docs/diffs/"
+          echo "   git commit -m 'docs: add diff report'"
+          echo "4. Push the changes"
+          echo ""
+          echo "A diff report has been generated and uploaded as an artifact for your convenience."
+          echo "You can download it from the 'Artifacts' section of this workflow run."
+          echo ""
+          echo "For more information, see CONTRIBUTING.md"
+          exit 1
+      
+      - name: Success message
+        if: steps.check_changes.outputs.has_code_changes == 'false' || steps.check_report.outputs.has_diff_report == 'true'
+        run: |
+          if [ "${{ steps.check_changes.outputs.has_code_changes }}" == "false" ]; then
+            echo "✅ No code changes detected - diff report not required"
+          else
+            echo "✅ Diff report found - validation passed"
+          fi
+      
+      - name: Comment on PR (missing report)
+        if: steps.check_changes.outputs.has_code_changes == 'true' && steps.check_report.outputs.has_diff_report == 'false' && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## ⚠️ Diff Report Required
+              
+              This PR contains code changes but is missing a diff report.
+              
+              ### To fix this:
+              
+              1. Generate a diff report:
+                 \`\`\`bash
+                 make diff
+                 # or
+                 ./scripts/gen_diff_report.sh
+                 \`\`\`
+              
+              2. Review the generated report in \`docs/diffs/\`
+              
+              3. Commit and push:
+                 \`\`\`bash
+                 git add docs/diffs/
+                 git commit -m "docs: add diff report"
+                 git push
+                 \`\`\`
+              
+              A diff report has been generated for you and is available in the workflow artifacts.
+              
+              See [CONTRIBUTING.md](../CONTRIBUTING.md#diff-report-requirements) for more details.`
+            })

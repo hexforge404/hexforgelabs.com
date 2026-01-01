@@ -1,0 +1,50 @@
+# Code Owners
+
+# This file defines code ownership for automatic review assignment
+# When a PR modifies files matching a pattern, the corresponding
+# owner(s) are automatically requested as reviewers
+
+# Default owner for everything in the repo
+* @hexforge-labs
+
+# Documentation
+/docs/ @hexforge-labs
+*.md @hexforge-labs
+CONTRIBUTING.md @hexforge-labs
+SECURITY.md @hexforge-labs
+
+# Frontend
+/frontend/ @hexforge-labs
+/frontend/src/ @hexforge-labs
+
+# Backend
+/backend/ @hexforge-labs
+/backend/routes/ @hexforge-labs
+/backend/models/ @hexforge-labs
+
+# AI Assistant
+/assistant/ @hexforge-labs
+
+# Configuration
+/.github/ @hexforge-labs
+docker-compose.yml @hexforge-labs
+Dockerfile @hexforge-labs
+.gitignore @hexforge-labs
+
+# Scripts
+/scripts/ @hexforge-labs
+
+# Tests
+/tests/ @hexforge-labs
+*.test.js @hexforge-labs
+*.spec.js @hexforge-labs
+test_*.py @hexforge-labs
+
+# Infrastructure
+/nginx/ @hexforge-labs
+
+# Build and deployment
+package.json @hexforge-labs
+package-lock.json @hexforge-labs
+requirements.txt @hexforge-labs
+Makefile @hexforge-labs
