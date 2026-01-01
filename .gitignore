@@ -37,6 +37,57 @@ __pycache__/
 # React build output (never commit)
 frontend/build/
 
-# Accidental terminal paste artifacts
-e message
-tage only what changed
+# Python virtual environments
+.venv/
+venv/
+ENV/
+env/
+*.egg-info/
+dist/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# Test coverage
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+.hypothesis/
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup
+.cache/
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# Build artifacts
+*.o
+*.so
+*.dylib
+*.dll
+*.exe
+
+# Lock files (keep package-lock.json, but exclude others if needed)
+# Uncomment if you want to ignore lock files:
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
