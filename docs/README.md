@@ -76,3 +76,11 @@ All documentation in this project follows these standards:
 
 **Last Updated:** 2026-01-01  
 **Maintained By:** HexForge Labs Team
+
+## Surface Flow Smoke Test
+
+1. Open `/surface` in the frontend and click **Generate Relief** (no file input required yet).
+2. Watch status poll every ~2s; it times out after 5 minutes with a retry link.
+3. On completion, confirm hero preview renders and downloads work for STL, texture PNG, and heightmap PNG.
+4. Manifest metadata (created_at, service version) should appear in the collapsible panel.
+5. Assets resolve from `/assets/surface/<job_id>/...`; backend proxy is available at `/api/store/surface` with fallback to `/api/surface`.
