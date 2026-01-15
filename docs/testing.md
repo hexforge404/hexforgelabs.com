@@ -12,7 +12,7 @@ npm test
 
 ## Run backend tests inside Docker
 ```bash
-cd /mnt/hdd-storage/hexforge-store
+cd /path/to/hexforge-store
 docker compose run --rm backend npm test
 ```
 
