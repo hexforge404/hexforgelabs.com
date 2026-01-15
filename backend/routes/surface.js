@@ -166,7 +166,21 @@ router.get("/docs", limiter, async (req, res) => {
       headers: makeHeaders({ Accept: "text/html" }),
     }).finally(() => clearTimeout(timer));
 
-    const body = await upstream.text();
+    let body = await upstream.text();
+    
+    // Replace internal hostname with external host to prevent leaking internal infrastructure
+    const internalHostname = ENGINE_BASE_URL.replace(/^https?:\/\//, '');
+    const externalHost = req.get('host') || 'localhost';
+    const protocol = req.protocol || 'http';
+    
+    // Replace all occurrences of the internal hostname
+    body = body.replace(new RegExp(internalHostname, 'g'), externalHost);
+    // Replace full internal URLs with external ones
+    body = body.replace(
+      new RegExp(`https?://${internalHostname.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'g'),
+      `${protocol}://${externalHost}`
+    );
+    
     res.status(upstream.status);
     res.setHeader(
       "Content-Type",
