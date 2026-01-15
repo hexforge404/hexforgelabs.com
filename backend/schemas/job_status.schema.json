@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hexforgelabs.com/schemas/job_status.schema.json",
+  "title": "HexForge Job Status Envelope",
+  "type": "object",
+  "required": ["job_id", "status", "service", "updated_at"],
+  "properties": {
+    "job_id": {
+      "type": "string",
+      "minLength": 3,
+      "description": "Stable job identifier (filesystem-safe)."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["queued", "running", "complete", "failed"],
+      "description": "Current job state."
+    },
+    "service": {
+      "type": "string",
+      "minLength": 2,
+      "description": "Engine/service name (e.g., hexforge-glyphengine)."
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO8601 timestamp for last update."
+    },
+    "progress": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Optional progress from 0.0 to 1.0."
+    },
+    "message": {
+      "type": "string",
+      "description": "Optional human-readable status message."
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "code": { "type": "string" },
+        "detail": { "type": "string" }
+      },
+      "description": "Optional error info when status=failed."
+    },
+    "result": {
+      "type": "object",
+      "description": "Optional result payload when status=complete.",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}
