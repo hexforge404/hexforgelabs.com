@@ -97,9 +97,39 @@ describe("/api/surface contract proxy", () => {
 
     const res = await request(app).get("/api/surface/docs");
 
-    expect(fetchSpy).toHaveBeenCalledWith("http://glyphengine:8092/docs");
+    expect(fetchSpy).toHaveBeenCalledWith("http://glyphengine:8092/docs", expect.any(Object));
     expect(res.status).toBe(200);
     expect(res.text).toContain("docs ok");
     expect(res.text).not.toContain("glyphengine:8092");
+  });
+
+  test("replaces internal hostname when present in docs response", async () => {
+    const htmlWithHostname = `
+      <html>
+        <body>
+          <h1>API Documentation</h1>
+          <p>Server URL: http://glyphengine:8092/api/surface</p>
+          <a href="http://glyphengine:8092/openapi.json">OpenAPI Spec</a>
+        </body>
+      </html>
+    `;
+
+    fetchSpy.mockResolvedValue(
+      new Response(htmlWithHostname, {
+        status: 200,
+        headers: { "Content-Type": "text/html" },
+      })
+    );
+
+    const res = await request(app).get("/api/surface/docs");
+
+    expect(fetchSpy).toHaveBeenCalledWith("http://glyphengine:8092/docs", expect.any(Object));
+    expect(res.status).toBe(200);
+    expect(res.text).toContain("API Documentation");
+    expect(res.text).not.toContain("glyphengine:8092");
+    expect(res.text).not.toContain("glyphengine");
+    // Verify content is still there, just with hostname replaced
+    expect(res.text).toContain("/api/surface");
+    expect(res.text).toContain("/openapi.json");
   });
 });
