@@ -169,15 +169,14 @@ router.get("/docs", limiter, async (req, res) => {
     let body = await upstream.text();
     
     // Replace internal hostname with external host to prevent leaking internal infrastructure
-    const internalHostname = ENGINE_BASE_URL.replace(/^https?:\/\//, '');
+    // We need to escape the ENGINE_BASE_URL for use in regex
+    const escapedEngineUrl = ENGINE_BASE_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const externalHost = req.get('host') || 'localhost';
     const protocol = req.protocol || 'http';
     
-    // Replace all occurrences of the internal hostname
-    body = body.replace(new RegExp(internalHostname, 'g'), externalHost);
-    // Replace full internal URLs with external ones
+    // Replace all occurrences of the full internal URL with the external URL
     body = body.replace(
-      new RegExp(`https?://${internalHostname.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'g'),
+      new RegExp(escapedEngineUrl, 'g'),
       `${protocol}://${externalHost}`
     );
     
