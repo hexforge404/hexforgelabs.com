@@ -168,19 +168,20 @@ router.get("/docs", limiter, async (req, res) => {
 
     let body = await upstream.text();
     
+    // Helper to escape special regex characters
+    const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    
     // Replace internal hostname references to prevent information leakage
     // Extract hostname from ENGINE_BASE_URL (e.g., "glyphengine:8092" from "http://glyphengine:8092")
-    const internalHostMatch = ENGINE_BASE_URL.match(/https?:\/\/([^\/]+)/);
+    const internalHostMatch = ENGINE_BASE_URL.match(/https?:\/\/([^\/\s]+)/);
     if (internalHostMatch) {
       const internalHost = internalHostMatch[1];
       // Replace the full URL with relative path (preserves paths, removes hostname)
-      const escapedUrl = ENGINE_BASE_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      body = body.replace(new RegExp(escapedUrl, 'g'), '');
+      body = body.replace(new RegExp(escapeRegex(ENGINE_BASE_URL), 'g'), '');
       
       // Replace standalone hostname:port at word boundaries only
       // This prevents false positives while catching actual hostname references
-      const escapedHost = internalHost.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      body = body.replace(new RegExp(escapedHost + '(?=/|$|:|\\s|"|\'|<|>)', 'g'), '');
+      body = body.replace(new RegExp('\\b' + escapeRegex(internalHost) + '(?=/|$|:|\\s|"|\'|<|>)', 'g'), '');
     }
     
     res.status(upstream.status);
