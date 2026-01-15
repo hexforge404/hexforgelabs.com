@@ -148,6 +148,7 @@ const assistantSessionsRouter = require("./routes/assistantSessions");
 const assistantProjectsRouter = require("./routes/assistantProjects");
 const mediaRoutes = require("./routes/media");
 const toolsProxyRoutes = require("./routes/toolsProxy");
+const surfaceRoutes = require("./routes/surface");
 
 
 app.use("/api/tools", toolsProxyRoutes);
@@ -167,6 +168,7 @@ app.use("/api/memory", memoryRoutes);
 app.use('/api/notion', notionRoutes);
 app.use('/api/blog', blogRoutes);
 app.use('/tool', toolRoutes);
+app.use('/api/store/surface', apiLimiter, surfaceRoutes);
 
 app.use('/api/editor', editorRouter);
 app.use('/api/tools', toolRoutes);
