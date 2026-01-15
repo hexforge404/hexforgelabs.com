@@ -19,6 +19,12 @@ const ENGINE_BASE_URL =
 
 const SERVICE_NAME = process.env.SURFACE_SERVICE_NAME || "glyphengine";
 
+// Regex pattern to replace internal hostname with relative paths
+const INTERNAL_HOST_PATTERN = new RegExp(
+  ENGINE_BASE_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+  'g'
+);
+
 // Optional upstream auth (kept from legacy proxy behavior)
 const BASIC_AUTH = process.env.SURFACE_ENGINE_BASIC_AUTH || "";
 const API_KEY = process.env.SURFACE_ENGINE_API_KEY || "";
@@ -170,8 +176,7 @@ router.get("/docs", limiter, async (req, res) => {
     
     // Replace internal hostname with relative paths to prevent leaking
     // internal service names and ports
-    const internalHostPattern = new RegExp(ENGINE_BASE_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
-    body = body.replace(internalHostPattern, '');
+    body = body.replace(INTERNAL_HOST_PATTERN, '');
     
     res.status(upstream.status);
     res.setHeader(
