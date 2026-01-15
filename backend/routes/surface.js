@@ -166,7 +166,13 @@ router.get("/docs", limiter, async (req, res) => {
       headers: makeHeaders({ Accept: "text/html" }),
     }).finally(() => clearTimeout(timer));
 
-    const body = await upstream.text();
+    let body = await upstream.text();
+    
+    // Replace internal hostname with relative paths to prevent leaking
+    // internal service names and ports
+    const internalHostPattern = new RegExp(ENGINE_BASE_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+    body = body.replace(internalHostPattern, '');
+    
     res.status(upstream.status);
     res.setHeader(
       "Content-Type",
