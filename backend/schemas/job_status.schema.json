@@ -47,6 +47,12 @@
     "result": {
       "type": "object",
       "description": "Optional result payload when status=complete.",
+      "properties": {
+        "public": {
+          "type": "object",
+          "description": "Public asset links (validated separately)."
+        }
+      },
       "additionalProperties": true
     }
   },

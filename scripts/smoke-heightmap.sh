@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BASE=${BASE:-https://localhost}
+BASE=${BASE:-http://localhost:8000}
 API="$BASE/api/heightmap"
 
 echo "[heightmap] creating job..."
@@ -10,14 +10,7 @@ create_resp=$(curl -sk -X POST "$API/jobs" \
   -d '{"name":"smoke-heightmap"}')
 
 echo "$create_resp"
-job_id=$(python3 - <<'PY'
-import json,sys
-try:
-    data=json.load(sys.stdin)
-    print(data.get("job_id") or "")
-except Exception:
-    print("")
-PY <<<"$create_resp")
+job_id=$(python3 -c "import json,sys; data=json.load(sys.stdin); print(data.get('job_id') or '')" <<<"$create_resp")
 
 if [ -z "$job_id" ]; then
   echo "[heightmap] failed to get job_id" >&2
@@ -28,14 +21,7 @@ tries=0
 status="queued"
 while [ $tries -lt 20 ]; do
   status_resp=$(curl -sk "$API/jobs/$job_id")
-  status=$(python3 - <<'PY'
-import json,sys
-try:
-    data=json.load(sys.stdin)
-    print(data.get("status",""))
-except Exception:
-    print("")
-PY <<<"$status_resp")
+  status=$(python3 -c "import json,sys; data=json.load(sys.stdin); print(data.get('status',''))" <<<"$status_resp")
   echo "[heightmap] status: $status"
   if [ "$status" = "complete" ]; then
     break
