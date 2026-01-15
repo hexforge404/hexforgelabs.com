@@ -97,9 +97,29 @@ describe("/api/surface contract proxy", () => {
 
     const res = await request(app).get("/api/surface/docs");
 
-    expect(fetchSpy).toHaveBeenCalledWith("http://glyphengine:8092/docs");
+    expect(fetchSpy).toHaveBeenCalledWith("http://glyphengine:8092/docs", expect.any(Object));
     expect(res.status).toBe(200);
     expect(res.text).toContain("docs ok");
     expect(res.text).not.toContain("glyphengine:8092");
+  });
+
+  test("replaces internal hostname in docs content", async () => {
+    fetchSpy.mockResolvedValue(
+      new Response(
+        '<html><body><a href="http://glyphengine:8092/api/surface/jobs">Jobs API</a></body></html>',
+        {
+          status: 200,
+          headers: { "Content-Type": "text/html" },
+        }
+      )
+    );
+
+    const res = await request(app).get("/api/surface/docs");
+
+    expect(fetchSpy).toHaveBeenCalledWith("http://glyphengine:8092/docs", expect.any(Object));
+    expect(res.status).toBe(200);
+    expect(res.text).toContain("Jobs API");
+    expect(res.text).not.toContain("glyphengine:8092");
+    expect(res.text).toContain("/api/surface/jobs");
   });
 });
