@@ -4,7 +4,7 @@ const addFormats = require("ajv-formats");
 const jobStatusSchema = require("../schemas/job_status.schema.json");
 const jobManifestSchema = require("../schemas/job_manifest.schema.json");
 
-const ajv = new Ajv({ allErrors: true, strict: false, removeAdditional: true });
+const ajv = new Ajv({ allErrors: true, strict: false, removeAdditional: "all" });
 addFormats(ajv);
 
 const validateJobStatus = ajv.compile(jobStatusSchema);
