@@ -173,7 +173,9 @@ router.get("/docs", limiter, async (req, res) => {
     const hostnameMatch = ENGINE_BASE_URL.match(/https?:\/\/([^\/]+)/);
     if (hostnameMatch) {
       const internalHostname = hostnameMatch[1];
-      body = body.replace(new RegExp(internalHostname, 'g'), req.get('host') || 'localhost');
+      // Escape special regex characters in hostname before using in RegExp
+      const escapedHostname = internalHostname.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      body = body.replace(new RegExp(escapedHostname, 'g'), req.get('host') || 'localhost');
     }
     
     res.status(upstream.status);
