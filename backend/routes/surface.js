@@ -166,7 +166,18 @@ router.get("/docs", limiter, async (req, res) => {
       headers: makeHeaders({ Accept: "text/html" }),
     }).finally(() => clearTimeout(timer));
 
-    const body = await upstream.text();
+    let body = await upstream.text();
+    
+    // Filter out internal hostname to prevent leaking infrastructure details
+    // Extract hostname:port from ENGINE_BASE_URL (e.g., "http://glyphengine:8092" -> "glyphengine:8092")
+    const hostnameMatch = ENGINE_BASE_URL.match(/https?:\/\/([^\/]+)/);
+    if (hostnameMatch) {
+      const internalEndpoint = hostnameMatch[1];
+      // Escape special regex characters in endpoint before using in RegExp
+      const escapedEndpoint = internalEndpoint.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      body = body.replace(new RegExp(escapedEndpoint, 'g'), req.get('host') || 'localhost');
+    }
+    
     res.status(upstream.status);
     res.setHeader(
       "Content-Type",
