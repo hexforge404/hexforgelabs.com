@@ -16,6 +16,13 @@ cd /path/to/hexforge-store
 docker compose run --rm backend npm test
 ```
 
+## Heightmap smoke (when engine is running)
+```bash
+cd /mnt/hdd-storage/hexforge-store
+docker compose up --build -d heightmapengine backend nginx
+bash scripts/smoke-heightmap.sh
+```
+
 ## Run both (helper script)
 ```bash
 bash scripts/test-all.sh
