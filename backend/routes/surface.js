@@ -173,10 +173,14 @@ router.get("/docs", limiter, async (req, res) => {
     const internalHostMatch = ENGINE_BASE_URL.match(/https?:\/\/([^\/]+)/);
     if (internalHostMatch) {
       const internalHost = internalHostMatch[1];
-      // Replace the full URL pattern
-      body = body.replace(new RegExp(ENGINE_BASE_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '');
-      // Replace just the hostname:port pattern
-      body = body.replace(new RegExp(internalHost.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '');
+      // Replace the full URL with relative path (preserves paths, removes hostname)
+      const escapedUrl = ENGINE_BASE_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      body = body.replace(new RegExp(escapedUrl, 'g'), '');
+      
+      // Replace standalone hostname:port at word boundaries only
+      // This prevents false positives while catching actual hostname references
+      const escapedHost = internalHost.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      body = body.replace(new RegExp(escapedHost + '(?=/|$|:|\\s|"|\'|<|>)', 'g'), '');
     }
     
     res.status(upstream.status);
