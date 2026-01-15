@@ -28,6 +28,7 @@ import FloatingChatButton from 'components/FloatingChatButton';
 import ScriptLabPage from 'pages/ScriptLabPage';
 import MemoryPage from 'pages/MemoryPage';
 import AssistantPage from 'pages/AssistantPage';
+import SurfacePage from "./pages/SurfacePage";
 
 import UserAuthPage from 'pages/UserAuthPage';    // ✅ member login/register
 import AccountPage from 'pages/AccountPage';      // ✅ member account
@@ -269,6 +270,7 @@ const MainApp = () => {
             <Route path="/script-lab" element={<ScriptLabPage />} />
             <Route path="/memory" element={<MemoryPage />} />
             <Route path="/heightmap" element={<HeightmapPage />} />
+            <Route path="/surface" element={<SurfacePage />} />
 
             {/* Member accounts */}
             <Route
