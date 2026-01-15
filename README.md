@@ -37,6 +37,7 @@ This is the complete repository for the [HexForge Labs](https://hexforgelabs.com
 - Backend tests (preferred, in Docker): `docker compose run --rm backend npm test`
 - Backend tests (local host): `cd backend && npm test`
 - Frontend tests (CRA/Jest, requires frontend deps installed): `cd frontend && npm test -- --watchAll=false`
+- Heightmap smoke (engine + gateway): `docker compose up --build -d heightmapengine backend nginx && bash scripts/smoke-heightmap.sh`
 - See [docs/testing.md](docs/testing.md) for details and notes.
 
 ---
