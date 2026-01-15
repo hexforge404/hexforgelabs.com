@@ -97,7 +97,14 @@ describe("/api/surface contract proxy", () => {
 
     const res = await request(app).get("/api/surface/docs");
 
-    expect(fetchSpy).toHaveBeenCalledWith("http://glyphengine:8092/docs");
+    const [[fetchUrl, fetchOpts]] = fetchSpy.mock.calls;
+    expect(fetchUrl).toBe("http://glyphengine:8092/docs");
+    expect(fetchOpts).toEqual(
+      expect.objectContaining({
+        headers: expect.objectContaining({ Accept: "text/html" }),
+        signal: expect.any(Object),
+      })
+    );
     expect(res.status).toBe(200);
     expect(res.text).toContain("docs ok");
     expect(res.text).not.toContain("glyphengine:8092");
