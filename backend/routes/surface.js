@@ -1,12 +1,29 @@
+// backend/routes/surface.js
 const express = require("express");
 const rateLimit = require("express-rate-limit");
 
+const {
+  assertJobManifest,
+  assertJobStatusEnvelope,
+  buildErrorEnvelope,
+  ContractError,
+} = require("../utils/contractValidation");
+
 const router = express.Router();
 
-const GLYPH_BASE = process.env.SURFACE_ENGINE_URL || "http://glyphengine:8092/api/surface";
+// Prefer SURFACE_ENGINE_URL (newer), fall back to GLYPHENGINE_URL (older)
+const ENGINE_BASE_URL =
+  process.env.SURFACE_ENGINE_URL ||
+  process.env.GLYPHENGINE_URL ||
+  "http://glyphengine:8092";
+
+const SERVICE_NAME = process.env.SURFACE_SERVICE_NAME || "glyphengine";
+
+// Optional upstream auth (kept from legacy proxy behavior)
 const BASIC_AUTH = process.env.SURFACE_ENGINE_BASIC_AUTH || "";
 const API_KEY = process.env.SURFACE_ENGINE_API_KEY || "";
 
+// Basic limiter (same spirit as the older proxy)
 const limiter = rateLimit({
   windowMs: 60 * 1000,
   max: 30,
@@ -14,104 +31,160 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
-function makeHeaders() {
-  const headers = { Accept: "application/json" };
+function makeHeaders(extra = {}) {
+  const headers = {
+    Accept: "application/json",
+    ...extra,
+  };
+
+  // If upstream expects basic auth, we support the legacy env var.
+  // NOTE: BASIC_AUTH is treated as "user:pass" (same as previous code).
   if (BASIC_AUTH) {
     headers.Authorization = `Basic ${Buffer.from(BASIC_AUTH).toString("base64")}`;
   }
+
   if (API_KEY) {
     headers["x-api-key"] = API_KEY;
   }
+
   return headers;
 }
 
-async function forward(method, path, body) {
+async function proxyJson(path, init = {}) {
+  const url = `${ENGINE_BASE_URL}${path}`;
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 15000);
-  const headers = makeHeaders();
-  const opts = { method, headers, signal: controller.signal };
 
-  if (body && method !== "GET") {
-    headers["Content-Type"] = "application/json";
-    opts.body = JSON.stringify(body);
-  }
+  const resp = await fetch(url, {
+    ...init,
+    signal: controller.signal,
+    headers: makeHeaders(init.headers || {}),
+  }).finally(() => clearTimeout(timer));
 
+  const text = await resp.text();
+
+  let data;
   try {
-    const upstream = await fetch(`${GLYPH_BASE}${path}`, opts);
-    const text = await upstream.text();
-    clearTimeout(timer);
-
-    let data = null;
-    try {
-      data = text ? JSON.parse(text) : null;
-    } catch {
-      data = text;
-    }
-
-    return { status: upstream.status, ok: upstream.ok, data };
+    data = text ? JSON.parse(text) : {};
   } catch (err) {
-    clearTimeout(timer);
-    throw err;
+    throw new ContractError("UPSTREAM_NON_JSON", `Expected JSON from ${url}`);
   }
+
+  return { status: resp.status, data };
 }
 
-function sendError(res, status, message, detail) {
-  res.status(status).json({ ok: false, message, detail });
+function handleError(res, err, jobId) {
+  if (err instanceof ContractError) {
+    console.error("surface contract error", err.code, err.detail);
+    return res
+      .status(502)
+      .json(
+        buildErrorEnvelope(
+          jobId || err.jobId,
+          SERVICE_NAME,
+          err.code,
+          err.detail
+        )
+      );
+  }
+
+  console.error("surface upstream error", err);
+  return res.status(502).json(
+    buildErrorEnvelope(
+      jobId,
+      SERVICE_NAME,
+      "UPSTREAM_ERROR",
+      err?.message || "Unknown upstream error"
+    )
+  );
 }
 
+router.get("/health", limiter, (req, res) => {
+  res.json({ status: "ok", service: SERVICE_NAME, upstream: ENGINE_BASE_URL });
+});
+
+// POST /api/surface/jobs  -> upstream POST /api/surface/jobs
 router.post("/jobs", limiter, async (req, res) => {
   try {
-    const upstream = await forward("POST", "/jobs", req.body || {});
-    if (!upstream.ok) {
-      return sendError(
-        res,
-        upstream.status,
-        upstream.data?.message || upstream.data?.error || "Surface create failed",
-        upstream.data || null
-      );
-    }
-    return res.status(upstream.status).json(upstream.data);
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const { status, data } = await proxyJson("/api/surface/jobs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    // enforce contract (strip extras, require public on complete)
+    const validated = assertJobStatusEnvelope(data, {
+      requirePublicOnComplete: true,
+    });
+
+    return res.status(status).json(validated);
   } catch (err) {
-    console.error("surface proxy create error", err);
-    return sendError(res, 502, "Surface proxy unreachable", err?.message || err);
+    return handleError(res, err, req.body?.job_id);
   }
 });
 
+// GET /api/surface/jobs/:jobId -> upstream GET /api/surface/jobs/:jobId
 router.get("/jobs/:jobId", limiter, async (req, res) => {
   const { jobId } = req.params;
   try {
-    const upstream = await forward("GET", `/jobs/${encodeURIComponent(jobId)}`, null);
-    if (!upstream.ok) {
-      return sendError(
-        res,
-        upstream.status,
-        upstream.data?.message || upstream.data?.error || "Surface status failed",
-        upstream.data || null
-      );
-    }
-    return res.status(upstream.status).json(upstream.data);
+    const { status, data } = await proxyJson(`/api/surface/jobs/${jobId}`);
+    const validated = assertJobStatusEnvelope(data, {
+      requirePublicOnComplete: true,
+    });
+    return res.status(status).json(validated);
   } catch (err) {
-    console.error("surface proxy status error", err);
-    return sendError(res, 502, "Surface proxy unreachable", err?.message || err);
+    return handleError(res, err, jobId);
   }
 });
 
-router.get("/jobs/:jobId/manifest", limiter, async (req, res) => {
+// GET /api/surface/jobs/:jobId/assets -> upstream GET /api/surface/jobs/:jobId/assets
+router.get("/jobs/:jobId/assets", limiter, async (req, res) => {
   const { jobId } = req.params;
   try {
-    const upstream = await forward("GET", `/jobs/${encodeURIComponent(jobId)}/manifest`, null);
-    if (!upstream.ok) {
-      return sendError(
-        res,
-        upstream.status,
-        upstream.data?.message || upstream.data?.error || "Surface manifest failed",
-        upstream.data || null
-      );
-    }
-    return res.status(upstream.status).json(upstream.data);
+    const { status, data } = await proxyJson(
+      `/api/surface/jobs/${jobId}/assets`
+    );
+    const manifest = assertJobManifest(data);
+    return res.status(status).json(manifest);
   } catch (err) {
-    console.error("surface proxy manifest error", err);
-    return sendError(res, 502, "Surface proxy unreachable", err?.message || err);
+    return handleError(res, err, jobId);
+  }
+});
+
+// Docs proxy (HTML)
+router.get("/docs", limiter, async (req, res) => {
+  try {
+    const url = `${ENGINE_BASE_URL}/docs`;
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15000);
+
+    const upstream = await fetch(url, {
+      signal: controller.signal,
+      headers: makeHeaders({ Accept: "text/html" }),
+    }).finally(() => clearTimeout(timer));
+
+    const body = await upstream.text();
+    res.status(upstream.status);
+    res.setHeader(
+      "Content-Type",
+      upstream.headers.get("content-type") || "text/html"
+    );
+    return res.send(body);
+  } catch (err) {
+    return handleError(res, err);
+  }
+});
+
+// OpenAPI JSON proxy
+router.get("/openapi.json", limiter, async (req, res) => {
+  try {
+    const { status, data } = await proxyJson("/openapi.json");
+    return res.status(status).json(data);
+  } catch (err) {
+    return handleError(res, err);
   }
 });
 
