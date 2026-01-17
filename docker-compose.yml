@@ -80,6 +80,7 @@ services:
     environment:
       MEDIA_API_URL: http://hexforge-media-api:8700
       MEDIA_API_KEY: ${MEDIA_API_KEY}
+      SURFACE_API_KEY: ${SURFACE_API_KEY:-}
 
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -129,7 +130,6 @@ services:
     expose:
       - "11435"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
       - /home/devuser/.ssh/hexforge_sandbox:/root/.ssh/hexforge_sandbox:ro
       - /mnt/hdd-storage/ai-tools/engines/hexforge3d:/data/hexforge3d
     environment:
@@ -137,12 +137,13 @@ services:
       HEIGHTMAP_OUTPUT_DIR: /data/hexforge3d/output
       HEIGHTMAP_JOBS_DIR: /data/hexforge3d/jobs/heightmap
       HEIGHTMAP_TMP_DIR: /tmp/hexforge-heightmap
+      HEIGHTMAP_API_KEY: ${HEIGHTMAP_API_KEY:-}
+      ENABLE_DOCKER_TOOLS: "false"
       OLLAMA_MODEL: mistral:latest
       OLLAMA_URL: http://ollama:11434
       SCRIPT_LAB_URL: http://hexforge-backend:8000/api/script-lab
       SCRIPT_LAB_TOKEN: ${SCRIPT_LAB_TOKEN}
       CONTENT_ENGINE_URL: http://hexforge-backend:8000/api/media
-    privileged: true
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:11435/health"]
       interval: 30s
@@ -190,7 +191,8 @@ services:
 
     # Shared engine data (surface output lives here)
     volumes:
-      - /mnt/hdd-storage/ai-tools/engines/hexforge3d:/data/hexforge3d
+      - /mnt/hdd-storage/ai-tools/engines/hexforge3d/surface:/data/hexforge3d/surface
+      - /mnt/hdd-storage/ai-tools/engines/hexforge3d:/data/hexforge3d:${GLYPHENGINE_BASE_MODE:-ro}
 
     # Optional: make only /data/hexforge3d/surface writable, keep rest read-only.
     # Uncomment this pattern if you want tighter isolation:

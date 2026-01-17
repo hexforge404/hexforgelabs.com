@@ -1,5 +1,19 @@
+import os
 import subprocess
 import json
+
+
+def _docker_tools_enabled() -> bool:
+    flag = os.getenv("ENABLE_DOCKER_TOOLS", "false").strip().lower()
+    return flag in {"1", "true", "yes", "on"}
+
+
+def _docker_disabled_response():
+    return {
+        "ok": False,
+        "error": "Docker tools are disabled by ENABLE_DOCKER_TOOLS",
+        "code": "DOCKER_TOOLS_DISABLED",
+    }
 
 
 async def get_docker_info():
@@ -8,6 +22,9 @@ async def get_docker_info():
     Uses `docker info` via the host socket. If Docker is unavailable,
     returns a clean error instead of a traceback.
     """
+    if not _docker_tools_enabled():
+        return _docker_disabled_response()
+
     try:
         result = subprocess.run(
             ["docker", "info"],
@@ -48,6 +65,9 @@ async def docker_ps():
     Return a structured list of running containers using `docker ps`.
     Each container is a JSON object so the UI can render it nicely.
     """
+    if not _docker_tools_enabled():
+        return _docker_disabled_response()
+
     try:
         result = subprocess.run(
             ["docker", "ps", "--format", "{{json .}}"],
