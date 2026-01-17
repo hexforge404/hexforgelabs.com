@@ -46,6 +46,12 @@ from starlette.status import HTTP_422_UNPROCESSABLE_ENTITY
 # Base model + per-chip overrides so the frontend model selector can matter later.
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "mistral")
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://ollama:11434")
+DOCKER_TOOLS_ENABLED = os.getenv("ENABLE_DOCKER_TOOLS", "false").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 
 MODEL_MAP = {
     # Sidebar chip label -> Ollama model name (override via env if you want)
@@ -299,6 +305,16 @@ async def _handle_chat(req: Request):
             )
 
         elif message == "!docker":
+            if not DOCKER_TOOLS_ENABLED:
+                return JSONResponse(
+                    {
+                        "response": (
+                            "🚫 Docker tools disabled (ENABLE_DOCKER_TOOLS=false). "
+                            "Enable and mount the socket to use `!docker`."
+                        )
+                    },
+                    status_code=403,
+                )
             return await safe_wrap(
                 await try_subprocess(["docker", "ps"], "docker_ps"), "docker_ps"
             )
@@ -434,7 +450,20 @@ async def root():
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "uptime": psutil.boot_time()}
+    payload = {"status": "ok", "uptime": psutil.boot_time()}
+
+    try:
+        hm = heightmap._engine_health_status()  # type: ignore[attr-defined]
+        payload["heightmap"] = hm
+        if not hm.get("ok"):
+            payload["status"] = "degraded"
+            return JSONResponse(status_code=503, content=payload)
+    except Exception as e:
+        payload["status"] = "degraded"
+        payload["heightmap_error"] = str(e)
+        return JSONResponse(status_code=503, content=payload)
+
+    return JSONResponse(status_code=200, content=payload)
 
 
 @app.options("/health", include_in_schema=False)
@@ -482,6 +511,14 @@ async def tool_df():
 @app.get("/tool/docker")
 @register_tool("docker", "Docker Status", category="System")
 async def tool_docker():
+    if not DOCKER_TOOLS_ENABLED:
+        return JSONResponse(
+            {
+                "ok": False,
+                "error": "Docker tools disabled. Set ENABLE_DOCKER_TOOLS=true and mount the socket to enable.",
+            },
+            status_code=403,
+        )
     return await try_subprocess(["docker", "ps"], "docker_ps")
 
 
