@@ -4,6 +4,9 @@ This is the complete repository for the [HexForge Labs](https://hexforgelabs.com
 
 ---
 
+## Engine Identity
+Surface Engine consumes heightmaps to produce functional, modular enclosure geometry for electronics. It is infrastructure for Raspberry Pi-first enclosures, not a generic art generator.
+
 ## 🚀 Features
 
 * **🛒 Full-Stack Storefront**

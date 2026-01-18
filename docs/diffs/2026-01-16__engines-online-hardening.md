@@ -5,6 +5,7 @@
 - Added idempotent storage bootstrap for `/mnt/hdd-storage/ai-tools/engines/hexforge3d` with correct ownership.
 - Hardened heightmap publish path, added API-key checks, and made health endpoints fail fast on missing engine assets.
 - Routed surface API through backend with optional API key, rate limiting, and richer request diagnostics.
+- Surface proxy now forwards a default subfolder to avoid 404s when jobs are stored under grouped folders (e.g. smoke-test).
 - Added nginx rate limits and verification runbook covering health and job flows.
 
 ## Changed Files

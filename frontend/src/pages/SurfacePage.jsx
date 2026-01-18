@@ -15,9 +15,22 @@ import {
 } from "../services/surfaceApi";
 import "./SurfacePage.css";
 
+// Phase 0 findings (2026-01-18): nginx serves /api/heightmap and /api/surface plus assets; heightmap flow returns public.heightmap_url; /surface currently posts only name/quality/notes with no heightmap selector.
+
 const SURFACE_ASSET_BASE = (
   process.env.REACT_APP_SURFACE_ASSETS_URL || "/assets/surface"
 ).replace(/\/+$/, "");
+
+const HEIGHTMAP_API_BASE = (
+  process.env.REACT_APP_HEIGHTMAP_API_BASE || "/api/heightmap"
+).replace(/\/+$/, "");
+
+const HEIGHTMAP_ASSET_BASE = (
+  process.env.REACT_APP_HEIGHTMAP_ASSETS_URL || "/assets/heightmap"
+).replace(/\/+$/, "");
+
+const HEIGHTMAP_API_KEY = process.env.REACT_APP_HEIGHTMAP_API_KEY || "";
+const HEIGHTMAP_STORAGE_KEY = "surface:selectedHeightmapJobId";
 
 function formatTs(value) {
   if (!value) return "";
@@ -57,6 +70,26 @@ function defaultJobName() {
   return `relief-${iso}`;
 }
 
+function resolveHeightmapUrl(pathOrUrl) {
+  if (!pathOrUrl) return null;
+  const raw = String(pathOrUrl).trim();
+  if (!raw) return null;
+
+  if (/^https?:\/\//i.test(raw)) return raw;
+
+  if (raw.startsWith("/assets/heightmap/")) {
+    const rel = raw.replace(/^\/assets\/heightmap\//, "");
+    return rel ? `${HEIGHTMAP_ASSET_BASE}/${rel}` : null;
+  }
+
+  if (raw.startsWith("assets/heightmap/")) {
+    const rel = raw.replace(/^assets\/heightmap\//, "");
+    return rel ? `${HEIGHTMAP_ASSET_BASE}/${rel}` : null;
+  }
+
+  return `${HEIGHTMAP_ASSET_BASE}/${raw.replace(/^\/+/, "")}`;
+}
+
 export default function SurfacePage() {
   const [form, setForm] = useState({
     name: defaultJobName(),
@@ -74,6 +107,11 @@ export default function SurfacePage() {
   const [startedAt, setStartedAt] = useState(null);
   const [previewBust, setPreviewBust] = useState(Date.now());
 
+  const [heightmapJobs, setHeightmapJobs] = useState([]);
+  const [heightmapLoading, setHeightmapLoading] = useState(false);
+  const [heightmapError, setHeightmapError] = useState("");
+  const [selectedHeightmapId, setSelectedHeightmapId] = useState("");
+
   const heroUrl = useMemo(() => {
     const u = manifest?.public?.previews?.hero;
     return u ? `${resolveSurfaceUrl(u)}?t=${previewBust}` : null;
@@ -88,6 +126,15 @@ export default function SurfacePage() {
     () => resolveSurfaceUrl(manifest?.public?.textures?.heightmap_png),
     [manifest]
   );
+
+  const selectedHeightmap = useMemo(
+    () => heightmapJobs.find((j) => j.id === selectedHeightmapId) || null,
+    [heightmapJobs, selectedHeightmapId]
+  );
+
+  const selectedHeightmapPreview = useMemo(() => {
+    return selectedHeightmap?.previewUrl || selectedHeightmap?.heightmapUrl || null;
+  }, [selectedHeightmap]);
 
   const statusLabel = jobStatus?.status || "idle";
   const progress = jobStatus?.progress ?? 0;
@@ -143,17 +190,102 @@ export default function SurfacePage() {
     };
   }, [jobId, polling, startedAt]);
 
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(HEIGHTMAP_STORAGE_KEY) || "";
+      if (stored) setSelectedHeightmapId(stored);
+    } catch (e) {
+      console.warn("surface: localStorage unavailable", e);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshHeightmapJobs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function refreshHeightmapJobs() {
+    setHeightmapLoading(true);
+    setHeightmapError("");
+    try {
+      const res = await fetch(`${HEIGHTMAP_API_BASE}/v1/jobs?limit=25&offset=0`, {
+        headers: HEIGHTMAP_API_KEY ? { "x-api-key": HEIGHTMAP_API_KEY } : undefined,
+      });
+      const data = await res.json();
+      if (!res.ok || !data?.ok) {
+        throw new Error(data?.detail || data?.error || `Heightmap jobs fetch failed (${res.status})`);
+      }
+
+      const items = (data.jobs?.items || [])
+        .filter((job) => {
+          const status = String(job.status || "").toLowerCase();
+          return status === "done" || status === "complete" || status === "completed";
+        })
+        .map((job) => {
+          const pub = job.result?.public || job.public || {};
+          const previews = pub.blender_previews_urls || pub.previews || {};
+          const hero = previews.hero || previews.iso || previews.top || previews.side || pub.heightmap_url;
+          const heightmapUrl = resolveHeightmapUrl(pub.heightmap_url || job.result?.heightmap);
+          return {
+            id: job.id,
+            name: job.name || job.id,
+            status: job.status,
+            created_at: job.created_at,
+            updated_at: job.updated_at,
+            heightmapUrl,
+            previewUrl: resolveHeightmapUrl(hero || ""),
+          };
+        });
+
+      setHeightmapJobs(items);
+
+      const preferredId = (() => {
+        if (selectedHeightmapId && items.some((j) => j.id === selectedHeightmapId)) {
+          return selectedHeightmapId;
+        }
+        try {
+          const stored = window.localStorage.getItem(HEIGHTMAP_STORAGE_KEY);
+          if (stored && items.some((j) => j.id === stored)) return stored;
+        } catch {
+          /* ignore */
+        }
+        return items[0]?.id || "";
+      })();
+
+      if (preferredId) {
+        setSelectedHeightmapId(preferredId);
+        try {
+          window.localStorage.setItem(HEIGHTMAP_STORAGE_KEY, preferredId);
+        } catch {
+          /* ignore */
+        }
+      }
+    } catch (err) {
+      setHeightmapError(err?.message || "Failed to load heightmap jobs.");
+      setHeightmapJobs([]);
+    } finally {
+      setHeightmapLoading(false);
+    }
+  }
+
   async function startJob() {
     setError("");
     setManifest(null);
     setTimeoutHit(false);
     setJobStatus(null);
 
+    if (!selectedHeightmap || !selectedHeightmap.heightmapUrl) {
+      setError("Select a completed heightmap first.");
+      return;
+    }
+
     const payload = {
       name: form.name || defaultJobName(),
       quality: form.quality,
       notes: form.notes || "",
       mode: "relief",
+      source_heightmap_url: selectedHeightmap.heightmapUrl,
+      source_heightmap_job_id: selectedHeightmap.id,
     };
 
     setLoading(true);
@@ -178,8 +310,9 @@ export default function SurfacePage() {
       { label: "Created", value: formatTs(meta.created_at || manifest.created_at) },
       { label: "Service", value: meta.service_version || manifest.service_version || "n/a" },
       { label: "Assets", value: SURFACE_ASSET_BASE },
+      { label: "Heightmap", value: selectedHeightmap?.name || "none" },
     ];
-  }, [manifest, jobId]);
+  }, [manifest, jobId, selectedHeightmap]);
 
   function resetJob() {
     setJobId("");
@@ -197,7 +330,8 @@ export default function SurfacePage() {
     <div className="surface-page">
       <div className="surface-header">
         <div>
-          <p className="surface-eyebrow">GlyphEngine Surface</p>
+          {/* Engine Identity: consumes heightmaps to produce modular, functional enclosure geometry (Raspberry Pi-first). */}
+          <p className="surface-eyebrow">Surface Engine</p>
           <h1>Generate Relief</h1>
           <p className="surface-lede">
             Launch a surface job, watch status in real-time, and grab previews and meshes
@@ -236,6 +370,64 @@ export default function SurfacePage() {
           </div>
 
           <div className="surface-form">
+            <div className="surface-heightmap-box">
+              <div className="surface-label">
+                <span>Input heightmap</span>
+                <div className="surface-heightmap-row">
+                  <select
+                    value={selectedHeightmapId}
+                    onChange={(e) => {
+                      setSelectedHeightmapId(e.target.value);
+                      try {
+                        window.localStorage.setItem(HEIGHTMAP_STORAGE_KEY, e.target.value);
+                      } catch {
+                        /* ignore */
+                      }
+                    }}
+                    disabled={heightmapLoading || loading || heightmapJobs.length === 0}
+                  >
+                    {heightmapJobs.map((job) => (
+                      <option key={job.id} value={job.id}>
+                        {job.name} - {formatTs(job.updated_at || job.created_at)}
+                      </option>
+                    ))}
+                    {heightmapJobs.length === 0 && <option value="">No completed heightmaps found</option>}
+                  </select>
+                  <button
+                    type="button"
+                    className="surface-button surface-button-ghost"
+                    onClick={refreshHeightmapJobs}
+                    disabled={heightmapLoading}
+                  >
+                    {heightmapLoading ? (
+                      <>
+                        <RefreshCw className="spin" size={14} /> Refreshing
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw size={14} /> Refresh
+                      </>
+                    )}
+                  </button>
+                </div>
+                <p className="surface-muted">
+                  Shows completed heightmaps from the Heightmap tool. Create one if empty.
+                </p>
+                {heightmapError && <p className="surface-inline-error">{heightmapError}</p>}
+              </div>
+
+              <div className="surface-heightmap-preview">
+                {selectedHeightmapPreview ? (
+                  <img src={selectedHeightmapPreview} alt="Selected heightmap preview" />
+                ) : (
+                  <div className="surface-placeholder">
+                    <ImageIcon size={18} />
+                    <p>Select a completed heightmap to preview.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
             <label className="surface-label">
               <span>Job name</span>
               <input
@@ -282,6 +474,7 @@ export default function SurfacePage() {
                 </button>
               )}
             </div>
+
           )}
 
           {timeoutHit && !error && (
