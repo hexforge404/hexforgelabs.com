@@ -59,18 +59,23 @@ function installLocalStorage() {
 describe("SurfacePage heightmap integration", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    global.fetch = jest.fn();
     installLocalStorage();
+    jest.useFakeTimers();
+
+    global.fetch = jest.fn((url, opts = {}) => {
+      if (opts.method === "HEAD") {
+        return Promise.resolve({ ok: true, status: 200, headers: { get: () => "123" } });
+      }
+      return Promise.resolve({ ok: true, status: 200, json: async () => ({ ok: true, jobs: { items: [] } }) });
+    });
 
     createSurfaceJob.mockResolvedValue({ job_id: "surface-job-1" });
-    getSurfaceJobStatus.mockResolvedValue({ status: "complete", progress: 100 });
-    getSurfaceManifest.mockResolvedValue({ public: {} });
+    getSurfaceJobStatus.mockResolvedValue({ status: "complete", progress: 100, manifest_url: "/assets/surface/demo/job_manifest.json" });
+    getSurfaceManifest.mockResolvedValue({ public: {}, outputs: [] });
+  });
 
-    jest.spyOn(window, "setInterval").mockImplementation((fn) => {
-      fn();
-      return 0;
-    });
-    jest.spyOn(window, "clearInterval").mockImplementation(() => {});
+  afterEach(() => {
+    jest.useRealTimers();
   });
 
   test("shows error when no completed heightmap is available", async () => {
@@ -121,5 +126,79 @@ describe("SurfacePage heightmap integration", () => {
     const payload = createSurfaceJob.mock.calls[0][0];
     expect(payload.source_heightmap_job_id).toBe("hm-123");
     expect(payload.source_heightmap_url).toContain("/assets/heightmap/");
+  });
+
+  test("polls status, fetches manifest, and renders outputs", async () => {
+    mockFetchResponse({
+      ok: true,
+      jobs: {
+        items: [
+          {
+            id: "hm-321",
+            name: "HM Ready",
+            status: "done",
+            created_at: 1700000000,
+            result: { public: { heightmap_url: "/assets/heightmap/hm.png", blender_previews_urls: { hero: "/assets/heightmap/hm-hero.png" } } },
+          },
+        ],
+      },
+    });
+
+    getSurfaceJobStatus.mockResolvedValue({
+      status: "complete",
+      progress: undefined,
+      manifest_url: "/assets/surface/demo/job_manifest.json",
+    });
+
+    getSurfaceManifest.mockResolvedValue({
+      manifest_url: "/assets/surface/demo/job_manifest.json",
+      outputs: [
+        { type: "preview.hero", url: "/assets/surface/demo/previews/hero.png" },
+        { type: "mesh.stl", url: "/assets/surface/demo/enclosure/enclosure.stl" },
+      ],
+    });
+
+    const user = userEvent;
+    render(<SurfacePage />);
+
+    await screen.findByRole("option", { name: /HM Ready/ });
+    await act(async () => {
+      await user.click(screen.getByRole("button", { name: /generate relief/i }));
+    });
+
+    await waitFor(() => expect(getSurfaceJobStatus).toHaveBeenCalled());
+    await waitFor(() => expect(getSurfaceManifest).toHaveBeenCalled());
+
+    expect(await screen.findByAltText(/Surface hero preview/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Enclosure STL/i })).toBeEnabled();
+  });
+
+  test("shows error on missing manifest", async () => {
+    mockFetchResponse({
+      ok: true,
+      jobs: {
+        items: [
+          {
+            id: "hm-999",
+            name: "HM",
+            status: "done",
+            created_at: 1700000000,
+            result: { public: { heightmap_url: "/assets/heightmap/hm.png" } },
+          },
+        ],
+      },
+    });
+
+    getSurfaceJobStatus.mockRejectedValueOnce(new Error("Surface job completed but manifest is missing"));
+
+    const user = userEvent;
+    render(<SurfacePage />);
+
+    await screen.findByRole("option", { name: /HM/ });
+    await act(async () => {
+      await user.click(screen.getByRole("button", { name: /generate relief/i }));
+    });
+
+    await waitFor(() => expect(screen.getByText(/manifest is missing/i)).toBeInTheDocument());
   });
 });

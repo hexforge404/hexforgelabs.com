@@ -32,6 +32,44 @@ const HEIGHTMAP_ASSET_BASE = (
 const HEIGHTMAP_API_KEY = process.env.REACT_APP_HEIGHTMAP_API_KEY || "";
 const HEIGHTMAP_STORAGE_KEY = "surface:selectedHeightmapJobId";
 const IS_DEV = process.env.NODE_ENV !== "production";
+const DEBUG_QUERY = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
+const DEBUG_MODE = IS_DEV || DEBUG_QUERY.get("debug") === "1";
+
+const FALLBACK_PROGRESS = {
+  idle: 0,
+  queued: 10,
+  running: 60,
+  writing: 85,
+  complete: 100,
+  failed: 0,
+};
+
+function normalizeState(status) {
+  const map = {
+    queued: "queued",
+    pending: "queued",
+    waiting: "queued",
+    running: "running",
+    processing: "running",
+    executing: "running",
+    writing: "writing",
+    finalizing: "writing",
+    complete: "complete",
+    completed: "complete",
+    done: "complete",
+    failed: "failed",
+    error: "failed",
+  };
+  const key = String(status || "").toLowerCase();
+  return map[key] || key || "idle";
+}
+
+function deriveProgress(state, rawProgress) {
+  if (Number.isFinite(rawProgress)) {
+    return Math.min(100, Math.max(0, Math.round(rawProgress)));
+  }
+  return FALLBACK_PROGRESS[state] ?? 0;
+}
 
 function formatTs(value) {
   if (!value) return "";
@@ -98,19 +136,19 @@ function deriveOutputs(manifest) {
   const preview = findFirst((o) => {
     const t = (o.type || "").toLowerCase();
     const name = (o.name || o.label || "").toLowerCase();
-    return t === "preview" || name.includes("preview") || name.includes("hero");
+    return t === "preview" || t.includes("preview") || name.includes("preview") || name.includes("hero");
   });
 
   const stl = findFirst((o) => {
     const t = (o.type || "").toLowerCase();
     const name = (o.name || o.label || o.url || "").toLowerCase();
-    return t === "stl" || name.endsWith(".stl");
+    return t === "stl" || t.includes("stl") || name.endsWith(".stl");
   });
 
   const texture = findFirst((o) => {
     const t = (o.type || "").toLowerCase();
     const name = (o.name || o.label || o.url || "").toLowerCase();
-    return t === "texture" || name.includes("texture") || name.endsWith(".png");
+    return t === "texture" || t.includes("texture") || name.includes("texture") || name.endsWith(".png");
   });
 
   const heightmap = findFirst((o) => {
@@ -163,6 +201,8 @@ export default function SurfacePage() {
   const [loading, setLoading] = useState(false);
   const [polling, setPolling] = useState(false);
   const [error, setError] = useState("");
+  const [artifactWarning, setArtifactWarning] = useState("");
+  const [outputsCheckedAt, setOutputsCheckedAt] = useState(null);
   const [timeoutHit, setTimeoutHit] = useState(false);
   const [startedAt, setStartedAt] = useState(null);
   const [previewBust, setPreviewBust] = useState(Date.now());
@@ -189,81 +229,64 @@ export default function SurfacePage() {
     return selectedHeightmap?.previewUrl || selectedHeightmap?.heightmapUrl || null;
   }, [selectedHeightmap]);
 
-  const statusLabel = jobStatus?.status || "idle";
-  const progress = jobStatus?.progress ?? 0;
+  const statusLabel = normalizeState(jobStatus?.state || jobStatus?.status || "idle");
+  const progress = deriveProgress(statusLabel, jobStatus?.progress);
 
   const isComplete = statusLabel === "complete";
   const isFailed = statusLabel === "failed";
-  const missingOutputs = isComplete && outputs.list.length === 0;
+  const missingOutputs = (isComplete || isFailed) && (outputs.list.length === 0 || !!artifactWarning);
 
   useEffect(() => {
     if (!jobId || !polling) return undefined;
 
     let cancelled = false;
-    const interval = setInterval(async () => {
+    let timer = null;
+
+    const pollOnce = async () => {
       if (cancelled) return;
 
-      const tooLong =
-        typeof startedAt === "number" && Date.now() - startedAt > 5 * 60 * 1000;
+      const tooLong = typeof startedAt === "number" && Date.now() - startedAt > 5 * 60 * 1000;
       if (tooLong) {
         setTimeoutHit(true);
         setPolling(false);
-        clearInterval(interval);
         return;
       }
 
       try {
         const statusResp = await getSurfaceJobStatus(jobId);
         if (cancelled) return;
-        setJobStatus(statusResp);
 
-        if (statusResp?.status === "complete") {
+        const state = normalizeState(statusResp.state || statusResp.status);
+        const next = { ...statusResp, state, status: state, progress: deriveProgress(state, statusResp.progress) };
+        setJobStatus(next);
+
+        if (state === "complete") {
           setPolling(false);
-          clearInterval(interval);
-          const manifestUrlFromStatus = statusResp.manifest_url || statusResp.manifest?.manifest_url || "";
+          await fetchAndApplyManifest(next.manifest_url || next.manifest?.manifest_url || "");
+          return;
+        }
 
-          let mf = statusResp.manifest || null;
-
-          if (!mf) {
-            try {
-              mf = await getSurfaceManifest(jobId);
-            } catch (e) {
-              setError(e?.message || "Manifest fetch failed.");
-              return;
-            }
-          }
-
-          if (!mf) {
-            setError("Manifest missing after job completion.");
-            return;
-          }
-
-          const resolvedManifestUrl = manifestUrlFromStatus || mf.manifest_url || mf.meta?.manifest_url || "";
-          const derived = deriveOutputs(mf);
-          setManifestUrl(resolvedManifestUrl);
-          setManifest(mf);
-          setOutputs(derived);
-          setPreviewBust(Date.now());
-
-          if (!derived.heroUrl && !derived.stlUrl && !derived.textureUrl) {
-            setError("Job completed but manifest outputs are missing.");
-          }
-        } else if (statusResp?.status === "failed") {
+        if (state === "failed") {
           setPolling(false);
-          clearInterval(interval);
-          setError(statusResp?.error || "Surface job failed.");
+          setError(statusResp?.error || statusResp?.message || "Surface job failed.");
+          return;
         }
       } catch (err) {
         if (cancelled) return;
+        setJobStatus({ state: "failed", status: "failed", progress: 0, job_id: jobId });
         setError(err?.message || "Surface status check failed.");
         setPolling(false);
-        clearInterval(interval);
+        return;
       }
-    }, 2000);
+
+      timer = setTimeout(pollOnce, 2000);
+    };
+
+    pollOnce();
 
     return () => {
       cancelled = true;
-      clearInterval(interval);
+      if (timer) clearTimeout(timer);
     };
   }, [jobId, polling, startedAt]);
 
@@ -275,6 +298,53 @@ export default function SurfacePage() {
       console.warn("surface: localStorage unavailable", e);
     }
   }, []);
+
+  useEffect(() => {
+    if (!DEBUG_MODE || !heroUrl) return undefined;
+    let cancelled = false;
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+
+    img.onload = () => {
+      if (cancelled) return;
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext("2d", { willReadFrequently: true });
+        ctx.drawImage(img, 0, 0);
+        const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+        let sum = 0;
+        let sumSq = 0;
+        const pixels = data.length / 4;
+        for (let i = 0; i < pixels; i += 1) {
+          const idx = i * 4;
+          const v = (data[idx] + data[idx + 1] + data[idx + 2]) / 3;
+          sum += v;
+          sumSq += v * v;
+        }
+        const mean = sum / pixels;
+        const variance = sumSq / pixels - mean * mean;
+        if (variance < 5) {
+          setArtifactWarning((prev) => prev || "Preview appears blank (low variance)");
+        }
+      } catch (err) {
+        // Ignore canvas errors in prod
+        if (DEBUG_MODE) console.warn("preview variance check failed", err);
+      }
+    };
+
+    img.onerror = () => {
+      if (cancelled) return;
+      setArtifactWarning((prev) => prev || "Preview failed to load");
+    };
+
+    img.src = heroUrl;
+
+    return () => {
+      cancelled = true;
+    };
+  }, [heroUrl]);
 
   useEffect(() => {
     refreshHeightmapJobs();
@@ -347,6 +417,8 @@ export default function SurfacePage() {
 
   async function startJob() {
     setError("");
+    setArtifactWarning("");
+    setOutputsCheckedAt(null);
     setManifest(null);
     setManifestUrl("");
     setOutputs({ list: [], heroUrl: null, stlUrl: null, textureUrl: null, heightmapUrl: null });
@@ -371,13 +443,100 @@ export default function SurfacePage() {
     try {
       const data = await createSurfaceJob(payload);
       setJobId(data.job_id);
-      setJobStatus({ status: "queued", progress: 0, job_id: data.job_id });
+      setJobStatus({ status: "queued", state: "queued", progress: deriveProgress("queued"), job_id: data.job_id });
       setStartedAt(Date.now());
       setPolling(true);
     } catch (err) {
       setError(err?.message || "Surface request failed.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function validateAsset(url) {
+    if (!url) return { ok: false, reason: "missing" };
+    try {
+      const resp = await fetch(url, { method: "HEAD" });
+      if (!resp.ok) return { ok: false, reason: String(resp.status) };
+      const len = Number(resp.headers.get("content-length") || 0);
+      if (Number.isFinite(len) && len <= 0) {
+        return { ok: false, reason: "empty" };
+      }
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, reason: err?.message || "unreachable" };
+    }
+  }
+
+  async function fetchAndApplyManifest(manifestHint) {
+    setArtifactWarning("");
+    const manifestUrlResolved = manifestHint ? resolveSurfaceUrl(manifestHint) : "";
+    let mf = null;
+
+    try {
+      mf = await getSurfaceManifest(jobId);
+    } catch (err) {
+      if (manifestUrlResolved) {
+        try {
+          const res = await fetch(manifestUrlResolved);
+          if (res.ok) {
+            mf = await res.json();
+          } else {
+            throw err;
+          }
+        } catch (e) {
+          throw e;
+        }
+      } else {
+        throw err;
+      }
+    }
+
+    if (!mf) {
+      throw new Error("Manifest missing after job completion.");
+    }
+
+    const resolvedManifestUrl = manifestUrlResolved || mf.manifest_url || mf.meta?.manifest_url || mf.public?.job_manifest || "";
+    const derived = deriveOutputs(mf);
+    setManifestUrl(resolvedManifestUrl);
+    setManifest(mf);
+    setOutputs(derived);
+    setPreviewBust(Date.now());
+    setOutputsCheckedAt(Date.now());
+
+    const warnings = [];
+    if (!derived.heroUrl) warnings.push("preview missing");
+    if (!derived.stlUrl) warnings.push("stl missing");
+
+    const checks = await Promise.all(
+      [
+        derived.heroUrl ? validateAsset(derived.heroUrl) : Promise.resolve({ ok: false, reason: "missing" }),
+        derived.stlUrl ? validateAsset(derived.stlUrl) : Promise.resolve({ ok: false, reason: "missing" }),
+      ]
+    );
+
+    if (!checks[0].ok) warnings.push(`preview ${checks[0].reason}`);
+    if (!checks[1].ok) warnings.push(`stl ${checks[1].reason}`);
+
+    const warningText = warnings.join("; ");
+    setArtifactWarning(warningText);
+
+    const incomplete = derived.list.length === 0 || warningText;
+    if (incomplete) {
+      setJobStatus((prev) => ({ ...(prev || {}), state: "failed", status: "failed", progress: deriveProgress("failed") }));
+      setError(warningText || "Manifest outputs are missing or invalid.");
+    } else {
+      setJobStatus((prev) => ({ ...(prev || {}), state: "complete", status: "complete", progress: deriveProgress("complete", prev?.progress) }));
+      setError("");
+    }
+  }
+
+  async function recheckOutputs() {
+    try {
+      await fetchAndApplyManifest(manifestUrl);
+      setError("");
+    } catch (err) {
+      setError(err?.message || "Re-check failed");
     }
   }
 
@@ -628,13 +787,30 @@ export default function SurfacePage() {
 
           {heroUrl ? (
             <div className="surface-preview">
-              <img src={heroUrl} alt="Surface hero preview" />
+              <img
+                src={heroUrl}
+                alt="Surface hero preview"
+                onError={() => setArtifactWarning((prev) => prev || "Preview image missing")}
+              />
             </div>
           ) : (
             <div className="surface-placeholder">
               <ImageIcon size={22} />
               <p>Preview will appear once the job finishes.</p>
               {missingOutputs && <p className="surface-inline-error">Manifest missing preview output.</p>}
+            </div>
+          )}
+
+          {artifactWarning && (
+            <div className="surface-alert surface-alert-warn" style={{ marginTop: "0.75rem" }}>
+              <AlertTriangle size={18} />
+              <div>
+                <p className="surface-alert-title">Artifact warning</p>
+                <p className="surface-alert-body">{artifactWarning}</p>
+              </div>
+              <button className="surface-link" type="button" onClick={recheckOutputs}>
+                Re-check outputs
+              </button>
             </div>
           )}
         </section>
@@ -645,7 +821,14 @@ export default function SurfacePage() {
               <p className="surface-eyebrow">Outputs</p>
               <h2>Downloads</h2>
             </div>
-            {isComplete && <span className="surface-chip surface-chip-success">Complete</span>}
+            <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+              {isComplete && <span className="surface-chip surface-chip-success">Complete</span>}
+              {isComplete && (
+                <button type="button" className="surface-button surface-button-ghost" onClick={recheckOutputs}>
+                  <RefreshCw size={14} /> Re-check outputs
+                </button>
+              )}
+            </div>
           </div>
 
           {missingOutputs && (
@@ -709,6 +892,15 @@ export default function SurfacePage() {
               <p className="surface-eyebrow">Manifest</p>
               <h2>Metadata</h2>
             </div>
+            {manifestUrl && (
+              <button
+                type="button"
+                className="surface-button surface-button-ghost"
+                onClick={() => window.open(resolveSurfaceUrl(manifestUrl), "_blank")}
+              >
+                <FileDown size={14} /> Open Manifest
+              </button>
+            )}
           </div>
 
           <details className="surface-details" open>

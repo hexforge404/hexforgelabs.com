@@ -1,6 +1,8 @@
 const express = require("express");
 const rateLimit = require("express-rate-limit");
 const { randomUUID } = require("crypto");
+const fs = require("fs/promises");
+const path = require("path");
 
 const router = express.Router();
 
@@ -46,6 +48,43 @@ function makeHeaders() {
     headers["x-api-key"] = API_KEY;
   }
   return headers;
+}
+
+const STATE_MAP = {
+  queued: "queued",
+  pending: "queued",
+  waiting: "queued",
+  running: "running",
+  processing: "running",
+  executing: "running",
+  writing: "writing",
+  finalizing: "writing",
+  complete: "complete",
+  completed: "complete",
+  done: "complete",
+  failed: "failed",
+  error: "failed",
+};
+
+function normalizeState(status) {
+  const key = String(status || "").toLowerCase();
+  return STATE_MAP[key] || key || "unknown";
+}
+
+function deriveProgress(state, rawProgress) {
+  if (Number.isFinite(rawProgress)) {
+    return Math.min(100, Math.max(0, Math.round(rawProgress)));
+  }
+
+  const fallback = {
+    queued: 10,
+    running: 60,
+    writing: 85,
+    complete: 100,
+    failed: 0,
+  };
+
+  return fallback[state] ?? 0;
 }
 
 async function forward(method, path, body) {
@@ -112,6 +151,21 @@ function debugLog(...args) {
   }
 }
 
+function buildManifestUrl(subfolder, jobId) {
+  const trimmed = [SURFACE_PUBLIC_PREFIX.replace(/\/$/, ""), subfolder, jobId, "job_manifest.json"].filter(Boolean);
+  return trimmed.join("/").replace(/\/+/g, "/");
+}
+
+async function fileExists(filePath) {
+  try {
+    await fs.stat(filePath);
+    return true;
+  } catch (err) {
+    if (err?.code === "ENOENT") return false;
+    throw err;
+  }
+}
+
 router.post("/jobs", limiter, async (req, res) => {
   try {
     const payload = { ...(req.body || {}) };
@@ -161,8 +215,8 @@ router.get("/jobs/:jobId", limiter, async (req, res) => {
   const { jobId } = req.params;
   const subfolder = req.query.subfolder || DEFAULT_SUBFOLDER || null;
   try {
-    const path = withSubfolder(`/jobs/${encodeURIComponent(jobId)}`, subfolder);
-    const upstream = await forward("GET", path, null);
+    const upstreamPath = withSubfolder(`/jobs/${encodeURIComponent(jobId)}`, subfolder);
+    const upstream = await forward("GET", upstreamPath, null);
     console.info(
       `[surface] GET /jobs/${jobId} -> ${upstream.status} ok=${upstream.ok} rid=${req.requestId} dur=${Date.now() - req._surfaceStart}ms`
     );
@@ -176,25 +230,47 @@ router.get("/jobs/:jobId", limiter, async (req, res) => {
     }
     const body = upstream.data || {};
     const job = body.job || body.result || body;
-    const status = (job.status || body.status || "").toLowerCase();
+    const status = job.status || body.status || job.state || body.state || "";
+    const state = normalizeState(status);
+    const progress = deriveProgress(state, job.progress ?? body.progress);
 
-    const expectedManifestPath = [SURFACE_OUTPUT_DIR, subfolder, jobId, "job_manifest.json"].filter(Boolean).join("/");
-
-    const manifestUrl =
+    const manifestFsPath = path.join(SURFACE_OUTPUT_DIR, subfolder || "", jobId, "job_manifest.json");
+    let manifestUrl =
       body.manifest_url ||
       job.manifest_url ||
       job.result?.manifest_url ||
       job.result?.public?.job_manifest ||
       job.public?.job_manifest ||
       job.result?.job_manifest ||
+      job.job_manifest ||
+      body.result?.job_manifest ||
       null;
 
-    const manifestPresent = !!manifestUrl || !!job.manifest;
+    let manifestExists = false;
+    let manifestPayload = null;
 
-    if (status === "complete" && !manifestPresent) {
+    if (!manifestUrl) {
+      manifestUrl = buildManifestUrl(subfolder, jobId);
+    }
+
+    if (state === "complete") {
+      manifestExists = await fileExists(manifestFsPath);
+      if (manifestExists) {
+        try {
+          const raw = await fs.readFile(manifestFsPath, "utf8");
+          manifestPayload = JSON.parse(raw);
+        } catch (err) {
+          debugLog("manifest_read_error", { job_id: jobId, err });
+        }
+      }
+    }
+
+    const manifestPresent = manifestExists || !!manifestUrl || !!job.manifest;
+
+    if (state === "complete" && !manifestPresent) {
       debugLog("missing_manifest", {
         job_id: jobId,
-        expected_manifest_path: expectedManifestPath,
+        expected_manifest_path: manifestFsPath,
         subfolder,
       });
       return sendError(
@@ -204,15 +280,30 @@ router.get("/jobs/:jobId", limiter, async (req, res) => {
         {
           reason: "missing_manifest",
           job_id: jobId,
-          manifest_expected_path: expectedManifestPath,
+          manifest_expected_path: manifestFsPath,
           outputs_root: SURFACE_OUTPUT_DIR,
           public_prefix: SURFACE_PUBLIC_PREFIX,
           missing: ["manifest_url"],
+          state: "failed",
         }
       );
     }
 
-    return res.status(upstream.status).json({ ...body, manifest_url: manifestUrl });
+    const responseBody = {
+      ...body,
+      job_id: job.job_id || jobId,
+      state,
+      status: state,
+      progress,
+      manifest_url: manifestUrl,
+      outputs: manifestPayload?.outputs || body.outputs || job.outputs,
+    };
+
+    if (manifestPayload) {
+      responseBody.manifest = manifestPayload;
+    }
+
+    return res.status(upstream.status).json(responseBody);
   } catch (err) {
     console.error(
       `surface proxy status error rid=${req.requestId} dur=${Date.now() - req._surfaceStart}ms`,

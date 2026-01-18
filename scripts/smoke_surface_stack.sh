@@ -33,7 +33,7 @@ EOF
   # shellcheck disable=SC2086
   curl -sk -X POST ${API_KEY_HEADER} -H "Content-Type: application/json" \
     -d "${payload}" "${BASE_URL}/api/store/surface/jobs" -o /tmp/sf_job_create.json
-  cat /tmp/sf_job_create.json
+  cat /tmp/sf_job_create.json >&2
   jq -er '.job_id' /tmp/sf_job_create.json
 }
 
@@ -90,9 +90,12 @@ validate_outputs() {
     local abs="$url"
     [[ "${abs}" == /* ]] && abs="${BASE_URL}${abs}"
     log "HEAD ${abs}"
-    http_code=$(curl -skI "${abs}" -o /dev/null -w "%{http_code}")
-    if [[ "${http_code}" != "200" ]]; then
-      log "Asset fetch failed (${http_code}) for ${abs}"; return 1
+    curl -skI "${abs}" -o /tmp/sf_asset_head.txt -w "%{http_code}" > /tmp/sf_asset_code.txt
+    http_code=$(cat /tmp/sf_asset_code.txt)
+    content_len=$(grep -i "content-length" /tmp/sf_asset_head.txt | tail -n1 | awk '{print $2}' | tr -d '\r')
+    [[ -z "${content_len}" ]] && content_len=1
+    if [[ "${http_code}" != "200" || "${content_len}" -le 0 ]]; then
+      log "Asset fetch failed (${http_code}) len=${content_len} for ${abs}"; return 1
     fi
   done
 
