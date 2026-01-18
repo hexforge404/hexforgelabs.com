@@ -165,7 +165,31 @@ router.get("/jobs/:jobId", limiter, async (req, res) => {
         upstream.data || null
       );
     }
-    return res.status(upstream.status).json(upstream.data);
+    const body = upstream.data || {};
+    const job = body.job || body.result || body;
+    const status = (job.status || body.status || "").toLowerCase();
+
+    const manifestUrl =
+      body.manifest_url ||
+      job.manifest_url ||
+      job.result?.manifest_url ||
+      job.result?.public?.job_manifest ||
+      job.public?.job_manifest ||
+      job.result?.job_manifest ||
+      null;
+
+    const manifestPresent = !!manifestUrl || !!job.manifest;
+
+    if (status === "complete" && !manifestPresent) {
+      return sendError(
+        res,
+        502,
+        "Surface job completed but manifest is missing",
+        { missing: "manifest_url", job_id: jobId }
+      );
+    }
+
+    return res.status(upstream.status).json({ ...body, manifest_url: manifestUrl });
   } catch (err) {
     console.error(
       `surface proxy status error rid=${req.requestId} dur=${Date.now() - req._surfaceStart}ms`,
