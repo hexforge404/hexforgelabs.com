@@ -31,6 +31,7 @@ const HEIGHTMAP_ASSET_BASE = (
 
 const HEIGHTMAP_API_KEY = process.env.REACT_APP_HEIGHTMAP_API_KEY || "";
 const HEIGHTMAP_STORAGE_KEY = "surface:selectedHeightmapJobId";
+const IS_DEV = process.env.NODE_ENV !== "production";
 
 function formatTs(value) {
   if (!value) return "";
@@ -70,6 +71,63 @@ function defaultJobName() {
   return `relief-${iso}`;
 }
 
+function normalizeOutputUrl(output) {
+  const candidate =
+    output?.url ||
+    output?.public_url ||
+    output?.href ||
+    output?.path ||
+    output?.file ||
+    null;
+
+  if (!candidate) return null;
+  return resolveSurfaceUrl(candidate);
+}
+
+function deriveOutputs(manifest) {
+  const rawList = Array.isArray(manifest?.outputs) ? manifest.outputs : [];
+  const list = rawList.map((o) => ({ ...o, url: normalizeOutputUrl(o) }));
+
+  const findFirst = (fn) => {
+    for (const o of list) {
+      if (fn(o)) return o;
+    }
+    return null;
+  };
+
+  const preview = findFirst((o) => {
+    const t = (o.type || "").toLowerCase();
+    const name = (o.name || o.label || "").toLowerCase();
+    return t === "preview" || name.includes("preview") || name.includes("hero");
+  });
+
+  const stl = findFirst((o) => {
+    const t = (o.type || "").toLowerCase();
+    const name = (o.name || o.label || o.url || "").toLowerCase();
+    return t === "stl" || name.endsWith(".stl");
+  });
+
+  const texture = findFirst((o) => {
+    const t = (o.type || "").toLowerCase();
+    const name = (o.name || o.label || o.url || "").toLowerCase();
+    return t === "texture" || name.includes("texture") || name.endsWith(".png");
+  });
+
+  const heightmap = findFirst((o) => {
+    const t = (o.type || "").toLowerCase();
+    const name = (o.name || o.label || o.url || "").toLowerCase();
+    return t === "heightmap" || name.includes("heightmap");
+  });
+
+  return {
+    list,
+    heroUrl: preview?.url || null,
+    stlUrl: stl?.url || null,
+    textureUrl: texture?.url || null,
+    heightmapUrl: heightmap?.url || null,
+  };
+}
+
 function resolveHeightmapUrl(pathOrUrl) {
   if (!pathOrUrl) return null;
   const raw = String(pathOrUrl).trim();
@@ -100,6 +158,8 @@ export default function SurfacePage() {
   const [jobId, setJobId] = useState("");
   const [jobStatus, setJobStatus] = useState(null);
   const [manifest, setManifest] = useState(null);
+  const [manifestUrl, setManifestUrl] = useState("");
+  const [outputs, setOutputs] = useState({ list: [], heroUrl: null, stlUrl: null, textureUrl: null, heightmapUrl: null });
   const [loading, setLoading] = useState(false);
   const [polling, setPolling] = useState(false);
   const [error, setError] = useState("");
@@ -113,19 +173,12 @@ export default function SurfacePage() {
   const [selectedHeightmapId, setSelectedHeightmapId] = useState("");
 
   const heroUrl = useMemo(() => {
-    const u = manifest?.public?.previews?.hero;
-    return u ? `${resolveSurfaceUrl(u)}?t=${previewBust}` : null;
-  }, [manifest, previewBust]);
+    return outputs.heroUrl ? `${outputs.heroUrl}?t=${previewBust}` : null;
+  }, [outputs.heroUrl, previewBust]);
 
-  const stlUrl = useMemo(() => resolveSurfaceUrl(manifest?.public?.enclosure?.stl), [manifest]);
-  const textureUrl = useMemo(
-    () => resolveSurfaceUrl(manifest?.public?.textures?.texture_png),
-    [manifest]
-  );
-  const heightmapUrl = useMemo(
-    () => resolveSurfaceUrl(manifest?.public?.textures?.heightmap_png),
-    [manifest]
-  );
+  const stlUrl = useMemo(() => outputs.stlUrl, [outputs.stlUrl]);
+  const textureUrl = useMemo(() => outputs.textureUrl, [outputs.textureUrl]);
+  const heightmapUrl = useMemo(() => outputs.heightmapUrl, [outputs.heightmapUrl]);
 
   const selectedHeightmap = useMemo(
     () => heightmapJobs.find((j) => j.id === selectedHeightmapId) || null,
@@ -141,6 +194,7 @@ export default function SurfacePage() {
 
   const isComplete = statusLabel === "complete";
   const isFailed = statusLabel === "failed";
+  const missingOutputs = isComplete && outputs.list.length === 0;
 
   useEffect(() => {
     if (!jobId || !polling) return undefined;
@@ -166,10 +220,33 @@ export default function SurfacePage() {
         if (statusResp?.status === "complete") {
           setPolling(false);
           clearInterval(interval);
-          const mf = await getSurfaceManifest(jobId);
-          if (!cancelled) {
-            setManifest(mf);
-            setPreviewBust(Date.now());
+          const manifestUrlFromStatus = statusResp.manifest_url || statusResp.manifest?.manifest_url || "";
+
+          let mf = statusResp.manifest || null;
+
+          if (!mf) {
+            try {
+              mf = await getSurfaceManifest(jobId);
+            } catch (e) {
+              setError(e?.message || "Manifest fetch failed.");
+              return;
+            }
+          }
+
+          if (!mf) {
+            setError("Manifest missing after job completion.");
+            return;
+          }
+
+          const resolvedManifestUrl = manifestUrlFromStatus || mf.manifest_url || mf.meta?.manifest_url || "";
+          const derived = deriveOutputs(mf);
+          setManifestUrl(resolvedManifestUrl);
+          setManifest(mf);
+          setOutputs(derived);
+          setPreviewBust(Date.now());
+
+          if (!derived.heroUrl && !derived.stlUrl && !derived.textureUrl) {
+            setError("Job completed but manifest outputs are missing.");
           }
         } else if (statusResp?.status === "failed") {
           setPolling(false);
@@ -271,6 +348,8 @@ export default function SurfacePage() {
   async function startJob() {
     setError("");
     setManifest(null);
+    setManifestUrl("");
+    setOutputs({ list: [], heroUrl: null, stlUrl: null, textureUrl: null, heightmapUrl: null });
     setTimeoutHit(false);
     setJobStatus(null);
 
@@ -310,14 +389,17 @@ export default function SurfacePage() {
       { label: "Created", value: formatTs(meta.created_at || manifest.created_at) },
       { label: "Service", value: meta.service_version || manifest.service_version || "n/a" },
       { label: "Assets", value: SURFACE_ASSET_BASE },
+      { label: "Manifest", value: manifestUrl || "" },
       { label: "Heightmap", value: selectedHeightmap?.name || "none" },
     ];
-  }, [manifest, jobId, selectedHeightmap]);
+  }, [manifest, jobId, selectedHeightmap, manifestUrl]);
 
   function resetJob() {
     setJobId("");
     setJobStatus(null);
     setManifest(null);
+    setManifestUrl("");
+    setOutputs({ list: [], heroUrl: null, stlUrl: null, textureUrl: null, heightmapUrl: null });
     setPolling(false);
     setTimeoutHit(false);
     setError("");
@@ -552,6 +634,7 @@ export default function SurfacePage() {
             <div className="surface-placeholder">
               <ImageIcon size={22} />
               <p>Preview will appear once the job finishes.</p>
+              {missingOutputs && <p className="surface-inline-error">Manifest missing preview output.</p>}
             </div>
           )}
         </section>
@@ -565,6 +648,16 @@ export default function SurfacePage() {
             {isComplete && <span className="surface-chip surface-chip-success">Complete</span>}
           </div>
 
+          {missingOutputs && (
+            <div className="surface-alert surface-alert-warn" style={{ marginBottom: "0.75rem" }}>
+              <AlertTriangle size={18} />
+              <div>
+                <p className="surface-alert-title">Outputs missing</p>
+                <p className="surface-alert-body">Job completed but manifest outputs are missing or empty.</p>
+              </div>
+            </div>
+          )}
+
           <div className="surface-downloads">
             <button
               className="surface-download"
@@ -575,7 +668,7 @@ export default function SurfacePage() {
               <FileDown size={18} />
               <div>
                 <p>Enclosure STL</p>
-                <span>{stlUrl ? "Download" : "Pending"}</span>
+                <span>{stlUrl ? "Download" : missingOutputs ? "Missing from manifest" : "Unavailable"}</span>
               </div>
               <Download size={16} />
             </button>
@@ -589,7 +682,7 @@ export default function SurfacePage() {
               <FileDown size={18} />
               <div>
                 <p>Texture PNG</p>
-                <span>{textureUrl ? "Download" : "Pending"}</span>
+                <span>{textureUrl ? "Download" : missingOutputs ? "Missing from manifest" : "Unavailable"}</span>
               </div>
               <Download size={16} />
             </button>
@@ -603,7 +696,7 @@ export default function SurfacePage() {
               <FileDown size={18} />
               <div>
                 <p>Heightmap PNG</p>
-                <span>{heightmapUrl ? "Download" : "Pending"}</span>
+                <span>{heightmapUrl ? "Download" : missingOutputs ? "Missing from manifest" : "Unavailable"}</span>
               </div>
               <Download size={16} />
             </button>
@@ -638,6 +731,35 @@ export default function SurfacePage() {
             <details className="surface-details">
               <summary>Raw manifest</summary>
               <pre>{JSON.stringify(manifest, null, 2)}</pre>
+            </details>
+          )}
+
+          {IS_DEV && (
+            <details className="surface-details">
+              <summary>Debug (dev-only)</summary>
+              <div className="surface-meta-grid">
+                <div className="surface-meta-row">
+                  <span className="surface-k">Job ID</span>
+                  <span className="surface-v">{jobId || ""}</span>
+                </div>
+                <div className="surface-meta-row">
+                  <span className="surface-k">Manifest URL</span>
+                  <span className="surface-v">{manifestUrl || ""}</span>
+                </div>
+              </div>
+
+              {outputs.list.length > 0 ? (
+                <div className="surface-meta-grid">
+                  {outputs.list.map((o, idx) => (
+                    <div key={`${o.type || "out"}-${idx}`} className="surface-meta-row">
+                      <span className="surface-k">{o.type || o.name || `output-${idx}`}</span>
+                      <span className="surface-v">{o.url || "(no url)"}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="surface-muted">No manifest outputs yet.</p>
+              )}
             </details>
           )}
         </section>
