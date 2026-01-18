@@ -9,6 +9,9 @@ const BASIC_AUTH = process.env.SURFACE_ENGINE_BASIC_AUTH || "";
 const API_KEY = process.env.SURFACE_ENGINE_API_KEY || "";
 const SURFACE_API_KEY = process.env.SURFACE_API_KEY || "";
 const DEFAULT_SUBFOLDER = process.env.SURFACE_DEFAULT_SUBFOLDER || "";
+const SURFACE_OUTPUT_DIR = process.env.SURFACE_OUTPUT_DIR || "/var/www/hexforge3d/surface";
+const SURFACE_PUBLIC_PREFIX = process.env.SURFACE_PUBLIC_PREFIX || "/assets/surface";
+const SURFACE_DEBUG = (process.env.SURFACE_DEBUG || "").toLowerCase() === "1";
 
 const limiter = rateLimit({
   windowMs: 60 * 1000,
@@ -103,6 +106,12 @@ function sendError(res, status, message, detail) {
   res.status(status).json({ ok: false, message, detail });
 }
 
+function debugLog(...args) {
+  if (SURFACE_DEBUG) {
+    console.warn("[surface-debug]", ...args);
+  }
+}
+
 router.post("/jobs", limiter, async (req, res) => {
   try {
     const payload = { ...(req.body || {}) };
@@ -169,6 +178,8 @@ router.get("/jobs/:jobId", limiter, async (req, res) => {
     const job = body.job || body.result || body;
     const status = (job.status || body.status || "").toLowerCase();
 
+    const expectedManifestPath = [SURFACE_OUTPUT_DIR, subfolder, jobId, "job_manifest.json"].filter(Boolean).join("/");
+
     const manifestUrl =
       body.manifest_url ||
       job.manifest_url ||
@@ -181,11 +192,23 @@ router.get("/jobs/:jobId", limiter, async (req, res) => {
     const manifestPresent = !!manifestUrl || !!job.manifest;
 
     if (status === "complete" && !manifestPresent) {
+      debugLog("missing_manifest", {
+        job_id: jobId,
+        expected_manifest_path: expectedManifestPath,
+        subfolder,
+      });
       return sendError(
         res,
         502,
         "Surface job completed but manifest is missing",
-        { missing: "manifest_url", job_id: jobId }
+        {
+          reason: "missing_manifest",
+          job_id: jobId,
+          manifest_expected_path: expectedManifestPath,
+          outputs_root: SURFACE_OUTPUT_DIR,
+          public_prefix: SURFACE_PUBLIC_PREFIX,
+          missing: ["manifest_url"],
+        }
       );
     }
 

@@ -36,6 +36,7 @@ services:
       - ./nginx/assistant.conf:/etc/nginx/conf.d/assistant.conf:ro
       - ./nginx/snippets:/etc/nginx/snippets:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
+      # Shared assets root (heightmap + surface) served at /assets
       - /mnt/hdd-storage/ai-tools/engines/hexforge3d:/var/www/hexforge3d
       - /mnt/hdd-storage/hexforge-store/nginx/auth:/etc/nginx/auth:ro
 
@@ -75,6 +76,8 @@ services:
       - hexforge-network
     volumes:
       - ./backend:/app
+      # Shared surface assets (read-only) for manifest/debug inspection
+      - /mnt/hdd-storage/ai-tools/engines/hexforge3d/surface:/var/www/hexforge3d/surface:ro
       - /mnt/hdd-storage:/mnt/hdd-storage
       - ./uploads:/app/uploads
     environment:
@@ -82,6 +85,7 @@ services:
       MEDIA_API_KEY: ${MEDIA_API_KEY}
       SURFACE_API_KEY: ${SURFACE_API_KEY:-}
       SURFACE_DEFAULT_SUBFOLDER: ${SURFACE_DEFAULT_SUBFOLDER:-smoke-test}
+      SURFACE_OUTPUT_DIR: /var/www/hexforge3d/surface
 
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -182,7 +186,8 @@ services:
     container_name: hexforge-surface-engine
 
     environment:
-      SURFACE_OUTPUT_DIR: /data/hexforge3d/surface
+      # Surface outputs are written directly into the shared assets root served by nginx
+      SURFACE_OUTPUT_DIR: /var/www/hexforge3d/surface
       SURFACE_PUBLIC_PREFIX: /assets/surface
       ROOT_PATH: /api/surface
 
@@ -192,7 +197,10 @@ services:
 
     # Shared engine data (surface output lives here)
     volumes:
-      - /mnt/hdd-storage/ai-tools/engines/hexforge3d/surface:/data/hexforge3d/surface
+      # Canonical assets root (host): /mnt/hdd-storage/ai-tools/engines/hexforge3d/surface
+      # Container path (engine + nginx): /var/www/hexforge3d/surface
+      # Expected job layout: /var/www/hexforge3d/surface/<subfolder>/<job_id>/job_manifest.json
+      - /mnt/hdd-storage/ai-tools/engines/hexforge3d/surface:/var/www/hexforge3d/surface
       - /mnt/hdd-storage/ai-tools/engines/hexforge3d:/data/hexforge3d:${GLYPHENGINE_BASE_MODE:-ro}
 
     # Optional: make only /data/hexforge3d/surface writable, keep rest read-only.
@@ -238,7 +246,7 @@ services:
     command: ["sh", "-lc", "umask 0002 && exec python -m hse.worker_service"]
 
     environment:
-      SURFACE_OUTPUT_DIR: /data/hexforge3d/surface
+      SURFACE_OUTPUT_DIR: /var/www/hexforge3d/surface
       SURFACE_PUBLIC_PREFIX: /assets/surface
       ROOT_PATH: /api/surface
       HSE_WORKER_POLL_INTERVAL: "2"
@@ -246,7 +254,7 @@ services:
     user: "10001:10001"
 
     volumes:
-      - /mnt/hdd-storage/ai-tools/engines/hexforge3d/surface:/data/hexforge3d/surface
+      - /mnt/hdd-storage/ai-tools/engines/hexforge3d/surface:/var/www/hexforge3d/surface
       - /mnt/hdd-storage/ai-tools/engines/hexforge3d:/data/hexforge3d:${GLYPHENGINE_BASE_MODE:-ro}
 
     tmpfs:
