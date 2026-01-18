@@ -8,6 +8,7 @@ Follow these steps to validate the engines stack after deployment. Commands assu
 # Optional API keys (leave empty for dev-friendly mode)
 export HEIGHTMAP_API_KEY="<set-or-leave-empty>"
 export SURFACE_API_KEY="<set-or-leave-empty>"
+export SURFACE_DEFAULT_SUBFOLDER="smoke-test"  # default folder used by surface jobs
 
 # Prepare storage (idempotent; run as root/sudo)
 ./scripts/hexforge3d_storage_init.sh
@@ -20,7 +21,7 @@ export SURFACE_API_KEY="<set-or-leave-empty>"
 docker compose up -d --build
 ```
 
-Expect all containers healthy (`docker compose ps`).
+Expect all containers healthy (`docker compose ps`). Surface processing depends on the `surface-engine-worker` service; it should report `healthy` once the heartbeat file is written.
 
 ## 3) Health checks
 
@@ -31,7 +32,7 @@ curl -s http://localhost:11435/health | jq
 # Heightmap API health (through nginx)
 curl -sk -H "x-api-key: ${HEIGHTMAP_API_KEY}" https://localhost/api/heightmap/health | jq
 
-# Surface API health (nginx -> backend proxy -> glyphengine)
+# Surface API health (nginx -> backend proxy -> surface engine)
 curl -sk -H "x-api-key: ${SURFACE_API_KEY}" https://localhost/api/surface/health | jq
 ```
 
@@ -64,15 +65,15 @@ SURF_AUTH="-H x-api-key:${SURFACE_API_KEY}"
 
 # Submit a surface job payload (example payload only)
 curl -sk ${SURF_AUTH} -H "Content-Type: application/json" \
-  -d '{"source":"/assets/surface/demo.obj"}' \
+  -d '{"source":"/assets/surface/demo.obj","subfolder":"'"'"${SURFACE_DEFAULT_SUBFOLDER}'"'""}' \
   https://localhost/api/surface/jobs | jq
 
 # Poll status
 JOB_ID=<returned-job-id>
-curl -sk ${SURF_AUTH} "https://localhost/api/surface/jobs/${JOB_ID}" | jq
+curl -sk ${SURF_AUTH} "https://localhost/api/surface/jobs/${JOB_ID}?subfolder=${SURFACE_DEFAULT_SUBFOLDER}" | jq
 ```
 
-Expected: upstream status mirrors glyphengine response; errors show `ok: false` with upstream detail.
+Expected: status moves from `queued` to `complete` within a few seconds (worker writes placeholder outputs). Manifest and job URLs should resolve under `/assets/surface/${SURFACE_DEFAULT_SUBFOLDER}/${JOB_ID}/...`; errors show `ok: false` with upstream detail.
 
 ## 6) Rate limit + auth guards
 

@@ -20,6 +20,7 @@ from assistant.tools.heightmap_jobs import (
     BASE,
     JOBS,
     UPLOADS,
+    ensure_dirs,
     create_job,
     delete_job,
     list_jobs,
@@ -142,6 +143,13 @@ def _publish_to_assets(src_path: str | Path, out_name: str) -> dict[str, str]:
 def _engine_health_status() -> dict[str, Any]:
     errors: list[str] = []
     warnings: list[str] = []
+
+    try:
+        ensure_dirs()
+        TMP_DIR.mkdir(parents=True, exist_ok=True)
+        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    except Exception as e:
+        errors.append(f"init_failed:{e}")
 
     paths = {
         "output_dir": OUTPUT_DIR,

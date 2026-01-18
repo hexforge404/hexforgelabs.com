@@ -4,10 +4,11 @@ const { randomUUID } = require("crypto");
 
 const router = express.Router();
 
-const GLYPH_BASE = process.env.SURFACE_ENGINE_URL || "http://glyphengine:8092/api/surface";
+const SURFACE_ENGINE_BASE = process.env.SURFACE_ENGINE_URL || "http://surface-engine:8092/api/surface";
 const BASIC_AUTH = process.env.SURFACE_ENGINE_BASIC_AUTH || "";
 const API_KEY = process.env.SURFACE_ENGINE_API_KEY || "";
 const SURFACE_API_KEY = process.env.SURFACE_API_KEY || "";
+const DEFAULT_SUBFOLDER = process.env.SURFACE_DEFAULT_SUBFOLDER || "";
 
 const limiter = rateLimit({
   windowMs: 60 * 1000,
@@ -56,7 +57,7 @@ async function forward(method, path, body) {
   }
 
   try {
-    const upstream = await fetch(`${GLYPH_BASE}${path}`, opts);
+    const upstream = await fetch(`${SURFACE_ENGINE_BASE}${path}`, opts);
     const text = await upstream.text();
     clearTimeout(timer);
 
@@ -67,11 +68,35 @@ async function forward(method, path, body) {
       data = text;
     }
 
-    return { status: upstream.status, ok: upstream.ok, data };
+    return { status: upstream.status, ok: upstream.ok, data: normalizeSurfacePayload(data) };
   } catch (err) {
     clearTimeout(timer);
     throw err;
   }
+}
+
+function normalizeSurfacePayload(payload) {
+  if (!payload || typeof payload !== "object") return payload;
+
+  const cloned = Array.isArray(payload) ? payload.map(normalizeSurfacePayload) : { ...payload };
+
+  if (typeof cloned.service === "string") {
+    cloned.service = cloned.service.replace(/hexforge-glyphengine/gi, "hexforge-surface-engine");
+  }
+
+  // RESERVED FOR PHASE 1 — Board profile JSON and texture-safe zones will be stitched here; do not implement until Raspberry Pi requirements are finalized.
+
+  if (cloned.result && typeof cloned.result === "object") {
+    cloned.result = normalizeSurfacePayload(cloned.result);
+  }
+
+  return cloned;
+}
+
+function withSubfolder(path, subfolder) {
+  if (!subfolder) return path;
+  const joiner = path.includes("?") ? "&" : "?";
+  return `${path}${joiner}subfolder=${encodeURIComponent(subfolder)}`;
 }
 
 function sendError(res, status, message, detail) {
@@ -80,7 +105,12 @@ function sendError(res, status, message, detail) {
 
 router.post("/jobs", limiter, async (req, res) => {
   try {
-    const upstream = await forward("POST", "/jobs", req.body || {});
+    const payload = { ...(req.body || {}) };
+    if (!payload.subfolder && DEFAULT_SUBFOLDER) {
+      payload.subfolder = DEFAULT_SUBFOLDER;
+    }
+
+    const upstream = await forward("POST", "/jobs", payload);
     console.info(
       `[surface] POST /jobs -> ${upstream.status} ok=${upstream.ok} rid=${req.requestId} dur=${Date.now() - req._surfaceStart}ms`
     );
@@ -120,8 +150,10 @@ router.get("/health", limiter, async (req, res) => {
 
 router.get("/jobs/:jobId", limiter, async (req, res) => {
   const { jobId } = req.params;
+  const subfolder = req.query.subfolder || DEFAULT_SUBFOLDER || null;
   try {
-    const upstream = await forward("GET", `/jobs/${encodeURIComponent(jobId)}`, null);
+    const path = withSubfolder(`/jobs/${encodeURIComponent(jobId)}`, subfolder);
+    const upstream = await forward("GET", path, null);
     console.info(
       `[surface] GET /jobs/${jobId} -> ${upstream.status} ok=${upstream.ok} rid=${req.requestId} dur=${Date.now() - req._surfaceStart}ms`
     );
@@ -145,8 +177,10 @@ router.get("/jobs/:jobId", limiter, async (req, res) => {
 
 router.get("/jobs/:jobId/manifest", limiter, async (req, res) => {
   const { jobId } = req.params;
+  const subfolder = req.query.subfolder || DEFAULT_SUBFOLDER || null;
   try {
-    const upstream = await forward("GET", `/jobs/${encodeURIComponent(jobId)}/manifest`, null);
+    const path = withSubfolder(`/jobs/${encodeURIComponent(jobId)}/manifest`, subfolder);
+    const upstream = await forward("GET", path, null);
     console.info(
       `[surface] GET /jobs/${jobId}/manifest -> ${upstream.status} ok=${upstream.ok} rid=${req.requestId} dur=${Date.now() - req._surfaceStart}ms`
     );

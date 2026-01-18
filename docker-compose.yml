@@ -45,7 +45,7 @@ services:
       - backend
       - assistant
       - media_api
-      - glyphengine
+      - surface-engine
     networks:
       - hexforge-network
     healthcheck:
@@ -81,6 +81,7 @@ services:
       MEDIA_API_URL: http://hexforge-media-api:8700
       MEDIA_API_KEY: ${MEDIA_API_KEY}
       SURFACE_API_KEY: ${SURFACE_API_KEY:-}
+      SURFACE_DEFAULT_SUBFOLDER: ${SURFACE_DEFAULT_SUBFOLDER:-smoke-test}
 
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -173,12 +174,12 @@ services:
       retries: 3
       start_period: 20s
 
-  glyphengine:
+  surface-engine:
     build:
       context: /mnt/hdd-storage/hexforge-glyphengine
       dockerfile: Dockerfile
-    image: hexforge-glyphengine
-    container_name: hexforge-glyphengine
+    image: hexforge-surface-engine
+    container_name: hexforge-surface-engine
 
     environment:
       SURFACE_OUTPUT_DIR: /data/hexforge3d/surface
@@ -221,6 +222,49 @@ services:
 
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8092/api/surface/health > /dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+
+  surface-engine-worker:
+    build:
+      context: /mnt/hdd-storage/hexforge-glyphengine
+      dockerfile: Dockerfile
+    image: hexforge-surface-engine
+    container_name: hexforge-surface-engine-worker
+
+    command: ["sh", "-lc", "umask 0002 && exec python -m hse.worker_service"]
+
+    environment:
+      SURFACE_OUTPUT_DIR: /data/hexforge3d/surface
+      SURFACE_PUBLIC_PREFIX: /assets/surface
+      ROOT_PATH: /api/surface
+      HSE_WORKER_POLL_INTERVAL: "2"
+
+    user: "10001:10001"
+
+    volumes:
+      - /mnt/hdd-storage/ai-tools/engines/hexforge3d/surface:/data/hexforge3d/surface
+      - /mnt/hdd-storage/ai-tools/engines/hexforge3d:/data/hexforge3d:${GLYPHENGINE_BASE_MODE:-ro}
+
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=512m
+
+    networks:
+      - hexforge-network
+
+    restart: unless-stopped
+
+    depends_on:
+      - surface-engine
+
+    group_add:
+      - "1001"
+
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /data/hexforge3d/surface/.worker_heartbeat && test $(($(date +%s) - $(stat -c %Y /data/hexforge3d/surface/.worker_heartbeat 2>/dev/null || echo 0))) -lt 120"]
       interval: 30s
       timeout: 5s
       retries: 3

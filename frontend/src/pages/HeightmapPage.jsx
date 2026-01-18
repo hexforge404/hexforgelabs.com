@@ -928,12 +928,17 @@ export default function HeightmapPage() {
                     <button
                       className="hf-hm-btn small"
                       onClick={() => loadJob(j.id)}
-                      disabled={!done}
-                      title={!done ? "Job not complete yet." : ""}
+                      disabled={!done || !!jobsError}
+                      title={jobsError ? "Archive unavailable" : !done ? "Job not complete yet." : ""}
                     >
                       INSPECT
                     </button>
-                    <button className="hf-hm-btn small danger" onClick={() => deleteJob(j.id)}>
+                    <button
+                      className="hf-hm-btn small danger"
+                      onClick={() => deleteJob(j.id)}
+                      disabled={!!jobsError}
+                      title={jobsError ? "Archive unavailable" : ""}
+                    >
                       PURGE
                     </button>
                   </div>
