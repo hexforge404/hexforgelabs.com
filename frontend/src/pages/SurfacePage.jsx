@@ -109,7 +109,10 @@ function defaultJobName() {
   return `relief-${iso}`;
 }
 
-function normalizeOutputUrl(output) {
+function resolveOutputUrl(output, manifest) {
+  const publicRoot = (manifest?.public_root || manifest?.public?.public_root || manifest?.public_root_url || "")
+    .replace(/\/+$/, "");
+
   const candidate =
     output?.url ||
     output?.public_url ||
@@ -119,12 +122,54 @@ function normalizeOutputUrl(output) {
     null;
 
   if (!candidate) return null;
-  return resolveSurfaceUrl(candidate);
+
+  const raw = String(candidate).trim();
+  if (!raw) return null;
+  if (/^https?:\/\//i.test(raw)) return raw;
+  if (raw.startsWith("/assets/surface/")) return raw;
+
+  const rel = raw.replace(/^\/+/, "");
+  if (publicRoot) return `${publicRoot}/${rel}`;
+  return `${SURFACE_ASSET_BASE}/${rel}`;
 }
 
-function deriveOutputs(manifest) {
+function resolvePreviewsFromManifest(manifest) {
+  const previews = manifest?.public?.previews || manifest?.public?.blender_previews_urls || {};
+  const publicRoot = (manifest?.public_root || manifest?.public?.public_root || "").replace(/\/+$/, "");
+  const pick = (key) => {
+    const raw = previews?.[key];
+    if (!raw) return null;
+    if (/^https?:\/\//i.test(raw) || raw.startsWith("/assets/surface/")) return raw;
+    if (publicRoot) return `${publicRoot}/${raw.replace(/^\/+/, "")}`;
+    return resolveSurfaceUrl(raw);
+  };
+  return {
+    hero: pick("hero"),
+    iso: pick("iso"),
+    top: pick("top"),
+    side: pick("side"),
+  };
+}
+
+function deriveOutputs(manifest, jobId, manifestUrlHint = "") {
+  const effectiveJobId = (() => {
+    if (manifest?.job_id || manifest?.jobId) return manifest.job_id || manifest.jobId;
+    const url = manifestUrlHint || "";
+    const parts = url.split("/").filter(Boolean);
+    if (parts.length >= 2) return parts[parts.length - 2];
+    return jobId;
+  })();
+
   const rawList = Array.isArray(manifest?.outputs) ? manifest.outputs : [];
-  const list = rawList.map((o) => ({ ...o, url: normalizeOutputUrl(o) }));
+  const list = rawList.map((o) => ({ ...o, url: resolveOutputUrl(o, manifest) }));
+
+  const outputsByType = {};
+  list.forEach((o) => {
+    const key = (o.type || "").toLowerCase();
+    if (key && !outputsByType[key]) {
+      outputsByType[key] = o;
+    }
+  });
 
   const findFirst = (fn) => {
     for (const o of list) {
@@ -133,37 +178,86 @@ function deriveOutputs(manifest) {
     return null;
   };
 
-  const preview = findFirst((o) => {
-    const t = (o.type || "").toLowerCase();
-    const name = (o.name || o.label || "").toLowerCase();
-    return t === "preview" || t.includes("preview") || name.includes("preview") || name.includes("hero");
-  });
+  const manifestPreviews = resolvePreviewsFromManifest(manifest);
 
-  const stl = findFirst((o) => {
-    const t = (o.type || "").toLowerCase();
-    const name = (o.name || o.label || o.url || "").toLowerCase();
-    return t === "stl" || t.includes("stl") || name.endsWith(".stl");
-  });
+  const preview =
+    outputsByType.preview ||
+    findFirst((o) => {
+      const name = (o.name || o.label || "").toLowerCase();
+      const type = (o.type || "").toLowerCase();
+      return name.includes("preview") || name.includes("hero") || type.includes("preview") || type.includes("hero");
+    }) ||
+    (manifestPreviews.hero
+      ? { url: manifestPreviews.hero, type: "preview.hero" }
+      : null);
 
-  const texture = findFirst((o) => {
-    const t = (o.type || "").toLowerCase();
-    const name = (o.name || o.label || o.url || "").toLowerCase();
-    return t === "texture" || t.includes("texture") || name.includes("texture") || name.endsWith(".png");
-  });
+  const stl =
+    outputsByType.stl ||
+    findFirst((o) => {
+      const name = (o.name || o.label || o.url || "").toLowerCase();
+      const type = (o.type || "").toLowerCase();
+      return name.endsWith(".stl") || name.includes("stl") || type.includes("stl");
+    });
 
-  const heightmap = findFirst((o) => {
-    const t = (o.type || "").toLowerCase();
-    const name = (o.name || o.label || o.url || "").toLowerCase();
-    return t === "heightmap" || name.includes("heightmap");
-  });
+  const texture =
+    outputsByType.texture ||
+    outputsByType.albedo ||
+    findFirst((o) => {
+      const name = (o.name || o.label || o.url || "").toLowerCase();
+      const type = (o.type || "").toLowerCase();
+      return name.includes("texture") || name.endsWith(".png") || type.includes("texture") || type.includes("albedo");
+    });
+
+  const heightmap =
+    outputsByType.heightmap ||
+    findFirst((o) => {
+      const name = (o.name || o.label || o.url || "").toLowerCase();
+      const type = (o.type || "").toLowerCase();
+      return name.includes("heightmap") || type.includes("heightmap");
+    });
+
+  let heroUrl = preview?.url || manifestPreviews.hero || null;
+
+  if (!heroUrl && manifest?.public_root) {
+    const base = manifest.public_root.replace(/\/$/, "");
+    heroUrl = `${base}/previews/hero.png`;
+  }
+
+  if (!heroUrl && manifest?.subfolder && effectiveJobId) {
+    heroUrl = `${SURFACE_ASSET_BASE}/${manifest.subfolder}/${effectiveJobId}/previews/hero.png`;
+  }
+
+  if (!heroUrl && effectiveJobId) {
+    heroUrl = `${SURFACE_ASSET_BASE}/${effectiveJobId}/previews/hero.png`;
+  }
+
+  // If we have a preview URL but it lacks the job-specific path, rewrite using subfolder/jobId when available, unless public_root already handled.
+  const hasPublicRoot = !!manifest?.public_root;
+  if (!hasPublicRoot && heroUrl && manifest?.subfolder && effectiveJobId && !heroUrl.includes(`/${manifest.subfolder}/${effectiveJobId}/`)) {
+    heroUrl = `${SURFACE_ASSET_BASE}/${manifest.subfolder}/${effectiveJobId}/previews/hero.png`;
+  }
+  if (!hasPublicRoot && heroUrl && effectiveJobId && !heroUrl.includes(`/${effectiveJobId}/`)) {
+    heroUrl = `${SURFACE_ASSET_BASE}/${effectiveJobId}/previews/hero.png`;
+  }
 
   return {
     list,
-    heroUrl: preview?.url || null,
+    heroUrl: heroUrl || null,
     stlUrl: stl?.url || null,
     textureUrl: texture?.url || null,
     heightmapUrl: heightmap?.url || null,
   };
+}
+
+function summarizeMissingOutputs(derived, { includeOptional = false } = {}) {
+  const missing = [];
+  if (!derived.heroUrl) missing.push("preview missing");
+  if (!derived.stlUrl) missing.push("stl missing");
+  if (includeOptional) {
+    if (!derived.textureUrl) missing.push("texture missing");
+    if (!derived.heightmapUrl) missing.push("heightmap missing");
+  }
+  return missing;
 }
 
 function resolveHeightmapUrl(pathOrUrl) {
@@ -198,6 +292,7 @@ export default function SurfacePage() {
   const [manifest, setManifest] = useState(null);
   const [manifestUrl, setManifestUrl] = useState("");
   const [outputs, setOutputs] = useState({ list: [], heroUrl: null, stlUrl: null, textureUrl: null, heightmapUrl: null });
+  const [lastCreatePayload, setLastCreatePayload] = useState(null);
   const [loading, setLoading] = useState(false);
   const [polling, setPolling] = useState(false);
   const [error, setError] = useState("");
@@ -260,9 +355,31 @@ export default function SurfacePage() {
         const next = { ...statusResp, state, status: state, progress: deriveProgress(state, statusResp.progress) };
         setJobStatus(next);
 
+        const manifestFromStatus = next.manifest || next.result?.manifest;
+        const manifestUrlHint =
+          next.manifest_url ||
+          manifestFromStatus?.manifest_url ||
+          manifestFromStatus?.public?.job_manifest ||
+          manifestUrl ||
+          "";
+
+        if (manifestUrlHint) {
+          const resolvedHint = resolveSurfaceUrl(manifestUrlHint);
+          setManifestUrl((prev) => {
+            if (!prev) return resolvedHint;
+            return prev !== resolvedHint ? resolvedHint : prev;
+          });
+        }
+
+        if (!manifest && (manifestFromStatus || manifestUrlHint)) {
+          await fetchAndApplyManifest(manifestUrlHint, manifestFromStatus || null, state, { allowMissing: state !== "complete" });
+        }
+
         if (state === "complete") {
           setPolling(false);
-          await fetchAndApplyManifest(next.manifest_url || next.manifest?.manifest_url || "");
+          if (!manifest) {
+            await fetchAndApplyManifest(manifestUrlHint, manifestFromStatus || null, state, { allowMissing: false });
+          }
           return;
         }
 
@@ -288,7 +405,7 @@ export default function SurfacePage() {
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [jobId, polling, startedAt]);
+  }, [jobId, polling, startedAt, manifest, manifestUrl]);
 
   useEffect(() => {
     try {
@@ -422,25 +539,33 @@ export default function SurfacePage() {
     setManifest(null);
     setManifestUrl("");
     setOutputs({ list: [], heroUrl: null, stlUrl: null, textureUrl: null, heightmapUrl: null });
+    setJobId("");
     setTimeoutHit(false);
     setJobStatus(null);
+    setPolling(false);
+    setStartedAt(null);
+    setPreviewBust(Date.now());
+    setLastCreatePayload(null);
 
     if (!selectedHeightmap || !selectedHeightmap.heightmapUrl) {
       setError("Select a completed heightmap first.");
       return;
     }
 
+    const selectedHeightmapUrl = resolveHeightmapUrl(selectedHeightmap.heightmapUrl);
+
     const payload = {
       name: form.name || defaultJobName(),
       quality: form.quality,
       notes: form.notes || "",
       mode: "relief",
-      source_heightmap_url: selectedHeightmap.heightmapUrl,
+      source_heightmap_url: selectedHeightmapUrl,
       source_heightmap_job_id: selectedHeightmap.id,
     };
 
     setLoading(true);
     try {
+      setLastCreatePayload(payload);
       const data = await createSurfaceJob(payload);
       setJobId(data.job_id);
       setJobStatus({ status: "queued", state: "queued", progress: deriveProgress("queued"), job_id: data.job_id });
@@ -468,72 +593,104 @@ export default function SurfacePage() {
     }
   }
 
-  async function fetchAndApplyManifest(manifestHint) {
-    setArtifactWarning("");
+  async function fetchAndApplyManifest(
+    manifestHint,
+    manifestDataOverride = null,
+    stateHint = statusLabel,
+    { allowMissing = false } = {}
+  ) {
     const manifestUrlResolved = manifestHint ? resolveSurfaceUrl(manifestHint) : "";
-    let mf = null;
+    let mf = manifestDataOverride || null;
+    let lastError = null;
 
-    try {
-      mf = await getSurfaceManifest(jobId);
-    } catch (err) {
-      if (manifestUrlResolved) {
-        try {
-          const res = await fetch(manifestUrlResolved);
-          if (res.ok) {
-            mf = await res.json();
-          } else {
-            throw err;
+    if (!mf) {
+      try {
+        mf = await getSurfaceManifest(jobId);
+      } catch (err) {
+        lastError = err;
+        if (manifestUrlResolved) {
+          try {
+            const res = await fetch(manifestUrlResolved);
+            if (res.ok) {
+              mf = await res.json();
+            } else {
+              lastError = new Error(`Manifest fetch failed (${res.status})`);
+            }
+          } catch (e) {
+            lastError = e;
           }
-        } catch (e) {
-          throw e;
         }
-      } else {
-        throw err;
       }
     }
 
     if (!mf) {
-      throw new Error("Manifest missing after job completion.");
+      if (allowMissing) return null;
+      throw lastError || new Error("Manifest missing after job completion.");
     }
 
-    const resolvedManifestUrl = manifestUrlResolved || mf.manifest_url || mf.meta?.manifest_url || mf.public?.job_manifest || "";
-    const derived = deriveOutputs(mf);
-    setManifestUrl(resolvedManifestUrl);
+    const resolvedManifestUrl =
+      manifestUrlResolved ||
+      resolveSurfaceUrl(mf.manifest_url || mf.meta?.manifest_url || mf.public?.job_manifest || manifestUrl || "");
+
+    const derived = deriveOutputs(mf, jobId, manifestUrlResolved || manifestUrlHint || "");
+    setManifestUrl(resolvedManifestUrl || "");
     setManifest(mf);
     setOutputs(derived);
     setPreviewBust(Date.now());
     setOutputsCheckedAt(Date.now());
 
-    const warnings = [];
-    if (!derived.heroUrl) warnings.push("preview missing");
-    if (!derived.stlUrl) warnings.push("stl missing");
+    if (DEBUG_MODE) {
+      // eslint-disable-next-line no-console
+      console.warn("surface: preview resolution", {
+        job_id: jobId,
+        manifest_public_root: mf?.public_root || mf?.public?.public_root,
+        manifest_subfolder: mf?.subfolder,
+        manifest_public_previews: mf?.public?.previews || mf?.public?.blender_previews_urls,
+        computed_hero_url: derived.heroUrl,
+        outputs_sample: derived.list?.slice(0, 3),
+      });
+    }
 
-    const checks = await Promise.all(
-      [
-        derived.heroUrl ? validateAsset(derived.heroUrl) : Promise.resolve({ ok: false, reason: "missing" }),
-        derived.stlUrl ? validateAsset(derived.stlUrl) : Promise.resolve({ ok: false, reason: "missing" }),
-      ]
+    const requiredWarnings = stateHint === "complete" ? summarizeMissingOutputs(derived, { includeOptional: false }) : [];
+    const optionalWarnings = summarizeMissingOutputs(derived, { includeOptional: true }).filter(
+      (item) => !requiredWarnings.includes(item)
     );
 
-    if (!checks[0].ok) warnings.push(`preview ${checks[0].reason}`);
-    if (!checks[1].ok) warnings.push(`stl ${checks[1].reason}`);
+    if (stateHint === "complete") {
+      const checks = await Promise.all([
+        derived.heroUrl ? validateAsset(derived.heroUrl) : Promise.resolve({ ok: false, reason: "missing" }),
+        derived.stlUrl ? validateAsset(derived.stlUrl) : Promise.resolve({ ok: false, reason: "missing" }),
+      ]);
 
-    const warningText = warnings.join("; ");
+      if (!checks[0].ok && !requiredWarnings.find((w) => w.startsWith("preview"))) {
+        requiredWarnings.push(`preview ${checks[0].reason}`);
+      }
+      if (!checks[1].ok && !requiredWarnings.find((w) => w.startsWith("stl"))) {
+        requiredWarnings.push(`stl ${checks[1].reason}`);
+      }
+    }
+
+    const warningText = [...requiredWarnings, ...optionalWarnings].join("; ");
     setArtifactWarning(warningText);
 
-    const incomplete = derived.list.length === 0 || warningText;
-    if (incomplete) {
-      setJobStatus((prev) => ({ ...(prev || {}), state: "failed", status: "failed", progress: deriveProgress("failed") }));
-      setError(warningText || "Manifest outputs are missing or invalid.");
-    } else {
-      setJobStatus((prev) => ({ ...(prev || {}), state: "complete", status: "complete", progress: deriveProgress("complete", prev?.progress) }));
-      setError("");
+    if (stateHint === "complete") {
+      if (requiredWarnings.length > 0) {
+        setJobStatus((prev) => ({ ...(prev || {}), state: "failed", status: "failed", progress: deriveProgress("failed") }));
+        setError(warningText || "Manifest outputs are missing or invalid.");
+      } else {
+        setJobStatus((prev) => ({ ...(prev || {}), state: "complete", status: "complete", progress: deriveProgress("complete", prev?.progress) }));
+        setError(optionalWarnings.length ? optionalWarnings.join("; ") : "");
+      }
+    } else if (requiredWarnings.length === 0) {
+      setError(optionalWarnings.length ? optionalWarnings.join("; ") : "");
     }
+
+    return mf;
   }
 
   async function recheckOutputs() {
     try {
-      await fetchAndApplyManifest(manifestUrl);
+      await fetchAndApplyManifest(manifestUrl, null, "complete", { allowMissing: false });
       setError("");
     } catch (err) {
       setError(err?.message || "Re-check failed");
@@ -564,6 +721,7 @@ export default function SurfacePage() {
     setError("");
     setStartedAt(null);
     setPreviewBust(Date.now());
+    setLastCreatePayload(null);
     setForm((prev) => ({ ...prev, name: defaultJobName() }));
   }
 
@@ -938,7 +1096,22 @@ export default function SurfacePage() {
                   <span className="surface-k">Manifest URL</span>
                   <span className="surface-v">{manifestUrl || ""}</span>
                 </div>
+                <div className="surface-meta-row">
+                  <span className="surface-k">Payload heightmap_url</span>
+                  <span className="surface-v">{lastCreatePayload?.source_heightmap_url || selectedHeightmap?.heightmapUrl || ""}</span>
+                </div>
+                <div className="surface-meta-row">
+                  <span className="surface-k">Payload heightmap_job_id</span>
+                  <span className="surface-v">{lastCreatePayload?.source_heightmap_job_id || selectedHeightmap?.id || ""}</span>
+                </div>
               </div>
+
+              {lastCreatePayload && (
+                <details className="surface-details" open>
+                  <summary>Create payload</summary>
+                  <pre>{JSON.stringify(lastCreatePayload, null, 2)}</pre>
+                </details>
+              )}
 
               {outputs.list.length > 0 ? (
                 <div className="surface-meta-grid">
