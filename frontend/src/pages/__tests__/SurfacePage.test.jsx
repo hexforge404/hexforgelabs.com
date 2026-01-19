@@ -173,6 +173,98 @@ describe("SurfacePage heightmap integration", () => {
     expect(screen.getByRole("button", { name: /Enclosure STL/i })).toBeEnabled();
   });
 
+  test("derives preview url from manifest public_root when outputs are relative", async () => {
+    mockFetchResponse({
+      ok: true,
+      jobs: {
+        items: [
+          {
+            id: "hm-777",
+            name: "HM Ready",
+            status: "done",
+            created_at: 1700000000,
+            result: { public: { heightmap_url: "/assets/heightmap/hm.png" } },
+          },
+        ],
+      },
+    });
+
+    getSurfaceJobStatus.mockResolvedValue({
+      status: "complete",
+      progress: undefined,
+      manifest_url: "/assets/surface/demo/job_manifest.json",
+    });
+
+    getSurfaceManifest.mockResolvedValue({
+      manifest_url: "/assets/surface/demo/job_manifest.json",
+      public_root: "/assets/surface/demo",
+      outputs: [
+        { type: "preview.hero", path: "previews/hero.png" },
+        { type: "mesh.stl", path: "enclosure/enclosure.stl" },
+      ],
+    });
+
+    const user = userEvent;
+    render(<SurfacePage />);
+
+    await screen.findByRole("option", { name: /HM Ready/ });
+    await act(async () => {
+      await user.click(screen.getByRole("button", { name: /generate relief/i }));
+    });
+
+    await waitFor(() => expect(getSurfaceJobStatus).toHaveBeenCalled());
+    await waitFor(() => expect(getSurfaceManifest).toHaveBeenCalled());
+
+    const img = await screen.findByAltText(/Surface hero preview/i);
+    expect(img).toHaveAttribute("src", expect.stringContaining("/assets/surface/demo/previews/hero.png"));
+  });
+
+  test("falls back to manifest subfolder when public_root is missing", async () => {
+    mockFetchResponse({
+      ok: true,
+      jobs: {
+        items: [
+          {
+            id: "hm-555",
+            name: "HM Ready",
+            status: "done",
+            created_at: 1700000000,
+            result: { public: { heightmap_url: "/assets/heightmap/hm.png" } },
+          },
+        ],
+      },
+    });
+
+    getSurfaceJobStatus.mockResolvedValue({
+      status: "complete",
+      progress: undefined,
+      job_id: "job-123",
+      manifest_url: "/assets/surface/job-123/job_manifest.json",
+    });
+
+    getSurfaceManifest.mockResolvedValue({
+      manifest_url: "/assets/surface/job-123/job_manifest.json",
+      subfolder: "proof-run",
+      outputs: [
+        { type: "preview.hero", path: "previews/hero.png" },
+      ],
+    });
+
+    const user = userEvent;
+    render(<SurfacePage />);
+
+    await screen.findByRole("option", { name: /HM Ready/ });
+    await act(async () => {
+      await user.click(screen.getByRole("button", { name: /generate relief/i }));
+    });
+
+    await waitFor(() => expect(getSurfaceJobStatus).toHaveBeenCalled());
+    await waitFor(() => expect(getSurfaceManifest).toHaveBeenCalled());
+
+    const img = await screen.findByAltText(/Surface hero preview/i);
+    expect(img.getAttribute("src")).toContain("/assets/surface/proof-run/job-123/previews/hero.png");
+  });
+
   test("shows error on missing manifest", async () => {
     mockFetchResponse({
       ok: true,
