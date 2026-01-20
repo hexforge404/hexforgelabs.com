@@ -59,9 +59,9 @@ export default function AdminPage() {
       setLoading(true);
       try {
         const [productsRes, ordersRes, postsRes] = await Promise.all([
-          axios.get(`${API_BASE_URL}/products?raw=true`),
-          axios.get(`${API_BASE_URL}/orders`),
-          axios.get(`${API_BASE_URL}/blog`),
+          axios.get(`${API_BASE_URL}/admin/products`, { withCredentials: true }),
+          axios.get(`${API_BASE_URL}/orders`, { withCredentials: true }),
+          axios.get(`${API_BASE_URL}/blog`, { withCredentials: true }),
         ]);
 
         const productData = productsRes.data || [];
@@ -123,6 +123,7 @@ export default function AdminPage() {
         .map((c) => c.trim())
         .filter(Boolean),
       isFeatured: !!form.isFeatured,
+      status: 'active',
     };
   };
 
@@ -243,8 +244,9 @@ export default function AdminPage() {
       if (editingProductId) {
         // UPDATE
         response = await axios.put(
-          `${API_BASE_URL}/products/${editingProductId}`,
-          payload
+          `${API_BASE_URL}/admin/products/${editingProductId}`,
+          payload,
+          { withCredentials: true }
         );
         const updated = response.data?.data || response.data;
 
@@ -256,7 +258,7 @@ export default function AdminPage() {
         successToast('Product updated');
       } else {
         // CREATE
-        response = await axios.post(`${API_BASE_URL}/products`, payload);
+        response = await axios.post(`${API_BASE_URL}/admin/products`, payload, { withCredentials: true });
         const created = response.data?.data || response.data;
 
         const newProducts = [...products, created];
@@ -298,7 +300,7 @@ export default function AdminPage() {
     if (!window.confirm('Delete this product?')) return;
 
     try {
-      await axios.delete(`${API_BASE_URL}/products/${productId}`);
+      await axios.delete(`${API_BASE_URL}/admin/products/${productId}`, { withCredentials: true });
       const newProducts = products.filter((p) => p._id !== productId);
       setProducts(newProducts);
       setExistingNames(newProducts.map((p) => normalizeName(p.name || '')));

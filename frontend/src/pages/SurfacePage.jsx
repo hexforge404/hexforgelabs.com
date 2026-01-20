@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { toast } from "react-toastify";
 import {
   AlertTriangle,
   Clock3,
@@ -131,6 +132,19 @@ function resolveOutputUrl(output, manifest) {
   const rel = raw.replace(/^\/+/, "");
   if (publicRoot) return `${publicRoot}/${rel}`;
   return `${SURFACE_ASSET_BASE}/${rel}`;
+}
+
+function deriveSubfolderFromUrl(manifestObj, manifestUrl, jobId) {
+  if (manifestObj?.subfolder) return manifestObj.subfolder;
+  const url = manifestUrl || "";
+  const parts = url.split("/").filter(Boolean);
+  const idx = parts.indexOf("surface");
+  if (idx >= 0) {
+    const maybeSubfolder = parts[idx + 1];
+    const maybeJob = parts[idx + 2];
+    if (maybeJob === jobId) return maybeSubfolder || "";
+  }
+  return "";
 }
 
 function resolvePreviewsFromManifest(manifest) {
@@ -302,6 +316,21 @@ export default function SurfacePage() {
   const [startedAt, setStartedAt] = useState(null);
   const [previewBust, setPreviewBust] = useState(Date.now());
 
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [adminChecked, setAdminChecked] = useState(false);
+  const [promoteOpen, setPromoteOpen] = useState(false);
+  const [promoteSaving, setPromoteSaving] = useState(false);
+  const [promoteError, setPromoteError] = useState("");
+  const [promoteForm, setPromoteForm] = useState({
+    title: "",
+    price: 129,
+    category: "surface",
+    description: "",
+    tags: "",
+    sku: "",
+    freeze_assets: true,
+  });
+
   const [heightmapJobs, setHeightmapJobs] = useState([]);
   const [heightmapLoading, setHeightmapLoading] = useState(false);
   const [heightmapError, setHeightmapError] = useState("");
@@ -330,6 +359,12 @@ export default function SurfacePage() {
   const isComplete = statusLabel === "complete";
   const isFailed = statusLabel === "failed";
   const missingOutputs = (isComplete || isFailed) && (outputs.list.length === 0 || !!artifactWarning);
+
+  const derivedSubfolder = useMemo(() => deriveSubfolderFromUrl(manifest, manifestUrl, jobId), [manifest, manifestUrl, jobId]);
+  const canPromote = useMemo(() => {
+    if (!adminChecked) return false;
+    return isAdmin && isComplete && !!jobId && !!outputs.heroUrl && !!outputs.stlUrl;
+  }, [adminChecked, isAdmin, isComplete, jobId, outputs.heroUrl, outputs.stlUrl]);
 
   useEffect(() => {
     if (!jobId || !polling) return undefined;
@@ -416,6 +451,29 @@ export default function SurfacePage() {
     }
   }, []);
 
+  const ensureAdminSessionChecked = useMemo(() => {
+    let inFlight = null;
+    return async () => {
+      if (adminChecked) return isAdmin;
+      if (inFlight) return inFlight;
+      inFlight = (async () => {
+        try {
+          const res = await fetch("/api/admin/session", { credentials: "include" });
+          const data = await res.json();
+          setIsAdmin(!!data?.loggedIn);
+        } catch (err) {
+          if (DEBUG_MODE) console.warn("surface: admin session check failed", err);
+          setIsAdmin(false);
+        } finally {
+          setAdminChecked(true);
+          inFlight = null;
+        }
+        return isAdmin;
+      })();
+      return inFlight;
+    };
+  }, [adminChecked, isAdmin]);
+
   useEffect(() => {
     if (!DEBUG_MODE || !heroUrl) return undefined;
     let cancelled = false;
@@ -462,6 +520,15 @@ export default function SurfacePage() {
       cancelled = true;
     };
   }, [heroUrl]);
+
+  useEffect(() => {
+    if (!jobId) return;
+    setPromoteForm((prev) => ({
+      ...prev,
+      title: prev.title || manifest?.meta?.name || manifest?.job_name || form.name || jobId,
+      description: prev.description || manifest?.meta?.description || manifest?.description || "",
+    }));
+  }, [manifest, jobId, form.name]);
 
   useEffect(() => {
     refreshHeightmapJobs();
@@ -529,6 +596,8 @@ export default function SurfacePage() {
       setHeightmapJobs([]);
     } finally {
       setHeightmapLoading(false);
+      // Run admin session check after the initial data fetch to avoid consuming the first fetch mock in tests
+      ensureAdminSessionChecked();
     }
   }
 
@@ -632,7 +701,7 @@ export default function SurfacePage() {
       manifestUrlResolved ||
       resolveSurfaceUrl(mf.manifest_url || mf.meta?.manifest_url || mf.public?.job_manifest || manifestUrl || "");
 
-    const derived = deriveOutputs(mf, jobId, manifestUrlResolved || manifestUrlHint || "");
+    const derived = deriveOutputs(mf, jobId, manifestUrlResolved || manifestHint || "");
     setManifestUrl(resolvedManifestUrl || "");
     setManifest(mf);
     setOutputs(derived);
@@ -694,6 +763,50 @@ export default function SurfacePage() {
       setError("");
     } catch (err) {
       setError(err?.message || "Re-check failed");
+    }
+  }
+
+  async function handlePromoteSubmit(event) {
+    event.preventDefault();
+    setPromoteSaving(true);
+    setPromoteError("");
+
+    try {
+      const payload = {
+        job_id: jobId,
+        subfolder: derivedSubfolder || null,
+        title: promoteForm.title || form.name || jobId,
+        price: Number(promoteForm.price) || 0,
+        category: promoteForm.category || "surface",
+        description: promoteForm.description || null,
+        tags: promoteForm.tags
+          .split(',')
+          .map((t) => t.trim())
+          .filter(Boolean),
+        sku: promoteForm.sku || null,
+        freeze_assets: !!promoteForm.freeze_assets,
+      };
+
+      const res = await fetch("/api/products/from-surface-job", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || data?.message || "Promotion failed");
+      }
+
+      toast.success("Product drafted from surface job");
+      setPromoteOpen(false);
+    } catch (err) {
+      const message = err?.message || "Promotion failed";
+      setPromoteError(message);
+      toast.error(message);
+    } finally {
+      setPromoteSaving(false);
     }
   }
 
@@ -986,6 +1099,19 @@ export default function SurfacePage() {
                   <RefreshCw size={14} /> Re-check outputs
                 </button>
               )}
+              {canPromote && (
+                <button
+                  type="button"
+                  className="surface-button"
+                  onClick={() => {
+                    setPromoteError("");
+                    setPromoteOpen(true);
+                    ensureAdminSessionChecked();
+                  }}
+                >
+                  Promote to Product
+                </button>
+              )}
             </div>
           </div>
 
@@ -1129,6 +1255,132 @@ export default function SurfacePage() {
           )}
         </section>
       </div>
+
+      {promoteOpen && (
+        <div
+          className="surface-modal-backdrop"
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.55)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 50,
+          }}
+        >
+          <div
+            className="surface-modal"
+            style={{
+              background: "#0b0f15",
+              border: "1px solid #1f2733",
+              borderRadius: "12px",
+              padding: "20px",
+              width: "min(520px, 92vw)",
+              boxShadow: "0 20px 48px rgba(0,0,0,0.45)",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+              <h3 style={{ margin: 0 }}>Promote to Product</h3>
+              <button
+                type="button"
+                className="surface-button surface-button-ghost"
+                onClick={() => setPromoteOpen(false)}
+              >
+                Close
+              </button>
+            </div>
+
+            <form onSubmit={handlePromoteSubmit} className="surface-form" style={{ gap: "12px" }}>
+              <label className="surface-label">
+                <span>Title</span>
+                <input
+                  type="text"
+                  value={promoteForm.title}
+                  onChange={(e) => setPromoteForm({ ...promoteForm, title: e.target.value })}
+                  required
+                />
+              </label>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                <label className="surface-label">
+                  <span>Price (USD)</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={promoteForm.price}
+                    onChange={(e) => setPromoteForm({ ...promoteForm, price: e.target.value })}
+                    required
+                  />
+                </label>
+                <label className="surface-label">
+                  <span>Category</span>
+                  <input
+                    type="text"
+                    value={promoteForm.category}
+                    onChange={(e) => setPromoteForm({ ...promoteForm, category: e.target.value })}
+                  />
+                </label>
+              </div>
+
+              <label className="surface-label">
+                <span>Description</span>
+                <textarea
+                  rows={3}
+                  value={promoteForm.description}
+                  onChange={(e) => setPromoteForm({ ...promoteForm, description: e.target.value })}
+                  placeholder="What makes this relief special?"
+                />
+              </label>
+
+              <label className="surface-label">
+                <span>Tags (comma separated)</span>
+                <input
+                  type="text"
+                  value={promoteForm.tags}
+                  onChange={(e) => setPromoteForm({ ...promoteForm, tags: e.target.value })}
+                  placeholder="surface, relief, enclosure"
+                />
+              </label>
+
+              <label className="surface-label">
+                <span>SKU (optional)</span>
+                <input
+                  type="text"
+                  value={promoteForm.sku}
+                  onChange={(e) => setPromoteForm({ ...promoteForm, sku: e.target.value })}
+                  placeholder="SURF-001"
+                />
+              </label>
+
+              <label className="surface-label" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <input
+                  type="checkbox"
+                  checked={!!promoteForm.freeze_assets}
+                  onChange={(e) => setPromoteForm({ ...promoteForm, freeze_assets: e.target.checked })}
+                />
+                <span>Freeze asset URLs (avoid later rewrites)</span>
+              </label>
+
+              {promoteError && <p className="surface-inline-error">{promoteError}</p>}
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "8px" }}>
+                <button
+                  type="button"
+                  className="surface-button surface-button-ghost"
+                  onClick={() => setPromoteOpen(false)}
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="surface-button" disabled={promoteSaving}>
+                  {promoteSaving ? 'Promoting…' : 'Create draft product'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

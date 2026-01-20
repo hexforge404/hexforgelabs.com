@@ -62,12 +62,15 @@ describe("SurfacePage heightmap integration", () => {
     installLocalStorage();
     jest.useFakeTimers();
 
-    global.fetch = jest.fn((url, opts = {}) => {
-      if (opts.method === "HEAD") {
-        return Promise.resolve({ ok: true, status: 200, headers: { get: () => "123" } });
-      }
-      return Promise.resolve({ ok: true, status: 200, json: async () => ({ ok: true, jobs: { items: [] } }) });
-    });
+      global.fetch = jest.fn((url, opts = {}) => {
+        if (opts.method === "HEAD") {
+          return Promise.resolve({ ok: true, status: 200, headers: { get: () => "123" } });
+        }
+        if (typeof url === "string" && url.includes("/api/admin/session")) {
+          return Promise.resolve({ ok: true, status: 200, json: async () => ({ loggedIn: false }) });
+        }
+        return Promise.resolve({ ok: true, status: 200, json: async () => ({ ok: true, jobs: { items: [] } }) });
+      });
 
     createSurfaceJob.mockResolvedValue({ job_id: "surface-job-1" });
     getSurfaceJobStatus.mockResolvedValue({ status: "complete", progress: 100, manifest_url: "/assets/surface/demo/job_manifest.json" });

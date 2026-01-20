@@ -10,7 +10,8 @@ const SURFACE_ENGINE_BASE = process.env.SURFACE_ENGINE_URL || "http://surface-en
 const BASIC_AUTH = process.env.SURFACE_ENGINE_BASIC_AUTH || "";
 const API_KEY = process.env.SURFACE_ENGINE_API_KEY || "";
 const SURFACE_API_KEY = process.env.SURFACE_API_KEY || "";
-const DEFAULT_SUBFOLDER = process.env.SURFACE_DEFAULT_SUBFOLDER || "";
+const SMOKE_MODE = (process.env.SURFACE_SMOKE_MODE || "").toLowerCase() === "1";
+const DEFAULT_SUBFOLDER = process.env.SURFACE_DEFAULT_SUBFOLDER || (SMOKE_MODE ? "smoke-test" : "");
 const SURFACE_OUTPUT_DIR = process.env.SURFACE_OUTPUT_DIR || "/var/www/hexforge3d/surface";
 const SURFACE_PUBLIC_PREFIX = process.env.SURFACE_PUBLIC_PREFIX || "/assets/surface";
 const SURFACE_DEBUG = (process.env.SURFACE_DEBUG || "").toLowerCase() === "1";
@@ -151,6 +152,16 @@ function debugLog(...args) {
   }
 }
 
+function pickHeightmapUrl(payload = {}) {
+  return (
+    payload.heightmap_url ||
+    payload.source_heightmap_url ||
+    payload.heightmapUrl ||
+    payload.source_heightmapUrl ||
+    null
+  );
+}
+
 function buildManifestUrl(subfolder, jobId) {
   const trimmed = [SURFACE_PUBLIC_PREFIX.replace(/\/$/, ""), subfolder, jobId, "job_manifest.json"].filter(Boolean);
   return trimmed.join("/").replace(/\/+/g, "/");
@@ -169,14 +180,41 @@ async function fileExists(filePath) {
 router.post("/jobs", limiter, async (req, res) => {
   try {
     const payload = { ...(req.body || {}) };
-    if (!payload.subfolder && DEFAULT_SUBFOLDER) {
+    let effectiveSubfolder = payload.subfolder || "";
+    if (!effectiveSubfolder && DEFAULT_SUBFOLDER) {
       payload.subfolder = DEFAULT_SUBFOLDER;
+      effectiveSubfolder = DEFAULT_SUBFOLDER;
     }
+
+    const heightmapUrl = pickHeightmapUrl(payload);
+    if (!payload.heightmap_url && heightmapUrl) {
+      payload.heightmap_url = heightmapUrl;
+    }
+    if (!payload.source_heightmap_url && heightmapUrl) {
+      payload.source_heightmap_url = heightmapUrl;
+    }
+    if (!payload.heightmap_job_id && payload.source_heightmap_job_id) {
+      payload.heightmap_job_id = payload.source_heightmap_job_id;
+    }
+
+    debugLog("create_job_payload", {
+      job_name: payload.name || null,
+      subfolder: payload.subfolder || null,
+      heightmap_url: heightmapUrl || null,
+      heightmap_job_id: payload.source_heightmap_job_id || payload.heightmap_job_id || null,
+      request_id: req.requestId,
+    });
 
     const upstream = await forward("POST", "/jobs", payload);
     console.info(
       `[surface] POST /jobs -> ${upstream.status} ok=${upstream.ok} rid=${req.requestId} dur=${Date.now() - req._surfaceStart}ms`
     );
+    debugLog("create_job_response", {
+      job_id: upstream.data?.job_id || null,
+      subfolder: payload.subfolder || null,
+      heightmap_url: heightmapUrl || null,
+      status: upstream.status,
+    });
     if (!upstream.ok) {
       return sendError(
         res,
@@ -235,7 +273,14 @@ router.get("/jobs/:jobId", limiter, async (req, res) => {
     const progress = deriveProgress(state, job.progress ?? body.progress);
 
     const manifestFsPath = path.join(SURFACE_OUTPUT_DIR, subfolder || "", jobId, "job_manifest.json");
-    let manifestUrl =
+    const manifestFromUpstream =
+      body.manifest ||
+      job.manifest ||
+      job.result?.manifest ||
+      body.result?.manifest ||
+      null;
+
+    const manifestUrlFromUpstream =
       body.manifest_url ||
       job.manifest_url ||
       job.result?.manifest_url ||
@@ -244,16 +289,17 @@ router.get("/jobs/:jobId", limiter, async (req, res) => {
       job.result?.job_manifest ||
       job.job_manifest ||
       body.result?.job_manifest ||
+      manifestFromUpstream?.manifest_url ||
+      manifestFromUpstream?.public?.job_manifest ||
       null;
 
+    const inferredManifestUrl = buildManifestUrl(subfolder, jobId);
+
+    let manifestUrl = manifestUrlFromUpstream || inferredManifestUrl;
     let manifestExists = false;
-    let manifestPayload = null;
+    let manifestPayload = manifestFromUpstream || null;
 
-    if (!manifestUrl) {
-      manifestUrl = buildManifestUrl(subfolder, jobId);
-    }
-
-    if (state === "complete") {
+    if (!manifestPayload && state === "complete") {
       manifestExists = await fileExists(manifestFsPath);
       if (manifestExists) {
         try {
@@ -265,9 +311,9 @@ router.get("/jobs/:jobId", limiter, async (req, res) => {
       }
     }
 
-    const manifestPresent = manifestExists || !!manifestUrl || !!job.manifest;
+    const manifestAvailable = !!manifestPayload || manifestExists || !!manifestUrlFromUpstream;
 
-    if (state === "complete" && !manifestPresent) {
+    if (state === "complete" && !manifestAvailable) {
       debugLog("missing_manifest", {
         job_id: jobId,
         expected_manifest_path: manifestFsPath,
@@ -281,9 +327,10 @@ router.get("/jobs/:jobId", limiter, async (req, res) => {
           reason: "missing_manifest",
           job_id: jobId,
           manifest_expected_path: manifestFsPath,
+          manifest_url: manifestUrl,
           outputs_root: SURFACE_OUTPUT_DIR,
           public_prefix: SURFACE_PUBLIC_PREFIX,
-          missing: ["manifest_url"],
+          missing: ["manifest", "manifest_url"],
           state: "failed",
         }
       );
@@ -298,6 +345,14 @@ router.get("/jobs/:jobId", limiter, async (req, res) => {
       manifest_url: manifestUrl,
       outputs: manifestPayload?.outputs || body.outputs || job.outputs,
     };
+
+    debugLog("status_response", {
+      job_id: responseBody.job_id,
+      subfolder,
+      manifest_url: manifestUrl,
+      outputs_root: SURFACE_OUTPUT_DIR,
+      request_id: req.requestId,
+    });
 
     if (manifestPayload) {
       responseBody.manifest = manifestPayload;
