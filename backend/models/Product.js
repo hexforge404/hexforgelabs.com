@@ -1,132 +1,122 @@
 const mongoose = require('mongoose');
 
-const productSchema = new mongoose.Schema({
-  name: {
-    type: String,
-    required: [true, 'Product name is required'],
-    unique: true,
-    trim: true,
-    maxlength: [100, 'Product name cannot exceed 100 characters']
-  },
-  description: {
-    type: String,
-    trim: true,
-    maxlength: [2000, 'Description cannot exceed 2000 characters']
-  },
-  price: {
-    type: Number,
-    required: [true, 'Price is required'],
-    min: [0.01, 'Price must be at least 0.01'],
-    set: v => parseFloat(v.toFixed(2)) // Always store 2 decimal places
-  },
-  image: {
-    type: String,
-    validate: {
-      validator: function(v) {
-        return (
-          /^\/images\/.+\.(jpg|jpeg|png|webp|gif)$/i.test(v) || 
-          /^[^/]+\.(jpg|jpeg|png|webp|gif)$/i.test(v) ||
-          /^(https?:\/\/).+\.(jpg|jpeg|png|webp|gif)$/i.test(v)
-        );
-      },
-      message: props => `${props.value} must be a valid image URL or a relative /images path!`
-    }
-  },
-  brand: {
-    type: String,
-    required: [true, 'Brand is required'],
-    trim: true,
-    maxlength: [50, 'Brand name cannot exceed 50 characters']
-  
-  
-  },
-  stock: {
-    type: Number,
-    default: 0,
-    min: [0, 'Stock cannot be negative']
-  },
-  categories: {
-    type: [String],
-    default: [],
-    validate: {
-      validator: function(v) {
-        return v.length <= 5; // Max 5 categories per product
-      },
-      message: 'Cannot have more than 5 categories'
-    }
-  },
-  isFeatured: {
-    type: Boolean,
-    default: false
-  },
-  
-  sku: {
-    type: String,
-    unique: true,
-    uppercase: true,
-    required: [true, 'SKU is required'],
-    match: [/^[A-Z0-9]{6,12}$/, 'SKU must be 6-12 alphanumeric characters']
-  },
-  
-  weight: {
-    value: Number,
-    unit: {
+const STATUS_VALUES = ['draft', 'active', 'archived'];
+
+const productSchema = new mongoose.Schema(
+  {
+    title: {
       type: String,
-      enum: ['g', 'kg', 'oz', 'lb'],
-      default: 'g'
-    }
-  },
-  ratings: {
-    average: {
-      type: Number,
-      min: [1, 'Rating must be at least 1'],
-      max: [5, 'Rating cannot exceed 5'],
-      default: 5
+      required: [true, 'Product title is required'],
+      trim: true,
+      maxlength: [200, 'Title cannot exceed 200 characters'],
     },
-    count: {
+    description: {
+      type: String,
+      trim: true,
+      maxlength: [4000, 'Description cannot exceed 4000 characters'],
+    },
+    price: {
       type: Number,
-      default: 0
-    }
+      required: [true, 'Price is required'],
+      min: [0, 'Price must be non-negative'],
+      set: (v) => Number.parseFloat(Number(v || 0).toFixed(2)),
+    },
+    status: {
+      type: String,
+      enum: STATUS_VALUES,
+      default: 'draft',
+      index: true,
+    },
+    category: {
+      type: String,
+      default: 'uncategorized',
+      trim: true,
+      maxlength: [100, 'Category cannot exceed 100 characters'],
+      index: true,
+    },
+    hero_image_url: {
+      type: String,
+      trim: true,
+    },
+    source_job: {
+      job_id: { type: String, trim: true, index: true },
+      subfolder: { type: String, trim: true },
+      manifest_url: { type: String, trim: true },
+      public_root: { type: String, trim: true },
+    },
+    version: {
+      type: String,
+      default: '1.0.0',
+      trim: true,
+    },
+    tags: {
+      type: [String],
+      default: [],
+      set: (vals = []) =>
+        (Array.isArray(vals) ? vals : [vals])
+          .map((t) => String(t || '').trim())
+          .filter(Boolean),
+      index: true,
+    },
+    sku: {
+      type: String,
+      trim: true,
+      maxlength: [64, 'SKU cannot exceed 64 characters'],
+      index: true,
+    },
+    freeze_assets: {
+      type: Boolean,
+      default: false,
+    },
+
+    // Legacy compatibility fields (kept so existing UI components continue to render)
+    brand: {
+      type: String,
+      default: 'HexForge',
+      trim: true,
+    },
+    stock: {
+      type: Number,
+      default: 0,
+      min: [0, 'Stock cannot be negative'],
+    },
+    isFeatured: {
+      type: Boolean,
+      default: false,
+    },
+  },
+  {
+    timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' },
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true },
   }
-}, { 
-  timestamps: true,
-  toJSON: { virtuals: true },
-  toObject: { virtuals: true }
-});
+);
 
-// Indexes for better query performance
-productSchema.index({ name: 'text', description: 'text' });
+productSchema.index({ title: 'text', description: 'text' });
 productSchema.index({ price: 1 });
-productSchema.index({ categories: 1 });
-productSchema.index({ isFeatured: 1 });
+productSchema.index({ category: 1 });
+productSchema.index({ tags: 1 });
+productSchema.index({ status: 1, created_at: -1 });
 
-// Virtual for formatted price
-productSchema.virtual('priceFormatted').get(function() {
+productSchema.virtual('priceFormatted').get(function priceFormatted() {
+  if (typeof this.price !== 'number') return '$0.00';
   return `$${this.price.toFixed(2)}`;
 });
 
-// Pre-save hook to generate SKU if not provided
-productSchema.pre('validate', function(next) {
-  if (!this.sku) {
-    this.sku = generateSKU(this.name || 'PRD');
-  }
-  next();
-});
+productSchema.virtual('name')
+  .get(function nameGetter() {
+    return this.title;
+  })
+  .set(function nameSetter(v) {
+    this.title = v;
+  });
 
-
-// Helper function to generate SKU
-function generateSKU(name) {
-  const randomNum = Math.floor(1000 + Math.random() * 9000); // 4-digit random
-  const initials = name
-    .split(' ')
-    .map(word => word[0])
-    .join('')
-    .toUpperCase()
-    .substring(0, 3)
-    .padEnd(3, 'X'); // If name is too short, pad with 'X'
-
-  return `${initials}${randomNum}`;
-}
-
+productSchema.virtual('image')
+  .get(function imageGetter() {
+    return this.hero_image_url;
+  })
+  .set(function imageSetter(v) {
+    this.hero_image_url = v;
+  });
 
 module.exports = mongoose.model('Product', productSchema);

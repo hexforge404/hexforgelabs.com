@@ -7,6 +7,8 @@ const Order = require('../models/Order');
 const multer = require('multer');
 const path = require('path');
 
+const STATUS_VALUES = ['draft', 'active', 'archived'];
+
 const uploadDir = path.join(__dirname, '../../frontend/public/images');
 const storage = multer.diskStorage({
   destination: uploadDir,
@@ -67,10 +69,18 @@ const validateProduct = [
 ];
 
 // GET all products
+function mapProduct(product) {
+  const obj = product.toObject({ virtuals: true });
+  obj.name = obj.name || obj.title;
+  obj.image = obj.image || obj.hero_image_url;
+  obj.priceFormatted = obj.priceFormatted || (typeof obj.price === 'number' ? `$${obj.price.toFixed(2)}` : '$0.00');
+  return obj;
+}
+
 router.get('/products', async (req, res) => {
   try {
-    const products = await Product.find().sort({ createdAt: -1 });
-    res.json(products);
+    const products = await Product.find().sort({ created_at: -1 });
+    res.json(products.map(mapProduct));
   } catch (err) {
     console.error('❌ Failed to fetch products:', err);
     res.status(500).json({
@@ -138,6 +148,54 @@ router.put('/products/:id', validateProduct, async (req, res) => {
     res.status(400).json({
       error: 'Failed to update product',
       details: err.message
+    });
+  }
+});
+
+// PATCH product (status + metadata)
+router.patch('/products/:id', async (req, res) => {
+  try {
+    const update = {};
+    if (req.body.title || req.body.name) update.title = (req.body.title || req.body.name || '').trim();
+    if (req.body.description) update.description = req.body.description;
+    if (req.body.category) update.category = req.body.category;
+    if (req.body.hero_image_url || req.body.image) update.hero_image_url = req.body.hero_image_url || req.body.image;
+    if (req.body.tags) {
+      update.tags = Array.isArray(req.body.tags)
+        ? req.body.tags
+        : String(req.body.tags)
+            .split(',')
+            .map((t) => t.trim())
+            .filter(Boolean);
+    }
+    if (req.body.price !== undefined) update.price = Number(req.body.price);
+
+    if (req.body.status) {
+      const desired = String(req.body.status).toLowerCase();
+      if (!STATUS_VALUES.includes(desired)) {
+        return res.status(400).json({ error: `Invalid status. Use one of: ${STATUS_VALUES.join(', ')}` });
+      }
+      update.status = desired;
+    }
+
+    const product = await Product.findByIdAndUpdate(
+      req.params.id,
+      {
+        ...update,
+      },
+      { new: true, runValidators: true }
+    );
+
+    if (!product) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    res.json(mapProduct(product));
+  } catch (err) {
+    console.error('❌ Failed to patch product', err);
+    res.status(400).json({
+      error: 'Failed to update product',
+      details: err.message,
     });
   }
 });
