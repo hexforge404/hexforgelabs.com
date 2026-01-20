@@ -112,21 +112,26 @@ app.use(mongoSanitize());
 // ======================
 // SESSION CONFIGURATION
 // ======================
+const useMemorySessionStore = process.env.NODE_ENV === 'test';
+const sessionStore = useMemorySessionStore
+  ? new session.MemoryStore()
+  : MongoStore.create({
+      mongoUrl: process.env.MONGO_URI,
+      ttl: 24 * 60 * 60,
+    });
+
 app.use(session({
-  secret: process.env.SESSION_SECRET,
+  secret: process.env.SESSION_SECRET || 'hexforge-test-secret',
   name: 'hexforge.sid',
   resave: false,
   saveUninitialized: false,
-  store: MongoStore.create({
-    mongoUrl: process.env.MONGO_URI,
-    ttl: 24 * 60 * 60
-  }),
-  cookie: { 
-    secure: process.env.NODE_ENV === 'production',
+  store: sessionStore,
+  cookie: {
+    secure: process.env.NODE_ENV === 'production' && !useMemorySessionStore,
     httpOnly: true,
     sameSite: 'lax',
-    maxAge: 24 * 60 * 60 * 1000
-  }
+    maxAge: 24 * 60 * 60 * 1000,
+  },
 }));
 
 // ======================
@@ -215,28 +220,31 @@ mongoose.connection.on('disconnected', () => {
   console.log('⚠️  MongoDB disconnected');
 });
 
-mongoose.connect(process.env.MONGO_URI, mongooseOptions)
-  .then(() => {
-    console.log('✅ MongoDB connected successfully');
-    
-    const server = app.listen(PORT, () => {
-      console.log(`🚀 Server running on port ${PORT}`);
-      console.log(`🛡️  CORS allowed origins: ${allowedOrigins.join(', ')}`);
-    });
+if (process.env.NODE_ENV !== 'test') {
+  mongoose
+    .connect(process.env.MONGO_URI, mongooseOptions)
+    .then(() => {
+      console.log('✅ MongoDB connected successfully');
 
-    process.on('SIGTERM', () => {
-      console.log('🛑 SIGTERM received. Shutting down gracefully...');
-      server.close(async () => {
-        await mongoose.connection.close();
-        console.log('🔒 MongoDB connection closed');
-        process.exit(0);
+      const server = app.listen(PORT, () => {
+        console.log(`🚀 Server running on port ${PORT}`);
+        console.log(`🛡️  CORS allowed origins: ${allowedOrigins.join(', ')}`);
       });
+
+      process.on('SIGTERM', () => {
+        console.log('🛑 SIGTERM received. Shutting down gracefully...');
+        server.close(async () => {
+          await mongoose.connection.close();
+          console.log('🔒 MongoDB connection closed');
+          process.exit(0);
+        });
+      });
+    })
+    .catch((err) => {
+      console.error('❌ MongoDB initial connection error:', err);
+      process.exit(1);
     });
-  })
-  .catch(err => {
-    console.error('❌ MongoDB initial connection error:', err);
-    process.exit(1);
-  });
+}
 
   
 
@@ -263,3 +271,5 @@ process.on('uncaughtException', (err) => {
   console.error('⚠️  Uncaught Exception:', err);
   process.exit(1);
 });
+
+module.exports = app;

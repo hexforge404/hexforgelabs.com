@@ -84,7 +84,7 @@ services:
       MEDIA_API_URL: http://hexforge-media-api:8700
       MEDIA_API_KEY: ${MEDIA_API_KEY}
       SURFACE_API_KEY: ${SURFACE_API_KEY:-}
-      SURFACE_DEFAULT_SUBFOLDER: ${SURFACE_DEFAULT_SUBFOLDER:-smoke-test}
+      SURFACE_DEFAULT_SUBFOLDER: ${SURFACE_DEFAULT_SUBFOLDER:-}
       SURFACE_OUTPUT_DIR: /var/www/hexforge3d/surface
 
     healthcheck:
