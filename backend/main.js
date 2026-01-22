@@ -18,6 +18,8 @@ require('dotenv').config();
 
 // Initialize app
 const app = express();
+// Disable ETag generation to prevent 304 responses on sensitive APIs like /api/admin/session
+app.set('etag', false);
 app.set('trust proxy', (ip) => {
   return ip === '127.0.0.1' || ip.startsWith('172.') || ip.startsWith('10.') || ip.includes('::ffff:'); 
 });
