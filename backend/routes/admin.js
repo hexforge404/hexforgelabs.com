@@ -39,10 +39,21 @@ const adminLimiter = rateLimit({
 });
 
 // 🔓 Session check endpoint (public – used by frontend to see if admin is logged in)
+const setNoCacheHeaders = (res) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
+  res.set('Surrogate-Control', 'no-store');
+  res.set('Vary', 'Origin');
+};
+
+// 🔓 Session check endpoint (public – used by frontend to see if admin is logged in)
 router.get('/session', (req, res) => {
   console.log('🔐 Session check from IP:', req.ip);
-  res.json({
+  setNoCacheHeaders(res);
+  res.status(200).json({
     loggedIn: !!req.session.admin?.loggedIn,
+    isAdmin: !!req.session.admin?.loggedIn,
     user: req.session.admin?.username || null
   });
 });
