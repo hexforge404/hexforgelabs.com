@@ -33,9 +33,10 @@ Each report includes:
 
 ## Naming Convention
 
-Files are named: `YYYY-MM-DD__<short-description>.md`
-
-Example: `2026-01-01__add-user-authentication.md`
+- Files MUST use the `.md` extension (CI ignores `.txt`).
+- Preferred pattern: `YYYY-MM-DD__<short-description>.md`
+	- Example: `2026-01-01__add-user-authentication.md`
+- For PR-specific reports, you can also use `pr-<number>-<slug>.diff.md`.
 
 ## When to Generate
 
