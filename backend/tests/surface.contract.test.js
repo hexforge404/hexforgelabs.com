@@ -32,7 +32,7 @@ describe("/api/surface contract proxy", () => {
     consoleErrorSpy.mockRestore();
   });
 
-  test("returns validated status with extras stripped", async () => {
+  test("proxies job creation payload without stripping upstream fields", async () => {
     fetchSpy.mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -55,11 +55,11 @@ describe("/api/surface contract proxy", () => {
       status: "queued",
       service: "glyphengine",
       updated_at: "2025-01-01T00:00:00Z",
+      extra: "remove-me",
     });
-    expect(res.body.extra).toBeUndefined();
   });
 
-  test("invalid upstream payload is wrapped as contract error", async () => {
+  test("status passthrough builds manifest_url and derived state", async () => {
     fetchSpy.mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -74,39 +74,18 @@ describe("/api/surface contract proxy", () => {
     const res = await request(app).get("/api/surface/jobs/bad-job");
 
     expect(fetchSpy).toHaveBeenCalledWith("http://glyphengine:8092/api/surface/jobs/bad-job", expect.any(Object));
-    expect(res.status).toBe(502);
-    expect(res.body).toEqual({
-      job_id: "bad-job",
-      status: "failed",
-      service: "glyphengine",
-      updated_at: expect.any(String),
-      error: {
-        code: "INVALID_JOB_STATUS",
-        detail: expect.stringContaining("service"),
-      },
-    });
+    expect(res.status).toBe(200);
+    expect(res.body.job_id).toBe("bad-job");
+    expect(res.body.status).toBe("queued");
+    expect(res.body.state).toBe("queued");
+    expect(res.body.progress).toBe(10);
+    expect(res.body.manifest_url).toBe("/assets/surface/bad-job/job_manifest.json");
   });
 
-  test("proxies docs without leaking internal hostname", async () => {
-    fetchSpy.mockResolvedValue(
-      new Response("<html>docs ok</html>", {
-        status: 200,
-        headers: { "Content-Type": "text/html" },
-      })
-    );
-
+  test("/docs route is not exposed via backend proxy", async () => {
     const res = await request(app).get("/api/surface/docs");
 
-    const [[fetchUrl, fetchOpts]] = fetchSpy.mock.calls;
-    expect(fetchUrl).toBe("http://glyphengine:8092/docs");
-    expect(fetchOpts).toEqual(
-      expect.objectContaining({
-        headers: expect.objectContaining({ Accept: "text/html" }),
-        signal: expect.any(Object),
-      })
-    );
-    expect(res.status).toBe(200);
-    expect(res.text).toContain("docs ok");
-    expect(res.text).not.toContain("glyphengine:8092");
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(res.status).toBe(404);
   });
 });
