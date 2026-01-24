@@ -11,12 +11,16 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile, Query
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, Query
 from fastapi.responses import JSONResponse
 
 from assistant.tools.heightmap_engine import generate_relief
 from assistant.tools.heightmap_jobs import (
+    ARTIFACTS,
+    BASE,
+    JOBS,
     UPLOADS,
+    ensure_dirs,
     create_job,
     delete_job,
     list_jobs,
@@ -27,6 +31,7 @@ from assistant.tools.render_previews import render_stl_previews
 
 # assistant/routes/heightmap.py
 router = APIRouter(prefix="/heightmap", tags=["heightmap"])
+HEIGHTMAP_API_KEY = os.getenv("HEIGHTMAP_API_KEY", "").strip()
 
 
 
@@ -47,6 +52,29 @@ OUTPUT_DIR = Path(os.getenv("HEIGHTMAP_OUTPUT_DIR", "/data/hexforge3d/output"))
 TMP_DIR = Path(os.getenv("HEIGHTMAP_TMP_DIR", "/tmp/hexforge-heightmap"))
 ENGINE_PYTHON = Path(os.getenv("HEIGHTMAP_ENGINE_PYTHON", "/data/hexforge3d/venv/bin/python"))
 PUBLIC_ASSETS_PREFIX = os.getenv("HEIGHTMAP_PUBLIC_PREFIX", "/assets/heightmap")
+
+
+def require_heightmap_api_key(request: Request):
+    """
+    Optional API-key enforcement. If HEIGHTMAP_API_KEY is empty, allow traffic.
+    Accepts header X-API-Key or query param api_key for local/dev friendliness.
+    """
+    if not HEIGHTMAP_API_KEY:
+        return None
+
+    supplied = (
+        request.headers.get("x-api-key")
+        or request.headers.get("x-api_key")
+        or request.query_params.get("api_key")
+    )
+
+    if supplied != HEIGHTMAP_API_KEY:
+        raise HTTPException(status_code=403, detail="heightmap API key invalid or missing")
+
+    return None
+
+
+router.dependencies.append(Depends(require_heightmap_api_key))
 
 
 
@@ -90,11 +118,71 @@ def _publish_to_assets(src_path: str | Path, out_name: str) -> dict[str, str]:
         "url": "/assets/heightmap/<file>"
       }
     """
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     src = Path(src_path)
-    dst = OUTPUT_DIR / out_name
+    if not src.exists():
+        raise RuntimeError(f"Source missing: {src}")
+    if src.is_symlink():
+        raise RuntimeError(f"Refusing to publish symlink: {src}")
+
+    output_root = OUTPUT_DIR.resolve()
+    if OUTPUT_DIR.exists() and OUTPUT_DIR.is_symlink():
+        raise RuntimeError(f"Refusing to write to symlinked output dir: {OUTPUT_DIR}")
+
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Keep filenames local-only and ensure the resolved destination stays under OUTPUT_DIR
+    safe_name = Path(out_name).name
+    dst = (OUTPUT_DIR / safe_name).resolve()
+    if output_root not in dst.parents and dst != output_root:
+        raise RuntimeError(f"Invalid destination outside OUTPUT_DIR: {dst}")
+
     shutil.copy2(src, dst)
-    return {"engine_path": str(dst), "url": f"{PUBLIC_ASSETS_PREFIX}/{out_name}"}
+    return {"engine_path": str(dst), "url": f"{PUBLIC_ASSETS_PREFIX}/{safe_name}"}
+
+
+def _engine_health_status() -> dict[str, Any]:
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    try:
+        ensure_dirs()
+        TMP_DIR.mkdir(parents=True, exist_ok=True)
+        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    except Exception as e:
+        errors.append(f"init_failed:{e}")
+
+    paths = {
+        "output_dir": OUTPUT_DIR,
+        "tmp_dir": TMP_DIR,
+        "jobs_base": BASE,
+        "uploads_dir": UPLOADS,
+        "jobs_meta_dir": JOBS,
+        "artifacts_dir": ARTIFACTS,
+    }
+
+    for label, path in paths.items():
+        if not path.exists():
+            errors.append(f"{label}_missing:{path}")
+            continue
+        if not path.is_dir():
+            errors.append(f"{label}_not_dir:{path}")
+            continue
+        if not os.access(path, os.W_OK):
+            errors.append(f"{label}_not_writable:{path}")
+
+    if ENGINE_PYTHON:
+        if not ENGINE_PYTHON.exists():
+            errors.append(f"engine_python_missing:{ENGINE_PYTHON}")
+        elif not os.access(ENGINE_PYTHON, os.X_OK):
+            errors.append(f"engine_python_not_executable:{ENGINE_PYTHON}")
+
+    return {
+        "ok": not errors,
+        "service": "heightmap",
+        "api": "heightmap-v1",
+        "errors": errors,
+        "warnings": warnings,
+    }
 
 
 # --------------------------------------------------------------------------------------
@@ -387,6 +475,11 @@ async def heightmap_tool_v1(
     trace_id = uuid.uuid4().hex
     api_version = "v1"
 
+    health = _engine_health_status()
+    if not health["ok"]:
+        health["trace_id"] = trace_id
+        return JSONResponse(status_code=503, content=health)
+
     if not image.filename:
         raise HTTPException(status_code=400, detail="Missing filename")
 
@@ -503,4 +596,6 @@ def hm_delete_job(job_id: str):
 
 @router.get("/health")
 def health():
-    return {"ok": True, "service": "heightmap", "api": "heightmap-v1"}
+    status = _engine_health_status()
+    code = 200 if status["ok"] else 503
+    return JSONResponse(status_code=code, content=status)

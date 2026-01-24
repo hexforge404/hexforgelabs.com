@@ -6,6 +6,14 @@ on:
       - main
       - develop
     types: [opened, synchronize, reopened]
+    paths:
+      - "schemas/**"
+      - "contracts/**"
+      - "engines/**"
+      - "src/hse/**"
+      - "backend/routes/surface.js"
+      - "backend/**/schema*.json"
+      - "**/*.schema.json"
 
 jobs:
   check-diff-report:
