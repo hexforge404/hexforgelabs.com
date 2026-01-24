@@ -152,16 +152,16 @@ function deriveMachineChecklist({ file, resp, jobStatus, previewUrl, stlUrl, ble
   const hasJobId = truthy(jobStatus?.id || job?.id);
   const inputLoaded = !!file;
   const jobQueued = hasJobId;
-  const surfaceBuilt = status === "done" || status === "running" || (progress ?? 0) > 0;
-  const geometryBuilt = truthy(stlUrl) || status === "done";
-  const previewsBuilt =
+  const heightmapGenerated =
+    status === "done" || status === "running" || (progress ?? 0) > 0 || truthy(previewUrl);
+  const previewsRendered =
+    truthy(previewUrl) ||
     truthy(blenderPreviews?.hero) ||
     truthy(blenderPreviews?.iso) ||
     truthy(blenderPreviews?.top) ||
     truthy(blenderPreviews?.side);
 
-  const inspectionReady = truthy(previewUrl) || previewsBuilt;
-  const extractionReady = truthy(stlUrl);
+  const exportReady = truthy(previewUrl) || truthy(stlUrl);
 
   return {
     status,
@@ -169,11 +169,9 @@ function deriveMachineChecklist({ file, resp, jobStatus, previewUrl, stlUrl, ble
     steps: [
       { key: "input", label: "INPUT LOADED", done: inputLoaded },
       { key: "queued", label: "JOB QUEUED", done: jobQueued },
-      { key: "surface", label: "SURFACE GENERATED", done: surfaceBuilt },
-      { key: "geo", label: "GEOMETRY BUILT", done: geometryBuilt },
-      { key: "prev", label: "PREVIEWS RENDERED", done: previewsBuilt },
-      { key: "inspect", label: "INSPECTION READY", done: inspectionReady },
-      { key: "extract", label: "EXTRACTION READY", done: extractionReady },
+      { key: "heightmap", label: "HEIGHTMAP GENERATED", done: heightmapGenerated },
+      { key: "prev", label: "PREVIEWS RENDERED", done: previewsRendered },
+      { key: "export", label: "EXPORT READY", done: exportReady },
     ],
   };
 }
@@ -208,7 +206,7 @@ export default function HeightmapPage() {
   const [jobsError, setJobsError] = useState("");
 
   // Results UI tabs
-  const [resultTab, setResultTab] = useState("surface"); // "surface" | "inspection"
+  const [resultTab, setResultTab] = useState("heightmap"); // "heightmap" | "previews"
 
   // ✅ selected row highlight
   const [selectedJobId, setSelectedJobId] = useState(null);
@@ -386,7 +384,7 @@ export default function HeightmapPage() {
       const job = await pollJob(data.status_url);
 
       setResp({ ok: true, result: job.result, job });
-      setResultTab("surface");
+      setResultTab("heightmap");
 
       // highlight current job in archive if it exists
       setSelectedJobId(job.id);
@@ -412,7 +410,7 @@ export default function HeightmapPage() {
     setResp(null);
     setError("");
     setJobStatus(null);
-    setResultTab("surface");
+    setResultTab("heightmap");
     setSelectedJobId(null);
   }
 
@@ -468,7 +466,7 @@ export default function HeightmapPage() {
     const job = data.job;
     setResp({ ok: true, result: job.result, job });
     setJobStatus({ id: job.id, status: job.status, progress: job.progress ?? 0 });
-    setResultTab("surface");
+    setResultTab("heightmap");
 
     // highlight selection
     setSelectedJobId(job.id);
@@ -533,9 +531,10 @@ export default function HeightmapPage() {
     <div className="hf-hm-page">
       {/* HEADER */}
       <div className="hf-hm-header">
-        <h1>HEXFORGE SURFACE ENGINE</h1>
-        <p className="hf-muted">
-          Load input → execute surface generation → inspect geometry → extract outputs.
+        <h1>HEXFORGE HEIGHTMAP ENGINE</h1>
+        <p className="hf-muted">Load input → generate heightmap → preview → export.</p>
+        <p className="hf-muted" style={{ marginTop: "0.35rem" }}>
+          Next step: use these results in the Surface Engine to generate geometry.
         </p>
       </div>
 
@@ -543,8 +542,9 @@ export default function HeightmapPage() {
       <div className="hf-hm-card hf-hm-machinebar">
         <div className="hf-hm-machinebar-grid">
           <div className="hf-hm-machinebar-title">
-            <div className="hf-hm-machinebar-brand">HEXFORGE TOOL PANEL</div>
-            <div className="hf-hm-machinebar-sub">SURFACE → GEOMETRY PIPELINE</div>
+            <div className="hf-hm-machinebar-brand">HEXFORGE HEIGHTMAP ENGINE</div>
+            <div className="hf-hm-machinebar-sub">HEIGHTMAP GENERATION PIPELINE</div>
+            <div className="hf-pill done">HEIGHTMAP</div>
           </div>
 
           <div className="hf-hm-machinebar-stats">
@@ -795,7 +795,7 @@ export default function HeightmapPage() {
 
         <div className="hf-hm-actions">
           <button className="hf-hm-btn primary" onClick={generate} disabled={loading}>
-            {loading ? `EXECUTING… ${jobStatus?.progress ?? 0}%` : "▶ EXECUTE SURFACE JOB"}
+            {loading ? `EXECUTING… ${jobStatus?.progress ?? 0}%` : "▶ EXECUTE HEIGHTMAP JOB"}
           </button>
 
           <button className="hf-hm-btn" onClick={reset} disabled={loading}>
@@ -822,7 +822,7 @@ export default function HeightmapPage() {
             <div className="hf-hm-links">
               {stlUrl && (
                 <a className="hf-hm-link" href={stlUrl} download>
-                  ⬇ EXTRACT STL
+                  ⬇ HEIGHT DATA EXPORT
                 </a>
               )}
               {manifestUrl && (
@@ -832,41 +832,41 @@ export default function HeightmapPage() {
               )}
               {previewUrl && (
                 <a className="hf-hm-link" href={previewUrl} target="_blank" rel="noreferrer">
-                  🔍 INSPECT SURFACE
+                  🔍 VIEW HEIGHTMAP
                 </a>
               )}
               {blenderPreviews?.hero && (
                 <a className="hf-hm-link" href={blenderPreviews.hero} target="_blank" rel="noreferrer">
-                  🔍 INSPECT GEOMETRY
+                  🔍 VIEW PREVIEW RENDERS
                 </a>
               )}
             </div>
 
             <div className="hf-hm-tabs">
-              <button className={`hf-hm-tab ${resultTab === "surface" ? "active" : ""}`} onClick={() => setResultTab("surface")}>
-                INPUT SURFACE
+              <button className={`hf-hm-tab ${resultTab === "heightmap" ? "active" : ""}`} onClick={() => setResultTab("heightmap")}>
+                HEIGHTMAP OUTPUT
               </button>
               <button
-                className={`hf-hm-tab ${resultTab === "inspection" ? "active" : ""}`}
-                onClick={() => setResultTab("inspection")}
+                className={`hf-hm-tab ${resultTab === "previews" ? "active" : ""}`}
+                onClick={() => setResultTab("previews")}
                 disabled={!blenderPreviews}
-                title={!blenderPreviews ? "No geometry previews for this job." : ""}
+                title={!blenderPreviews ? "No preview renders for this job." : ""}
               >
-                GEOMETRY OUTPUT {blenderStatus ? `• ${blenderStatus}` : ""}
+                PREVIEW RENDERS {blenderStatus ? `• ${blenderStatus}` : ""}
               </button>
             </div>
 
-            {resultTab === "surface" && previewImgSrc && (
+            {resultTab === "heightmap" && previewImgSrc && (
               <div className="hf-hm-preview">
-                <img src={previewImgSrc} alt="Surface inspection" style={previewStyle} />
+                <img src={previewImgSrc} alt="Heightmap preview" style={previewStyle} />
               </div>
             )}
 
-            {resultTab === "inspection" && (
+            {resultTab === "previews" && (
               <div className="hf-hm-previews">
                 {!blenderPreviews && (
                   <div className="hf-muted">
-                    No geometry inspection renders found for this job (older job, or preview generation failed).
+                    No preview renders found for this job (older job, or preview generation failed).
                   </div>
                 )}
 
@@ -928,12 +928,17 @@ export default function HeightmapPage() {
                     <button
                       className="hf-hm-btn small"
                       onClick={() => loadJob(j.id)}
-                      disabled={!done}
-                      title={!done ? "Job not complete yet." : ""}
+                      disabled={!done || !!jobsError}
+                      title={jobsError ? "Archive unavailable" : !done ? "Job not complete yet." : ""}
                     >
                       INSPECT
                     </button>
-                    <button className="hf-hm-btn small danger" onClick={() => deleteJob(j.id)}>
+                    <button
+                      className="hf-hm-btn small danger"
+                      onClick={() => deleteJob(j.id)}
+                      disabled={!!jobsError}
+                      title={jobsError ? "Archive unavailable" : ""}
+                    >
                       PURGE
                     </button>
                   </div>

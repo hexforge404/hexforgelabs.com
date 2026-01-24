@@ -2,14 +2,39 @@ import { toast } from 'react-toastify';
 import React, { useEffect, useState } from 'react';
 import { useCart } from 'context/CartContext';
 
+const FALLBACK_PRODUCTS = [
+  {
+    _id: 'fallback-1',
+    title: 'Surface Relief Case',
+    price: 129,
+    hero_image_url: '/images/hexforge-logo-removebg.png',
+    category: 'surface',
+  },
+  {
+    _id: 'fallback-2',
+    title: 'Relief Shell',
+    price: 89,
+    hero_image_url: '/images/hexforge-logo-removebg.png',
+    category: 'surface',
+  },
+];
+
+const normalizeProduct = (product) => {
+  const price = Number(product.price);
+  return {
+    ...product,
+    name: product.name || product.title || 'Untitled product',
+    image: product.image || product.hero_image_url || '',
+    priceFormatted: product.priceFormatted || (Number.isFinite(price) ? `$${price.toFixed(2)}` : '$0.00'),
+  };
+};
+
 const getImageSrc = (image) => {
   if (!image) {
     return process.env.PUBLIC_URL + '/images/hexforge-logo-removebg.png';
   }
   if (image.startsWith('http')) return image;
-  if (image.startsWith('/images/')) {
-    return process.env.PUBLIC_URL + image;
-  }
+  if (image.startsWith('/')) return image;
   return process.env.PUBLIC_URL + '/images/' + image;
 };
 
@@ -22,12 +47,18 @@ function ProductList() {
   useEffect(() => {
     async function fetchProducts() {
       try {
-        const res = await fetch('/api/products?raw=true');
+        const res = await fetch('/api/products');
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
         const data = await res.json();
-        setProducts(data);
+        const list = Array.isArray(data) ? data : Array.isArray(data.data) ? data.data : [];
+        const normalized = list.map(normalizeProduct);
+        setProducts(normalized.length ? normalized : FALLBACK_PRODUCTS.map(normalizeProduct));
       } catch (err) {
         console.error('❌ Error fetching products:', err);
         setError(true);
+        setProducts(FALLBACK_PRODUCTS.map(normalizeProduct));
       } finally {
         setLoading(false);
       }
@@ -70,18 +101,13 @@ function ProductList() {
     );
   }
 
-if (error) {
-  return (
-    <div style={{ textAlign: 'center', marginTop: '100px', color: '#ff4d4d' }}>
-      <h1 style={{ fontSize: '50px' }}>❌</h1>
-      <h2>Server Unavailable</h2>
-      <p style={{ color: '#ccc' }}>Please try refreshing the page later.</p>
-    </div>
-  );
-}
-
 return (
   <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', marginTop: '20px' }}>
+    {error && (
+      <div style={{ width: '100%', textAlign: 'center', marginBottom: '12px', color: '#ffb347' }}>
+        Live catalog unavailable. Showing fallback products.
+      </div>
+    )}
     {products.map((product) => (
       <div
         key={product._id}
