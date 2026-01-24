@@ -6,7 +6,13 @@ const path = require("path");
 
 const router = express.Router();
 
-const SURFACE_ENGINE_BASE = process.env.SURFACE_ENGINE_URL || "http://surface-engine:8092/api/surface";
+const RAW_SURFACE_ENGINE_BASE =
+  process.env.SURFACE_ENGINE_URL ||
+  process.env.GLYPHENGINE_URL ||
+  "http://surface-engine:8092/api/surface";
+const SURFACE_ENGINE_BASE = RAW_SURFACE_ENGINE_BASE.endsWith("/api/surface")
+  ? RAW_SURFACE_ENGINE_BASE
+  : `${RAW_SURFACE_ENGINE_BASE.replace(/\/$/, "")}/api/surface`;
 const BASIC_AUTH = process.env.SURFACE_ENGINE_BASIC_AUTH || "";
 const API_KEY = process.env.SURFACE_ENGINE_API_KEY || "";
 const SURFACE_API_KEY = process.env.SURFACE_API_KEY || "";

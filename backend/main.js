@@ -13,6 +13,7 @@ const toolRoutes = require('./routes/tools');
 const path = require('path');                   // ⬅️ move up here
 const uploadsRouter = require('./routes/uploads'); // ⬅️ and this
 const scriptLabRoutes = require('./routes/scriptLab');
+const surfaceRoutes = require('./routes/surface');
 
 require('dotenv').config();
 
@@ -154,10 +155,12 @@ const assistantSessionsRouter = require("./routes/assistantSessions");
 const assistantProjectsRouter = require("./routes/assistantProjects");
 const mediaRoutes = require("./routes/media");
 const toolsProxyRoutes = require("./routes/toolsProxy");
-const surfaceRoutes = require("./routes/surface");
+const heightmapRoutes = require("./routes/heightmap");
 
 
 app.use("/api/tools", toolsProxyRoutes);
+app.use('/api/surface', apiLimiter, surfaceRoutes);
+app.use('/api/heightmap', apiLimiter, heightmapRoutes);
 app.use("/api/media", apiLimiter, mediaRoutes);
 app.use("/api/assistant/projects", assistantProjectsRouter);
 app.use("/api/assistant-sessions", apiLimiter, assistantSessionsRouter);
