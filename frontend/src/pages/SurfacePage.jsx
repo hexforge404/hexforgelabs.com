@@ -14,6 +14,7 @@ import {
   getSurfaceJobStatus,
   getSurfaceManifest,
 } from "../services/surfaceApi";
+import { useAdmin } from "../context/AdminContext";
 import "./SurfacePage.css";
 
 // Phase 0 findings (2026-01-18): nginx serves /api/heightmap and /api/surface plus assets; heightmap flow returns public.heightmap_url; /surface currently posts only name/quality/notes with no heightmap selector.
@@ -73,13 +74,33 @@ function deriveProgress(state, rawProgress) {
 }
 
 function formatTs(value) {
-  if (!value) return "";
-  const ts = typeof value === "number" ? value * 1000 : value;
-  try {
-    return new Date(ts).toLocaleString();
-  } catch {
-    return String(value);
+  if (value === null || value === undefined || value === "") return "—";
+
+  const coerceDate = (maybeTs) => {
+    const date = new Date(maybeTs);
+    if (Number.isNaN(date.getTime())) return null;
+    return date.toLocaleString();
+  };
+
+  if (typeof value === "number") {
+    const ms = value < 1e12 ? value * 1000 : value;
+    return coerceDate(ms) || String(value);
   }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return "—";
+
+    const numeric = Number(trimmed);
+    if (Number.isFinite(numeric)) {
+      const ms = numeric < 1e12 ? numeric * 1000 : numeric;
+      return coerceDate(ms) || trimmed;
+    }
+
+    return coerceDate(trimmed) || trimmed;
+  }
+
+  return String(value);
 }
 
 function resolveSurfaceUrl(pathOrUrl) {
@@ -147,6 +168,21 @@ function deriveSubfolderFromUrl(manifestObj, manifestUrl, jobId) {
   return "";
 }
 
+function computeAssetsRoot(manifest) {
+  if (manifest?.assetsRoot) return manifest.assetsRoot;
+
+  const pub = manifest?.public || {};
+  const candidates = [manifest?.public_root, pub.public_root, manifest?.public_root_url].filter(Boolean);
+  if (candidates.length > 0) {
+    return String(candidates[0]).replace(/\/+$/, "");
+  }
+
+  if (manifest?.subfolder) {
+    return `${SURFACE_ASSET_BASE}/${manifest.subfolder}`.replace(/\/+$/, "");
+  }
+  return "";
+}
+
 function resolvePreviewsFromManifest(manifest) {
   const previews = manifest?.public?.previews || manifest?.public?.blender_previews_urls || {};
   const publicRoot = (manifest?.public_root || manifest?.public?.public_root || "").replace(/\/+$/, "");
@@ -174,7 +210,14 @@ function deriveOutputs(manifest, jobId, manifestUrlHint = "") {
     return jobId;
   })();
 
-  const rawList = Array.isArray(manifest?.outputs) ? manifest.outputs : [];
+  const rawList = Array.isArray(manifest?.outputs)
+    ? manifest.outputs
+    : manifest?.outputs && typeof manifest.outputs === "object"
+      ? Object.entries(manifest.outputs).map(([type, val]) => {
+          if (val && typeof val === "object") return { type, ...val };
+          return { type, url: val };
+        })
+      : [];
   const list = rawList.map((o) => ({ ...o, url: resolveOutputUrl(o, manifest) }));
 
   const outputsByType = {};
@@ -192,9 +235,12 @@ function deriveOutputs(manifest, jobId, manifestUrlHint = "") {
     return null;
   };
 
+  const candidateLabel = (o) => (o.url || o.path || o.public_url || o.name || o.label || "").toLowerCase();
+
   const manifestPreviews = resolvePreviewsFromManifest(manifest);
 
   const preview =
+    outputsByType.hero_png ||
     outputsByType.preview ||
     findFirst((o) => {
       const name = (o.name || o.label || "").toLowerCase();
@@ -205,7 +251,16 @@ function deriveOutputs(manifest, jobId, manifestUrlHint = "") {
       ? { url: manifestPreviews.hero, type: "preview.hero" }
       : null);
 
+  const productStl =
+    outputsByType.product_stl ||
+    findFirst((o) => {
+      const name = (o.name || o.label || o.url || "").toLowerCase();
+      const type = (o.type || "").toLowerCase();
+      return type === "product_stl" || name.includes("product") || name.endsWith("product.stl");
+    });
+
   const stl =
+    productStl ||
     outputsByType.stl ||
     findFirst((o) => {
       const name = (o.name || o.label || o.url || "").toLowerCase();
@@ -254,23 +309,81 @@ function deriveOutputs(manifest, jobId, manifestUrlHint = "") {
     heroUrl = `${SURFACE_ASSET_BASE}/${effectiveJobId}/previews/hero.png`;
   }
 
+  const caseBase =
+    outputsByType.case_base ||
+    outputsByType.pi4b_case_base ||
+    findFirst((o) => {
+      const name = candidateLabel(o);
+      return /case[_-]?base/.test(name) && name.includes(".stl");
+    });
+
+  const caseLid =
+    outputsByType.case_lid ||
+    outputsByType.pi4b_case_lid ||
+    findFirst((o) => {
+      const name = candidateLabel(o);
+      return /case[_-]?lid/.test(name) && name.includes(".stl");
+    });
+
+  const pi4bPanel =
+    outputsByType.pi4b_case_panel ||
+    findFirst((o) => {
+      const name = (o.name || o.label || o.url || "").toLowerCase();
+      return name.includes("pi4b_case_panel.stl") || name.includes("case_panel.stl") || name.includes("pi4b_case_panel");
+    });
+
   return {
     list,
     heroUrl: heroUrl || null,
     stlUrl: stl?.url || null,
+    productStlUrl: productStl?.url || stl?.url || null,
     textureUrl: texture?.url || null,
     heightmapUrl: heightmap?.url || null,
+    caseBaseUrl: caseBase?.url || null,
+    caseLidUrl: caseLid?.url || null,
+    casePanelUrl: pi4bPanel?.url || null,
   };
 }
 
-function summarizeMissingOutputs(derived, { includeOptional = false } = {}) {
+function summarizeMissingOutputs(derived, target, { includeOptional = false } = {}) {
   const missing = [];
-  if (!derived.heroUrl) missing.push("preview missing");
-  if (!derived.stlUrl) missing.push("stl missing");
-  if (includeOptional) {
-    if (!derived.textureUrl) missing.push("texture missing");
-    if (!derived.heightmapUrl) missing.push("heightmap missing");
+  const outputsList = Array.isArray(derived?.list) ? derived.list : [];
+  const normalizedTarget = String(target || "").toLowerCase();
+  const hasHero = !!derived?.heroUrl;
+
+  const hasMatch = (matcher) => {
+    return outputsList.some((o) => {
+      const candidate = (o?.url || o?.path || o?.public_url || o?.name || o?.label || "").toLowerCase();
+      return matcher(candidate);
+    });
+  };
+
+  if (!hasHero) missing.push("preview missing");
+
+  if (normalizedTarget === "board_case" || normalizedTarget.endsWith("_case")) {
+    const basePresent =
+      !!derived?.caseBaseUrl ||
+      hasMatch((val) => /case[_-]?base.*\.stl/.test(val));
+    const lidPresent =
+      !!derived?.caseLidUrl ||
+      hasMatch((val) => /case[_-]?lid.*\.stl/.test(val));
+
+    if (!basePresent) missing.push("case base missing");
+    if (!lidPresent) missing.push("case lid missing");
+  } else {
+    const stlPresent =
+      (!!derived?.stlUrl && derived.stlUrl.toLowerCase().includes(".stl")) ||
+      hasMatch((val) => val.includes("enclosure") && val.endsWith(".stl")) ||
+      hasMatch((val) => val.endsWith(".stl"));
+
+    if (!stlPresent) missing.push("stl missing");
   }
+
+  if (includeOptional) {
+    if (!derived?.textureUrl) missing.push("texture missing");
+    if (!derived?.heightmapUrl) missing.push("heightmap missing");
+  }
+
   return missing;
 }
 
@@ -299,25 +412,35 @@ export default function SurfacePage() {
     name: defaultJobName(),
     quality: "standard",
     notes: "",
+    target: "tile",
+    emboss_mode: "lid",
   });
 
   const [jobId, setJobId] = useState("");
   const [jobStatus, setJobStatus] = useState(null);
   const [manifest, setManifest] = useState(null);
   const [manifestUrl, setManifestUrl] = useState("");
-  const [outputs, setOutputs] = useState({ list: [], heroUrl: null, stlUrl: null, textureUrl: null, heightmapUrl: null });
+  const [outputs, setOutputs] = useState({
+    list: [],
+    heroUrl: null,
+    stlUrl: null,
+    productStlUrl: null,
+    textureUrl: null,
+    heightmapUrl: null,
+    caseBaseUrl: null,
+    caseLidUrl: null,
+    casePanelUrl: null,
+  });
   const [lastCreatePayload, setLastCreatePayload] = useState(null);
   const [loading, setLoading] = useState(false);
   const [polling, setPolling] = useState(false);
   const [error, setError] = useState("");
   const [artifactWarning, setArtifactWarning] = useState("");
+  const [missingRequiredOutputs, setMissingRequiredOutputs] = useState([]);
   const [outputsCheckedAt, setOutputsCheckedAt] = useState(null);
   const [timeoutHit, setTimeoutHit] = useState(false);
   const [startedAt, setStartedAt] = useState(null);
   const [previewBust, setPreviewBust] = useState(Date.now());
-
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [adminChecked, setAdminChecked] = useState(false);
   const [promoteOpen, setPromoteOpen] = useState(false);
   const [promoteSaving, setPromoteSaving] = useState(false);
   const [promoteError, setPromoteError] = useState("");
@@ -336,11 +459,35 @@ export default function SurfacePage() {
   const [heightmapError, setHeightmapError] = useState("");
   const [selectedHeightmapId, setSelectedHeightmapId] = useState("");
 
+  const { adminStatus, isAdmin, refreshAdmin } = useAdmin();
+  const adminChecking = adminStatus === "checking" || adminStatus === "unknown";
+  const adminKnown = adminStatus === "admin" || adminStatus === "not_admin";
+  const debugPromote = useMemo(
+    () => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("debugPromote") === "1",
+    []
+  );
+
+  const effectiveJobId = useMemo(() => {
+    return (
+      manifest?.job_id ||
+      manifest?.id ||
+      jobStatus?.job_id ||
+      jobStatus?.jobId ||
+      jobStatus?.id ||
+      jobStatus?.job?.id ||
+      jobId ||
+      ""
+    );
+  }, [manifest, jobStatus, jobId]);
+
   const heroUrl = useMemo(() => {
     return outputs.heroUrl ? `${outputs.heroUrl}?t=${previewBust}` : null;
   }, [outputs.heroUrl, previewBust]);
 
-  const stlUrl = useMemo(() => outputs.stlUrl, [outputs.stlUrl]);
+  const stlUrl = useMemo(() => outputs.stlUrl || outputs.productStlUrl, [outputs.stlUrl, outputs.productStlUrl]);
+  const caseBaseUrl = useMemo(() => outputs.caseBaseUrl, [outputs.caseBaseUrl]);
+  const caseLidUrl = useMemo(() => outputs.caseLidUrl, [outputs.caseLidUrl]);
+  const casePanelUrl = useMemo(() => outputs.casePanelUrl, [outputs.casePanelUrl]);
   const textureUrl = useMemo(() => outputs.textureUrl, [outputs.textureUrl]);
   const heightmapUrl = useMemo(() => outputs.heightmapUrl, [outputs.heightmapUrl]);
 
@@ -353,18 +500,42 @@ export default function SurfacePage() {
     return selectedHeightmap?.previewUrl || selectedHeightmap?.heightmapUrl || null;
   }, [selectedHeightmap]);
 
+  const target = useMemo(() => manifest?.target || manifest?.meta?.target || form.target, [manifest, form.target]);
+  const embossMode = useMemo(
+    () => manifest?.emboss_mode || manifest?.meta?.emboss_mode || form.emboss_mode,
+    [manifest, form.emboss_mode]
+  );
+
   const statusLabel = normalizeState(jobStatus?.state || jobStatus?.status || "idle");
   const progress = deriveProgress(statusLabel, jobStatus?.progress);
 
   const isComplete = statusLabel === "complete";
   const isFailed = statusLabel === "failed";
-  const missingOutputs = (isComplete || isFailed) && (outputs.list.length === 0 || !!artifactWarning);
+  const missingOutputs = (isComplete || isFailed) && missingRequiredOutputs.length > 0;
 
-  const derivedSubfolder = useMemo(() => deriveSubfolderFromUrl(manifest, manifestUrl, jobId), [manifest, manifestUrl, jobId]);
-  const canPromote = useMemo(() => {
-    if (!adminChecked) return false;
-    return isAdmin && isComplete && !!jobId && !!outputs.heroUrl && !!outputs.stlUrl;
-  }, [adminChecked, isAdmin, isComplete, jobId, outputs.heroUrl, outputs.stlUrl]);
+  const derivedSubfolder = useMemo(
+    () => deriveSubfolderFromUrl(manifest, manifestUrl, effectiveJobId),
+    [manifest, manifestUrl, effectiveJobId]
+  );
+
+  const promoteState = useMemo(() => {
+    if (!adminKnown || !isAdmin) return { ready: false, reason: "Admin only", assetsRoot: "" };
+
+    const missing = [];
+    if (!effectiveJobId) missing.push("Select a job first");
+    if (!isComplete) missing.push("Job not complete");
+    if (!manifest) missing.push("Manifest not loaded");
+
+    const assetsRoot = manifest?.assetsRoot || manifest?.public_root || manifest?.public?.public_root || "";
+    if (manifest && !assetsRoot) missing.push("assetsRoot missing: add public_root or subfolder");
+
+    const reason = missing[0] || "";
+    return {
+      ready: missing.length === 0,
+      reason,
+      assetsRoot,
+    };
+  }, [adminKnown, isAdmin, isComplete, manifest, effectiveJobId]);
 
   useEffect(() => {
     if (!jobId || !polling) return undefined;
@@ -451,28 +622,11 @@ export default function SurfacePage() {
     }
   }, []);
 
-  const ensureAdminSessionChecked = useMemo(() => {
-    let inFlight = null;
-    return async () => {
-      if (adminChecked) return isAdmin;
-      if (inFlight) return inFlight;
-      inFlight = (async () => {
-        try {
-          const res = await fetch("/api/admin/session", { credentials: "include" });
-          const data = await res.json();
-          setIsAdmin(!!data?.loggedIn);
-        } catch (err) {
-          if (DEBUG_MODE) console.warn("surface: admin session check failed", err);
-          setIsAdmin(false);
-        } finally {
-          setAdminChecked(true);
-          inFlight = null;
-        }
-        return isAdmin;
-      })();
-      return inFlight;
-    };
-  }, [adminChecked, isAdmin]);
+  useEffect(() => {
+    if (adminStatus === "unknown") {
+      refreshAdmin();
+    }
+  }, [adminStatus, refreshAdmin]);
 
   useEffect(() => {
     if (!DEBUG_MODE || !heroUrl) return undefined;
@@ -522,13 +676,18 @@ export default function SurfacePage() {
   }, [heroUrl]);
 
   useEffect(() => {
-    if (!jobId) return;
+    if (!effectiveJobId) return;
+    const promo = manifest?.promotion || {};
     setPromoteForm((prev) => ({
       ...prev,
-      title: prev.title || manifest?.meta?.name || manifest?.job_name || form.name || jobId,
-      description: prev.description || manifest?.meta?.description || manifest?.description || "",
+      title: prev.title || promo.title || manifest?.meta?.name || manifest?.job_name || form.name || effectiveJobId,
+      description: prev.description || promo.description || manifest?.meta?.description || manifest?.description || "",
+      category: prev.category || promo.categories?.[0] || "surface",
+      price: prev.price || promo.price || prev.price,
+      tags: prev.tags || (Array.isArray(promo.categories) ? promo.categories.join(", ") : promo.categories || prev.tags),
+      sku: prev.sku || promo.sku_seed || promo.sku || prev.sku,
     }));
-  }, [manifest, jobId, form.name]);
+  }, [manifest, effectiveJobId, form.name]);
 
   useEffect(() => {
     refreshHeightmapJobs();
@@ -596,8 +755,6 @@ export default function SurfacePage() {
       setHeightmapJobs([]);
     } finally {
       setHeightmapLoading(false);
-      // Run admin session check after the initial data fetch to avoid consuming the first fetch mock in tests
-      ensureAdminSessionChecked();
     }
   }
 
@@ -607,7 +764,17 @@ export default function SurfacePage() {
     setOutputsCheckedAt(null);
     setManifest(null);
     setManifestUrl("");
-    setOutputs({ list: [], heroUrl: null, stlUrl: null, textureUrl: null, heightmapUrl: null });
+    setOutputs({
+      list: [],
+      heroUrl: null,
+      stlUrl: null,
+      productStlUrl: null,
+      textureUrl: null,
+      heightmapUrl: null,
+      caseBaseUrl: null,
+      caseLidUrl: null,
+      casePanelUrl: null,
+    });
     setJobId("");
     setTimeoutHit(false);
     setJobStatus(null);
@@ -630,6 +797,8 @@ export default function SurfacePage() {
       mode: "relief",
       source_heightmap_url: selectedHeightmapUrl,
       source_heightmap_job_id: selectedHeightmap.id,
+      target: form.target,
+      emboss_mode: form.target === "pi4b_case" ? form.emboss_mode : undefined,
     };
 
     setLoading(true);
@@ -702,8 +871,10 @@ export default function SurfacePage() {
       resolveSurfaceUrl(mf.manifest_url || mf.meta?.manifest_url || mf.public?.job_manifest || manifestUrl || "");
 
     const derived = deriveOutputs(mf, jobId, manifestUrlResolved || manifestHint || "");
+    const targetForChecks = mf?.target || mf?.meta?.target || form.target;
+    const assetsRoot = computeAssetsRoot(mf);
     setManifestUrl(resolvedManifestUrl || "");
-    setManifest(mf);
+    setManifest({ ...mf, assetsRoot });
     setOutputs(derived);
     setPreviewBust(Date.now());
     setOutputsCheckedAt(Date.now());
@@ -720,27 +891,43 @@ export default function SurfacePage() {
       });
     }
 
-    const requiredWarnings = stateHint === "complete" ? summarizeMissingOutputs(derived, { includeOptional: false }) : [];
-    const optionalWarnings = summarizeMissingOutputs(derived, { includeOptional: true }).filter(
+    const requiredWarnings = stateHint === "complete" ? summarizeMissingOutputs(derived, targetForChecks, { includeOptional: false }) : [];
+    const optionalWarnings = summarizeMissingOutputs(derived, targetForChecks, { includeOptional: true }).filter(
       (item) => !requiredWarnings.includes(item)
     );
 
-    if (stateHint === "complete") {
-      const checks = await Promise.all([
-        derived.heroUrl ? validateAsset(derived.heroUrl) : Promise.resolve({ ok: false, reason: "missing" }),
-        derived.stlUrl ? validateAsset(derived.stlUrl) : Promise.resolve({ ok: false, reason: "missing" }),
-      ]);
+    const normalizedTarget = String(targetForChecks || "").toLowerCase();
 
-      if (!checks[0].ok && !requiredWarnings.find((w) => w.startsWith("preview"))) {
-        requiredWarnings.push(`preview ${checks[0].reason}`);
+    if (stateHint === "complete") {
+      const validationTargets = [];
+      if (derived.heroUrl) validationTargets.push({ label: "preview", url: derived.heroUrl });
+
+      if (normalizedTarget === "board_case" || normalizedTarget.endsWith("_case")) {
+        if (derived.caseBaseUrl) validationTargets.push({ label: "case base", url: derived.caseBaseUrl });
+        if (derived.caseLidUrl) validationTargets.push({ label: "case lid", url: derived.caseLidUrl });
+      } else if (derived.stlUrl) {
+        validationTargets.push({ label: "stl", url: derived.stlUrl });
       }
-      if (!checks[1].ok && !requiredWarnings.find((w) => w.startsWith("stl"))) {
-        requiredWarnings.push(`stl ${checks[1].reason}`);
-      }
+
+      const checks = await Promise.all(
+        validationTargets.map((item) =>
+          validateAsset(item.url)
+            .then((res) => ({ item, res }))
+            .catch((err) => ({ item, res: { ok: false, reason: err?.message || "error" } }))
+        )
+      );
+
+      checks.forEach(({ item, res }) => {
+        if (!res.ok) {
+          const label = `${item.label} ${res.reason}`.trim();
+          if (!requiredWarnings.includes(label)) requiredWarnings.push(label);
+        }
+      });
     }
 
     const warningText = [...requiredWarnings, ...optionalWarnings].join("; ");
     setArtifactWarning(warningText);
+    setMissingRequiredOutputs(requiredWarnings);
 
     if (stateHint === "complete") {
       if (requiredWarnings.length > 0) {
@@ -772,10 +959,15 @@ export default function SurfacePage() {
     setPromoteError("");
 
     try {
+      const assetsRoot = manifest?.assetsRoot || manifest?.public_root || manifest?.public?.public_root || "";
+      if (!manifest || !assetsRoot) {
+        throw new Error("Surface assets are not ready");
+      }
+
       const payload = {
-        job_id: jobId,
+        job_id: effectiveJobId || jobId,
         subfolder: derivedSubfolder || null,
-        title: promoteForm.title || form.name || jobId,
+        title: promoteForm.title || form.name || effectiveJobId || jobId,
         price: Number(promoteForm.price) || 0,
         category: promoteForm.category || "surface",
         description: promoteForm.description || null,
@@ -814,25 +1006,36 @@ export default function SurfacePage() {
     if (!manifest) return [];
     const meta = manifest.meta || manifest.metadata || {};
     return [
-      { label: "Job", value: manifest.job_id || jobId || "" },
+      { label: "Job", value: manifest.job_id || effectiveJobId || "" },
       { label: "Created", value: formatTs(meta.created_at || manifest.created_at) },
       { label: "Service", value: meta.service_version || manifest.service_version || "n/a" },
       { label: "Assets", value: SURFACE_ASSET_BASE },
       { label: "Manifest", value: manifestUrl || "" },
       { label: "Heightmap", value: selectedHeightmap?.name || "none" },
     ];
-  }, [manifest, jobId, selectedHeightmap, manifestUrl]);
+  }, [manifest, effectiveJobId, selectedHeightmap, manifestUrl]);
 
   function resetJob() {
     setJobId("");
     setJobStatus(null);
     setManifest(null);
     setManifestUrl("");
-    setOutputs({ list: [], heroUrl: null, stlUrl: null, textureUrl: null, heightmapUrl: null });
+    setOutputs({
+      list: [],
+      heroUrl: null,
+      stlUrl: null,
+      productStlUrl: null,
+      textureUrl: null,
+      heightmapUrl: null,
+      caseBaseUrl: null,
+      caseLidUrl: null,
+      casePanelUrl: null,
+    });
     setPolling(false);
     setTimeoutHit(false);
     setError("");
     setStartedAt(null);
+    setMissingRequiredOutputs([]);
     setPreviewBust(Date.now());
     setLastCreatePayload(null);
     setForm((prev) => ({ ...prev, name: defaultJobName() }));
@@ -963,6 +1166,35 @@ export default function SurfacePage() {
             </label>
 
             <label className="surface-label">
+              <span>Product target</span>
+              <select
+                value={form.target}
+                onChange={(e) => setForm({ ...form, target: e.target.value })}
+              >
+                <option value="tile">Relief Tile</option>
+                <option value="pi4b_case">Raspberry Pi 4B Case</option>
+              </select>
+            </label>
+
+            {form.target === "pi4b_case" && (
+              <label className="surface-label">
+                <span>Emboss mode</span>
+                <div className="surface-segmented">
+                  {["lid", "panel", "both"].map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      className={`surface-segment ${form.emboss_mode === mode ? "is-active" : ""}`}
+                      onClick={() => setForm({ ...form, emboss_mode: mode })}
+                    >
+                      {mode === "lid" ? "Lid" : mode === "panel" ? "Panel" : "Both"}
+                    </button>
+                  ))}
+                </div>
+              </label>
+            )}
+
+            <label className="surface-label">
               <span>Notes (optional)</span>
               <textarea
                 rows={3}
@@ -1012,8 +1244,8 @@ export default function SurfacePage() {
               <p className="surface-eyebrow">Live status</p>
               <h2>Pipeline monitor</h2>
             </div>
-            {jobId && (
-              <span className="surface-chip surface-chip-ghost">{jobId}</span>
+            {effectiveJobId && (
+              <span className="surface-chip surface-chip-ghost">{effectiveJobId}</span>
             )}
           </div>
 
@@ -1093,23 +1325,13 @@ export default function SurfacePage() {
               <h2>Downloads</h2>
             </div>
             <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+              {adminChecking && (
+                <span className="surface-chip surface-chip-ghost">Checking admin…</span>
+              )}
               {isComplete && <span className="surface-chip surface-chip-success">Complete</span>}
               {isComplete && (
                 <button type="button" className="surface-button surface-button-ghost" onClick={recheckOutputs}>
                   <RefreshCw size={14} /> Re-check outputs
-                </button>
-              )}
-              {canPromote && (
-                <button
-                  type="button"
-                  className="surface-button"
-                  onClick={() => {
-                    setPromoteError("");
-                    setPromoteOpen(true);
-                    ensureAdminSessionChecked();
-                  }}
-                >
-                  Promote to Product
                 </button>
               )}
             </div>
@@ -1126,19 +1348,67 @@ export default function SurfacePage() {
           )}
 
           <div className="surface-downloads">
-            <button
-              className="surface-download"
-              type="button"
-              onClick={() => stlUrl && window.open(stlUrl, "_blank")}
-              disabled={!stlUrl}
-            >
-              <FileDown size={18} />
-              <div>
-                <p>Enclosure STL</p>
-                <span>{stlUrl ? "Download" : missingOutputs ? "Missing from manifest" : "Unavailable"}</span>
-              </div>
-              <Download size={16} />
-            </button>
+            {target === "pi4b_case" ? (
+              <>
+                <button
+                  className="surface-download"
+                  type="button"
+                  onClick={() => caseBaseUrl && window.open(caseBaseUrl, "_blank")}
+                  disabled={!caseBaseUrl}
+                >
+                  <FileDown size={18} />
+                  <div>
+                    <p>Pi4B Base STL</p>
+                    <span>{caseBaseUrl ? "Download" : missingOutputs ? "Missing from manifest" : "Unavailable"}</span>
+                  </div>
+                  <Download size={16} />
+                </button>
+
+                <button
+                  className="surface-download"
+                  type="button"
+                  onClick={() => caseLidUrl && window.open(caseLidUrl, "_blank")}
+                  disabled={!caseLidUrl}
+                >
+                  <FileDown size={18} />
+                  <div>
+                    <p>Pi4B Lid STL</p>
+                    <span>{caseLidUrl ? "Download" : missingOutputs ? "Missing from manifest" : "Unavailable"}</span>
+                  </div>
+                  <Download size={16} />
+                </button>
+
+                {(embossMode === "panel" || embossMode === "both") && (
+                  <button
+                    className="surface-download"
+                    type="button"
+                    onClick={() => casePanelUrl && window.open(casePanelUrl, "_blank")}
+                    disabled={!casePanelUrl}
+                  >
+                    <FileDown size={18} />
+                    <div>
+                      <p>Pi4B Panel STL</p>
+                      <span>{casePanelUrl ? "Download" : missingOutputs ? "Missing from manifest" : "Unavailable"}</span>
+                    </div>
+                    <Download size={16} />
+                  </button>
+                )}
+              </>
+            ) : (
+              <button
+                className="surface-download"
+                type="button"
+                onClick={() => stlUrl && window.open(stlUrl, "_blank")}
+                disabled={!stlUrl}
+              >
+                <FileDown size={18} />
+                <div>
+                  <p>Enclosure STL</p>
+                  <span>{stlUrl ? "Download" : missingOutputs ? "Missing from manifest" : "Unavailable"}</span>
+                </div>
+                <Download size={16} />
+              </button>
+            )}
 
             <button
               className="surface-download"
@@ -1169,6 +1439,41 @@ export default function SurfacePage() {
             </button>
           </div>
         </section>
+
+        {isAdmin && (
+          <section className="surface-card" style={{ minWidth: "260px" }}>
+            <div className="surface-card-head">
+              <div>
+                <p className="surface-eyebrow">Admin</p>
+                <h2>Admin Tools</h2>
+              </div>
+              <span className="surface-chip surface-chip-ghost">Admin</span>
+            </div>
+
+            <p className="surface-muted" style={{ marginTop: "0.25rem" }}>
+              Draft a store product from this surface job.
+            </p>
+
+            <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginTop: "0.5rem" }}>
+              <button
+                type="button"
+                className="surface-button"
+                disabled={!promoteState.ready}
+                onClick={() => {
+                  setPromoteError("");
+                  setPromoteOpen(true);
+                  refreshAdmin();
+                }}
+              >
+                Promote to Product
+              </button>
+
+              {!promoteState.ready && promoteState.reason && (
+                <span className="surface-inline-error">Promote blocked: {promoteState.reason}</span>
+              )}
+            </div>
+          </section>
+        )}
 
         <section className="surface-card">
           <div className="surface-card-head">
