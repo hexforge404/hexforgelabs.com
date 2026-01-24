@@ -41,14 +41,5 @@
     "jest": "^29.7.0",
     "mongodb-memory-server": "^9.1.8",
     "supertest": "^7.1.1"
-  },
-  "jest": {
-    "testEnvironment": "node",
-    "roots": [
-      "<rootDir>/__tests__"
-    ],
-    "setupFilesAfterEnv": [
-      "<rootDir>/jest.setup.js"
-    ]
   }
 }
