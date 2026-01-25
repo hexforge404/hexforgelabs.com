@@ -278,6 +278,10 @@ const MainApp = () => {
               element={<UserAuthPage onAuth={setMember} />}
             />
             <Route
+              path="/register"
+              element={<UserAuthPage onAuth={setMember} initialMode="register" />}
+            />
+            <Route
               path="/account"
               element={
                 member ? <AccountPage /> : <Navigate to="/login" replace />
