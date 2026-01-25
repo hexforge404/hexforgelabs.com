@@ -12,8 +12,8 @@ const api = axios.create({
   timeout: 5000
 });
 
-const UserAuthPage = ({ onAuth }) => {
-  const [mode, setMode] = useState('login'); // 'login' | 'register'
+const UserAuthPage = ({ onAuth, initialMode = 'login' }) => {
+  const [mode, setMode] = useState(initialMode); // 'login' | 'register'
   const [identifier, setIdentifier] = useState('');
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
@@ -200,7 +200,8 @@ const UserAuthPage = ({ onAuth }) => {
 };
 
 UserAuthPage.propTypes = {
-  onAuth: PropTypes.func
+  onAuth: PropTypes.func,
+  initialMode: PropTypes.oneOf(['login', 'register'])
 };
 
 export default UserAuthPage;
