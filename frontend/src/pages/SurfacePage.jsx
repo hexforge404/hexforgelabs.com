@@ -13,6 +13,8 @@ import {
   createSurfaceJob,
   getSurfaceJobStatus,
   getSurfaceManifest,
+  getSurfaceLatest,
+  getHeightmapLatest,
 } from "../services/surfaceApi";
 import { useAdmin } from "../context/AdminContext";
 import "./SurfacePage.css";
@@ -23,15 +25,10 @@ const SURFACE_ASSET_BASE = (
   process.env.REACT_APP_SURFACE_ASSETS_URL || "/assets/surface"
 ).replace(/\/+$/, "");
 
-const HEIGHTMAP_API_BASE = (
-  process.env.REACT_APP_HEIGHTMAP_API_BASE || "/api/heightmap"
-).replace(/\/+$/, "");
-
 const HEIGHTMAP_ASSET_BASE = (
   process.env.REACT_APP_HEIGHTMAP_ASSETS_URL || "/assets/heightmap"
 ).replace(/\/+$/, "");
 
-const HEIGHTMAP_API_KEY = process.env.REACT_APP_HEIGHTMAP_API_KEY || "";
 const HEIGHTMAP_STORAGE_KEY = "surface:selectedHeightmapJobId";
 const IS_DEV = process.env.NODE_ENV !== "production";
 const DEBUG_QUERY = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
@@ -459,6 +456,10 @@ export default function SurfacePage() {
   const [heightmapError, setHeightmapError] = useState("");
   const [selectedHeightmapId, setSelectedHeightmapId] = useState("");
 
+  const [latestSurfaces, setLatestSurfaces] = useState([]);
+  const [latestLoading, setLatestLoading] = useState(false);
+  const [latestError, setLatestError] = useState("");
+
   const { adminStatus, isAdmin, refreshAdmin } = useAdmin();
   const adminChecking = adminStatus === "checking" || adminStatus === "unknown";
   const adminKnown = adminStatus === "admin" || adminStatus === "not_admin";
@@ -691,6 +692,7 @@ export default function SurfacePage() {
 
   useEffect(() => {
     refreshHeightmapJobs();
+    refreshLatestSurfaces();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -698,63 +700,86 @@ export default function SurfacePage() {
     setHeightmapLoading(true);
     setHeightmapError("");
     try {
-      const res = await fetch(`${HEIGHTMAP_API_BASE}/v1/jobs?limit=25&offset=0`, {
-        headers: HEIGHTMAP_API_KEY ? { "x-api-key": HEIGHTMAP_API_KEY } : undefined,
+      const data = await getHeightmapLatest(25);
+      const items = Array.isArray(data?.items) ? data.items : [];
+
+      const mapped = items.map((job) => {
+        const heightmapUrl = resolveHeightmapUrl(job.heightmap_url || job.heightmapUrl);
+        const previewUrl = resolveHeightmapUrl(
+          job.preview_url || job.previewUrl || job.heightmap_url || job.heightmapUrl || ""
+        );
+
+        return {
+          id: job.job_id || job.id,
+          name: job.job_name || job.name || job.jobId || job.job_id || job.id,
+          status: job.status || "complete",
+          created_at: job.created_at,
+          updated_at: job.updated_at,
+          heightmapUrl,
+          previewUrl,
+          manifestUrl: job.manifest_url || job.manifestUrl || null,
+          subfolder: job.subfolder || "",
+        };
       });
-      const data = await res.json();
-      if (!res.ok || !data?.ok) {
-        throw new Error(data?.detail || data?.error || `Heightmap jobs fetch failed (${res.status})`);
+
+      if (mapped.length === 0) {
+        setHeightmapJobs([]);
+        setSelectedHeightmapId("");
+        setHeightmapError("No completed heightmaps found");
+        return;
       }
 
-      const items = (data.jobs?.items || [])
-        .filter((job) => {
-          const status = String(job.status || "").toLowerCase();
-          return status === "done" || status === "complete" || status === "completed";
-        })
-        .map((job) => {
-          const pub = job.result?.public || job.public || {};
-          const previews = pub.blender_previews_urls || pub.previews || {};
-          const hero = previews.hero || previews.iso || previews.top || previews.side || pub.heightmap_url;
-          const heightmapUrl = resolveHeightmapUrl(pub.heightmap_url || job.result?.heightmap);
-          return {
-            id: job.id,
-            name: job.name || job.id,
-            status: job.status,
-            created_at: job.created_at,
-            updated_at: job.updated_at,
-            heightmapUrl,
-            previewUrl: resolveHeightmapUrl(hero || ""),
-          };
-        });
+      const valid = mapped.filter((j) => !!j.heightmapUrl);
 
-      setHeightmapJobs(items);
+      if (valid.length === 0) {
+        setHeightmapJobs(mapped);
+        setSelectedHeightmapId("");
+        setHeightmapError("No heightmap artifact found for the latest jobs");
+        return;
+      }
 
       const preferredId = (() => {
-        if (selectedHeightmapId && items.some((j) => j.id === selectedHeightmapId)) {
+        if (selectedHeightmapId && mapped.some((j) => j.id === selectedHeightmapId)) {
           return selectedHeightmapId;
         }
         try {
           const stored = window.localStorage.getItem(HEIGHTMAP_STORAGE_KEY);
-          if (stored && items.some((j) => j.id === stored)) return stored;
+          if (stored && mapped.some((j) => j.id === stored)) return stored;
         } catch {
           /* ignore */
         }
-        return items[0]?.id || "";
+        return valid[0]?.id || "";
       })();
 
-      if (preferredId) {
-        setSelectedHeightmapId(preferredId);
-        try {
-          window.localStorage.setItem(HEIGHTMAP_STORAGE_KEY, preferredId);
-        } catch {
-          /* ignore */
-        }
+      setHeightmapJobs(mapped);
+      setSelectedHeightmapId(preferredId);
+      try {
+        window.localStorage.setItem(HEIGHTMAP_STORAGE_KEY, preferredId);
+      } catch {
+        /* ignore */
       }
     } catch (err) {
-      setHeightmapError(err?.message || "Failed to load heightmap jobs.");
+      const endpointMissing = err?.endpointNotFound || err?.status === 404;
+      setHeightmapError(endpointMissing ? "Endpoint not found" : err?.message || "Failed to load heightmap jobs.");
       setHeightmapJobs([]);
+      setSelectedHeightmapId("");
     } finally {
       setHeightmapLoading(false);
+    }
+  }
+
+  async function refreshLatestSurfaces(limit = 10) {
+    setLatestLoading(true);
+    setLatestError("");
+    try {
+      const data = await getSurfaceLatest(limit);
+      const items = Array.isArray(data?.items) ? data.items : [];
+      setLatestSurfaces(items);
+    } catch (err) {
+      setLatestError(err?.message || "Failed to load latest surface jobs.");
+      setLatestSurfaces([]);
+    } finally {
+      setLatestLoading(false);
     }
   }
 
@@ -1102,8 +1127,9 @@ export default function SurfacePage() {
                     disabled={heightmapLoading || loading || heightmapJobs.length === 0}
                   >
                     {heightmapJobs.map((job) => (
-                      <option key={job.id} value={job.id}>
+                      <option key={job.id} value={job.id} disabled={!job.heightmapUrl}>
                         {job.name} - {formatTs(job.updated_at || job.created_at)}
+                        {!job.heightmapUrl ? " (no heightmap artifact)" : ""}
                       </option>
                     ))}
                     {heightmapJobs.length === 0 && <option value="">No completed heightmaps found</option>}
@@ -1437,6 +1463,147 @@ export default function SurfacePage() {
               </div>
               <Download size={16} />
             </button>
+          </div>
+        </section>
+
+        <section className="surface-card">
+          <div className="surface-card-head">
+            <div>
+              <p className="surface-eyebrow">Latest outputs</p>
+              <h2>Recent surface jobs</h2>
+            </div>
+            <button
+              type="button"
+              className="surface-button surface-button-ghost"
+              onClick={() => refreshLatestSurfaces()}
+              disabled={latestLoading}
+            >
+              {latestLoading ? (
+                <>
+                  <RefreshCw className="spin" size={14} /> Refreshing
+                </>
+              ) : (
+                <>
+                  <RefreshCw size={14} /> Refresh
+                </>
+              )}
+            </button>
+          </div>
+
+          {latestError && (
+            <div className="surface-alert surface-alert-error" style={{ marginBottom: "0.75rem" }}>
+              <AlertTriangle size={18} />
+              <div>
+                <p className="surface-alert-title">Latest outputs unavailable</p>
+                <p className="surface-alert-body">{latestError}</p>
+              </div>
+            </div>
+          )}
+
+          {latestLoading && <p className="surface-muted">Loading recent surface jobs…</p>}
+
+          {!latestLoading && latestSurfaces.length === 0 && !latestError && (
+            <div className="surface-placeholder">
+              <ImageIcon size={20} />
+              <p>No recent surface jobs found.</p>
+            </div>
+          )}
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+              gap: "0.75rem",
+            }}
+          >
+            {latestSurfaces.map((item) => {
+              const badge = item.subfolder ? `${item.subfolder}/${item.job_id}` : item.job_id || item.job_name || "job";
+              const manifestUrl = item.manifest_url ? resolveSurfaceUrl(item.manifest_url) : item.public_root ? resolveSurfaceUrl(`${item.public_root}/job_manifest.json`) : null;
+              const heroSrc = item.hero_url ? resolveSurfaceUrl(item.hero_url) : null;
+              const stlSrc = item.stl_url ? resolveSurfaceUrl(item.stl_url) : null;
+              const itemKey = `${item.subfolder || "root"}-${item.job_id || item.job_name || manifestUrl || badge}`;
+
+              return (
+                <div
+                  key={itemKey}
+                  style={{
+                    border: "1px solid #1f2733",
+                    borderRadius: "12px",
+                    padding: "0.75rem",
+                    display: "flex",
+                    gap: "0.75rem",
+                    alignItems: "stretch",
+                    background: "#0c1118",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: "120px",
+                      height: "90px",
+                      borderRadius: "8px",
+                      background: "#0f141d",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      overflow: "hidden",
+                      flexShrink: 0,
+                    }}
+                  >
+                    {heroSrc ? (
+                      <img
+                        src={heroSrc}
+                        alt="Latest surface preview"
+                        style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                        onError={() => setLatestError((prev) => prev || "Preview failed to load")}
+                      />
+                    ) : (
+                      <div className="surface-placeholder" style={{ height: "100%", width: "100%", border: "none" }}>
+                        <ImageIcon size={18} />
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem", flex: "1 1 auto" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: "0.5rem", alignItems: "flex-start" }}>
+                      <p className="surface-k" style={{ margin: 0, fontWeight: 600 }}>
+                        {item.job_name || item.job_id || "Surface job"}
+                      </p>
+                      <span className="surface-chip surface-chip-ghost">{badge}</span>
+                    </div>
+                    <p className="surface-muted" style={{ margin: 0 }}>Created {formatTs(item.created_at)}</p>
+                    {item.target && (
+                      <p className="surface-muted" style={{ margin: 0 }}>Target: {item.target}</p>
+                    )}
+                    <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginTop: "0.25rem" }}>
+                      <button
+                        type="button"
+                        className="surface-button surface-button-ghost"
+                        onClick={() => manifestUrl && window.open(manifestUrl, "_blank")}
+                        disabled={!manifestUrl}
+                      >
+                        <FileDown size={14} /> Manifest
+                      </button>
+                      <button
+                        type="button"
+                        className="surface-button surface-button-ghost"
+                        onClick={() => heroSrc && window.open(heroSrc, "_blank")}
+                        disabled={!heroSrc}
+                      >
+                        <ImageIcon size={14} /> Preview
+                      </button>
+                      <button
+                        type="button"
+                        className="surface-button surface-button-ghost"
+                        onClick={() => stlSrc && window.open(stlSrc, "_blank")}
+                        disabled={!stlSrc}
+                      >
+                        <Download size={14} /> STL
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </section>
 
