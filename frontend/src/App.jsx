@@ -6,7 +6,8 @@ import {
   BrowserRouter as Router,
   Routes,
   Route,
-  Navigate
+  Navigate,
+  useLocation
 } from 'react-router-dom';
 
 import { useCart } from 'context/CartContext';
@@ -29,6 +30,7 @@ import ScriptLabPage from 'pages/ScriptLabPage';
 import MemoryPage from 'pages/MemoryPage';
 import AssistantPage from 'pages/AssistantPage';
 import SurfacePage from "./pages/SurfacePage";
+import { AdminProvider } from './context/AdminContext';
 
 import UserAuthPage from 'pages/UserAuthPage';    // ✅ member login/register
 import AccountPage from 'pages/AccountPage';      // ✅ member account
@@ -137,6 +139,7 @@ StorePage.propTypes = {
 };
 
 const MainApp = () => {
+  const location = useLocation();
   const [isDrawerOpen, setDrawerOpen] = useState(false);
   const { cart } = useCart();
 
@@ -168,6 +171,9 @@ const MainApp = () => {
   useEffect(() => {
     loadMember();
   }, []);
+
+  const isSurfaceRoute = location.pathname.startsWith('/surface');
+  const containerClassName = isSurfaceRoute ? 'app-container app-container--wide' : 'app-container';
 
   const handleAdminLogout = async () => {
     try {
@@ -227,7 +233,7 @@ const MainApp = () => {
           onMemberLogout={handleMemberLogout}
         />
 
-        <div className="app-container">
+        <div className={containerClassName}>
           <Routes>
             <Route path="/" element={<HomePage />} />
 
@@ -307,7 +313,9 @@ const MainApp = () => {
 
 const App = () => (
   <Router>
-    <MainApp />
+    <AdminProvider>
+      <MainApp />
+    </AdminProvider>
   </Router>
 );
 
