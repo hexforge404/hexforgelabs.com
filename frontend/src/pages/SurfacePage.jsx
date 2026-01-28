@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "react-toastify";
 import {
   AlertTriangle,
@@ -17,6 +17,9 @@ import {
   getHeightmapLatest,
 } from "../services/surfaceApi";
 import { useAdmin } from "../context/AdminContext";
+import Panel from "../components/Panel";
+import PreviewGallery from "../components/PreviewGallery";
+import StlViewer from "../components/StlViewer";
 import "./SurfacePage.css";
 
 // Phase 0 findings (2026-01-18): nginx serves /api/heightmap and /api/surface plus assets; heightmap flow returns public.heightmap_url; /surface currently posts only name/quality/notes with no heightmap selector.
@@ -419,6 +422,7 @@ export default function SurfacePage() {
   const [manifestUrl, setManifestUrl] = useState("");
   const [outputs, setOutputs] = useState({
     list: [],
+    previewUrls: { hero: null, iso: null, top: null, side: null },
     heroUrl: null,
     stlUrl: null,
     productStlUrl: null,
@@ -451,6 +455,9 @@ export default function SurfacePage() {
     freeze_assets: true,
   });
 
+  const autoRecheckRef = useRef(false);
+  const previewRetryRef = useRef(0);
+
   const [heightmapJobs, setHeightmapJobs] = useState([]);
   const [heightmapLoading, setHeightmapLoading] = useState(false);
   const [heightmapError, setHeightmapError] = useState("");
@@ -481,9 +488,21 @@ export default function SurfacePage() {
     );
   }, [manifest, jobStatus, jobId]);
 
+  const previewUrls = useMemo(() => {
+    const map = outputs.previewUrls || {};
+    const applyBust = (url) => (url ? `${url}?t=${previewBust}` : null);
+    return {
+      hero: applyBust(map.hero || outputs.heroUrl || null),
+      iso: applyBust(map.iso || null),
+      top: applyBust(map.top || null),
+      side: applyBust(map.side || null),
+    };
+  }, [outputs.previewUrls, outputs.heroUrl, previewBust]);
+
   const heroUrl = useMemo(() => {
+    if (previewUrls.hero) return previewUrls.hero;
     return outputs.heroUrl ? `${outputs.heroUrl}?t=${previewBust}` : null;
-  }, [outputs.heroUrl, previewBust]);
+  }, [previewUrls.hero, outputs.heroUrl, previewBust]);
 
   const stlUrl = useMemo(() => outputs.stlUrl || outputs.productStlUrl, [outputs.stlUrl, outputs.productStlUrl]);
   const caseBaseUrl = useMemo(() => outputs.caseBaseUrl, [outputs.caseBaseUrl]);
@@ -491,6 +510,16 @@ export default function SurfacePage() {
   const casePanelUrl = useMemo(() => outputs.casePanelUrl, [outputs.casePanelUrl]);
   const textureUrl = useMemo(() => outputs.textureUrl, [outputs.textureUrl]);
   const heightmapUrl = useMemo(() => outputs.heightmapUrl, [outputs.heightmapUrl]);
+  const stlViewerUrls = useMemo(
+    () => ({
+      main: stlUrl,
+      base: caseBaseUrl,
+      lid: caseLidUrl,
+      panel: casePanelUrl,
+    }),
+    [stlUrl, caseBaseUrl, caseLidUrl, casePanelUrl]
+  );
+  const resolvedManifestUrl = useMemo(() => (manifestUrl ? resolveSurfaceUrl(manifestUrl) : null), [manifestUrl]);
 
   const selectedHeightmap = useMemo(
     () => heightmapJobs.find((j) => j.id === selectedHeightmapId) || null,
@@ -538,6 +567,8 @@ export default function SurfacePage() {
     };
   }, [adminKnown, isAdmin, isComplete, manifest, effectiveJobId]);
 
+  const promoteBlockedReason = promoteState.ready ? "" : promoteState.reason || "";
+
   useEffect(() => {
     if (!jobId || !polling) return undefined;
 
@@ -558,17 +589,32 @@ export default function SurfacePage() {
         const statusResp = await getSurfaceJobStatus(jobId);
         if (cancelled) return;
 
-        const state = normalizeState(statusResp.state || statusResp.status);
-        const next = { ...statusResp, state, status: state, progress: deriveProgress(state, statusResp.progress) };
-        setJobStatus(next);
+        const state = normalizeState(statusResp?.state || statusResp?.status || "unknown");
+        const progressVal = deriveProgress(state, statusResp?.progress);
+        const manifestFromStatus = statusResp?.manifest || statusResp?.public || null;
 
-        const manifestFromStatus = next.manifest || next.result?.manifest;
+        setJobStatus({
+          ...statusResp,
+          state,
+          progress: progressVal,
+          job_id: statusResp?.job_id || statusResp?.jobId || jobId,
+        });
+
         const manifestUrlHint =
-          next.manifest_url ||
           manifestFromStatus?.manifest_url ||
           manifestFromStatus?.public?.job_manifest ||
+          statusResp?.manifest_url ||
+          statusResp?.public?.job_manifest ||
           manifestUrl ||
           "";
+
+        if (manifestFromStatus) {
+          const derived = deriveOutputs(manifestFromStatus, jobId, manifestUrlHint || manifestUrl || "");
+          if (derived?.heroUrl || (derived?.list || []).length > 0) {
+            setOutputs(derived);
+            setPreviewBust(Date.now());
+          }
+        }
 
         if (manifestUrlHint) {
           const resolvedHint = resolveSurfaceUrl(manifestUrlHint);
@@ -613,6 +659,31 @@ export default function SurfacePage() {
       if (timer) clearTimeout(timer);
     };
   }, [jobId, polling, startedAt, manifest, manifestUrl]);
+
+  useEffect(() => {
+    if (statusLabel !== "complete") {
+      previewRetryRef.current = 0;
+      return undefined;
+    }
+
+    if (outputs.heroUrl) return undefined;
+    if (!manifest && !manifestUrl) return undefined;
+    if (previewRetryRef.current >= 6) return undefined;
+
+    const attempt = previewRetryRef.current + 1;
+    const delay = Math.min(15000, 1000 + attempt * 2500);
+
+    const timer = setTimeout(async () => {
+      previewRetryRef.current += 1;
+      try {
+        await fetchAndApplyManifest(manifestUrl, null, "complete", { allowMissing: true });
+      } catch (err) {
+        if (DEBUG_MODE) console.warn("preview auto-recheck failed", err);
+      }
+    }, delay);
+
+    return () => clearTimeout(timer);
+  }, [statusLabel, outputs.heroUrl, manifestUrl, manifest]);
 
   useEffect(() => {
     try {
@@ -791,6 +862,7 @@ export default function SurfacePage() {
     setManifestUrl("");
     setOutputs({
       list: [],
+      previewUrls: { hero: null, iso: null, top: null, side: null },
       heroUrl: null,
       stlUrl: null,
       productStlUrl: null,
@@ -807,6 +879,7 @@ export default function SurfacePage() {
     setStartedAt(null);
     setPreviewBust(Date.now());
     setLastCreatePayload(null);
+    autoRecheckRef.current = false;
 
     if (!selectedHeightmap || !selectedHeightmap.heightmapUrl) {
       setError("Select a completed heightmap first.");
@@ -958,6 +1031,13 @@ export default function SurfacePage() {
       if (requiredWarnings.length > 0) {
         setJobStatus((prev) => ({ ...(prev || {}), state: "failed", status: "failed", progress: deriveProgress("failed") }));
         setError(warningText || "Manifest outputs are missing or invalid.");
+
+        if (!autoRecheckRef.current) {
+          autoRecheckRef.current = true;
+          setTimeout(() => {
+            fetchAndApplyManifest(manifestUrlResolved || manifestHint || manifestUrl || "", mf, "complete", { allowMissing: false }).catch(() => {});
+          }, 1500);
+        }
       } else {
         setJobStatus((prev) => ({ ...(prev || {}), state: "complete", status: "complete", progress: deriveProgress("complete", prev?.progress) }));
         setError(optionalWarnings.length ? optionalWarnings.join("; ") : "");
@@ -1035,10 +1115,10 @@ export default function SurfacePage() {
       { label: "Created", value: formatTs(meta.created_at || manifest.created_at) },
       { label: "Service", value: meta.service_version || manifest.service_version || "n/a" },
       { label: "Assets", value: SURFACE_ASSET_BASE },
-      { label: "Manifest", value: manifestUrl || "" },
+      { label: "Manifest", value: resolvedManifestUrl || manifestUrl || "" },
       { label: "Heightmap", value: selectedHeightmap?.name || "none" },
     ];
-  }, [manifest, effectiveJobId, selectedHeightmap, manifestUrl]);
+  }, [manifest, effectiveJobId, selectedHeightmap, manifestUrl, resolvedManifestUrl]);
 
   function resetJob() {
     setJobId("");
@@ -1047,6 +1127,7 @@ export default function SurfacePage() {
     setManifestUrl("");
     setOutputs({
       list: [],
+      previewUrls: { hero: null, iso: null, top: null, side: null },
       heroUrl: null,
       stlUrl: null,
       productStlUrl: null,
@@ -1065,667 +1146,657 @@ export default function SurfacePage() {
     setLastCreatePayload(null);
     setForm((prev) => ({ ...prev, name: defaultJobName() }));
   }
-
   return (
     <div className="surface-page">
-      <div className="surface-header">
-        <div>
-          {/* Engine Identity: consumes heightmaps to produce modular, functional enclosure geometry (Raspberry Pi-first). */}
-          <p className="surface-eyebrow">Surface Engine</p>
-          <h1>Generate Relief</h1>
-          <p className="surface-lede">
-            Launch a surface job, watch status in real-time, and grab previews and meshes
-            directly from the assets bucket.
-          </p>
-        </div>
-        <div className="surface-chip">
-          <Sparkles size={18} />
-          <span>Stabilized API</span>
-        </div>
-      </div>
-
-      <div className="surface-grid">
-        <section className="surface-card">
-          <div className="surface-card-head">
+      <div className="surface-wrap">
+        <main className="surface-main">
+          <div className="surface-header">
             <div>
-              <p className="surface-eyebrow">Job setup</p>
-              <h2>Surface parameters</h2>
+              <p className="surface-eyebrow">Surface Engine</p>
+              <h1>Surface Control</h1>
+              <p className="surface-lede">
+                Launch a surface job, monitor live progress, and browse previews and meshes directly from the bucket.
+              </p>
             </div>
-            <button
-              className="surface-button"
-              onClick={startJob}
-              disabled={loading}
-              type="button"
-            >
-              {loading ? (
-                <>
-                  <RefreshCw className="spin" size={16} /> Running...
-                </>
-              ) : (
-                <>
-                  <Sparkles size={16} /> Generate Relief
-                </>
-              )}
-            </button>
+            <div className="surface-chip">
+              <Sparkles size={18} />
+              <span>Stabilized API</span>
+            </div>
           </div>
 
-          <div className="surface-form">
-            <div className="surface-heightmap-box">
-              <div className="surface-label">
-                <span>Input heightmap</span>
-                <div className="surface-heightmap-row">
-                  <select
-                    value={selectedHeightmapId}
-                    onChange={(e) => {
-                      setSelectedHeightmapId(e.target.value);
-                      try {
-                        window.localStorage.setItem(HEIGHTMAP_STORAGE_KEY, e.target.value);
-                      } catch {
-                        /* ignore */
-                      }
-                    }}
-                    disabled={heightmapLoading || loading || heightmapJobs.length === 0}
-                  >
-                    {heightmapJobs.map((job) => (
-                      <option key={job.id} value={job.id} disabled={!job.heightmapUrl}>
-                        {job.name} - {formatTs(job.updated_at || job.created_at)}
-                        {!job.heightmapUrl ? " (no heightmap artifact)" : ""}
-                      </option>
-                    ))}
-                    {heightmapJobs.length === 0 && <option value="">No completed heightmaps found</option>}
-                  </select>
-                  <button
-                    type="button"
-                    className="surface-button surface-button-ghost"
-                    onClick={refreshHeightmapJobs}
-                    disabled={heightmapLoading}
-                  >
-                    {heightmapLoading ? (
-                      <>
-                        <RefreshCw className="spin" size={14} /> Refreshing
-                      </>
-                    ) : (
-                      <>
-                        <RefreshCw size={14} /> Refresh
-                      </>
-                    )}
+          <div className="surface-layout controlGrid">
+            <Panel
+              eyebrow="Job setup"
+              title="Surface parameters"
+              className="surface-pane surface-pane--setup"
+              actions={(
+                <button className="surface-button" onClick={startJob} disabled={loading} type="button">
+                  {loading ? (
+                    <>
+                      <RefreshCw className="spin" size={16} /> Running…
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles size={16} /> Generate Relief
+                    </>
+                  )}
+                </button>
+              )}
+            >
+              <div className="surface-form-grid">
+                <div className="surface-field surface-field--heightmap">
+                  <div className="surface-heightmap-box">
+                    <div className="surface-heightmap-controls">
+                      <label className="surface-label">
+                        <span>Input heightmap</span>
+                        <div className="surface-heightmap-row">
+                          <select
+                            value={selectedHeightmapId}
+                            onChange={(e) => {
+                              setSelectedHeightmapId(e.target.value);
+                              try {
+                                window.localStorage.setItem(HEIGHTMAP_STORAGE_KEY, e.target.value);
+                              } catch {
+                                /* ignore */
+                              }
+                            }}
+                            disabled={heightmapLoading || loading || heightmapJobs.length === 0}
+                          >
+                            {heightmapJobs.map((job) => (
+                              <option key={job.id} value={job.id} disabled={!job.heightmapUrl}>
+                                {job.name} – {formatTs(job.updated_at || job.created_at)}
+                                {!job.heightmapUrl ? " (no heightmap artifact)" : ""}
+                              </option>
+                            ))}
+                            {heightmapJobs.length === 0 && <option value="">No completed heightmaps found</option>}
+                          </select>
+                          <button
+                            type="button"
+                            className="surface-button surface-button-ghost"
+                            onClick={refreshHeightmapJobs}
+                            disabled={heightmapLoading}
+                          >
+                            {heightmapLoading ? (
+                              <>
+                                <RefreshCw className="spin" size={14} /> Refreshing
+                              </>
+                            ) : (
+                              <>
+                                <RefreshCw size={14} /> Refresh
+                              </>
+                            )}
+                          </button>
+                        </div>
+                        <p className="surface-muted">
+                          Shows completed heightmaps from the Heightmap tool. Create one if empty.
+                        </p>
+                        {heightmapError && <p className="surface-inline-error">{heightmapError}</p>}
+                      </label>
+                    </div>
+
+                    <div className="surface-heightmap-preview-card">
+                      {selectedHeightmapPreview ? (
+                        <img src={selectedHeightmapPreview} alt="Selected heightmap preview" />
+                      ) : (
+                        <div className="surface-placeholder">
+                          <ImageIcon size={18} />
+                          <p>Select a completed heightmap to preview.</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="surface-field-grid">
+                  <label className="surface-label">
+                    <span>Job name</span>
+                    <input
+                      type="text"
+                      value={form.name}
+                      onChange={(e) => setForm({ ...form, name: e.target.value })}
+                      placeholder="relief-2026-01-14"
+                    />
+                  </label>
+
+                  <label className="surface-label">
+                    <span>Quality</span>
+                    <select
+                      value={form.quality}
+                      onChange={(e) => setForm({ ...form, quality: e.target.value })}
+                    >
+                      <option value="draft">Draft</option>
+                      <option value="standard">Standard</option>
+                      <option value="high">High</option>
+                    </select>
+                  </label>
+                </div>
+
+                <div className="surface-field-grid">
+                  <label className="surface-label">
+                    <span>Product target</span>
+                    <select
+                      value={form.target}
+                      onChange={(e) => setForm({ ...form, target: e.target.value })}
+                    >
+                      <option value="tile">Relief Tile</option>
+                      <option value="pi4b_case">Raspberry Pi 4B Case</option>
+                    </select>
+                  </label>
+
+                  {form.target === "pi4b_case" && (
+                    <label className="surface-label">
+                      <span>Emboss mode</span>
+                      <div className="surface-segmented">
+                        {["lid", "panel", "both"].map((mode) => (
+                          <button
+                            key={mode}
+                            type="button"
+                            className={`surface-segment ${form.emboss_mode === mode ? "is-active" : ""}`}
+                            onClick={() => setForm({ ...form, emboss_mode: mode })}
+                          >
+                            {mode === "lid" ? "Lid" : mode === "panel" ? "Panel" : "Both"}
+                          </button>
+                        ))}
+                      </div>
+                    </label>
+                  )}
+                </div>
+
+                <label className="surface-label">
+                  <span>Notes (optional)</span>
+                  <textarea
+                    rows={3}
+                    value={form.notes}
+                    onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                    placeholder="Describe the relief intent or leave blank"
+                  />
+                </label>
+              </div>
+
+              {error && (
+                <div className="surface-alert surface-alert-error">
+                  <AlertTriangle size={18} />
+                  <div>
+                    <p className="surface-alert-title">Surface error</p>
+                    <p className="surface-alert-body">{error}</p>
+                  </div>
+                  {timeoutHit && (
+                    <button className="surface-link" onClick={resetJob} type="button">
+                      Try again
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {timeoutHit && !error && (
+                <div className="surface-alert surface-alert-warn">
+                  <Clock3 size={18} />
+                  <div>
+                    <p className="surface-alert-title">Polling timed out</p>
+                    <p className="surface-alert-body">
+                      The job has been running for more than five minutes. You can retry or keep this
+                      page open while the engine finishes.
+                    </p>
+                  </div>
+                  <button className="surface-link" onClick={resetJob} type="button">
+                    Try again
                   </button>
                 </div>
-                <p className="surface-muted">
-                  Shows completed heightmaps from the Heightmap tool. Create one if empty.
-                </p>
-                {heightmapError && <p className="surface-inline-error">{heightmapError}</p>}
+              )}
+            </Panel>
+
+            <Panel
+              eyebrow="Visual"
+              title="Live preview + 3D"
+              className="surface-pane surface-pane--visual"
+              actions={(
+                <div className="surface-panel-actions">
+                  {resolvedManifestUrl && (
+                    <button
+                      type="button"
+                      className="surface-button surface-button-ghost"
+                      onClick={() => window.open(resolvedManifestUrl, "_blank")}
+                    >
+                      <FileDown size={14} /> Manifest
+                    </button>
+                  )}
+                  {artifactWarning && (
+                    <span className="surface-chip surface-chip-ghost">Check assets</span>
+                  )}
+                </div>
+              )}
+            >
+              <div className="surface-visual-grid">
+                <PreviewGallery
+                  previews={previewUrls}
+                  manifestUrl={resolvedManifestUrl}
+                  missingLabel={missingOutputs ? "Preview missing" : "Preview pending"}
+                  onReload={recheckOutputs}
+                />
+
+                <div className="surface-3d-pane">
+                  <div className="surface-pane-subhead">
+                    <p className="surface-k" style={{ margin: 0 }}>3D viewer</p>
+                    <p className="surface-muted" style={{ margin: 0 }}>Orbit, pan, zoom; pick STL</p>
+                  </div>
+                  <StlViewer urls={stlViewerUrls} />
+                </div>
               </div>
 
-              <div className="surface-heightmap-preview">
-                {selectedHeightmapPreview ? (
-                  <img src={selectedHeightmapPreview} alt="Selected heightmap preview" />
-                ) : (
-                  <div className="surface-placeholder">
-                    <ImageIcon size={18} />
-                    <p>Select a completed heightmap to preview.</p>
+              {artifactWarning && (
+                <div className="surface-alert surface-alert-warn" style={{ marginTop: "0.75rem" }}>
+                  <AlertTriangle size={18} />
+                  <div>
+                    <p className="surface-alert-title">Artifact warning</p>
+                    <p className="surface-alert-body">{artifactWarning}</p>
+                  </div>
+                  <button className="surface-link" type="button" onClick={recheckOutputs}>
+                    Re-check outputs
+                  </button>
+                </div>
+              )}
+            </Panel>
+
+            <Panel
+              eyebrow="Status"
+              title="Job status + outputs"
+              className="surface-pane surface-pane--status"
+              actions={(
+                <div className="surface-panel-actions">
+                  {adminChecking && <span className="surface-chip surface-chip-ghost">Checking admin…</span>}
+                  {effectiveJobId && <span className="surface-chip surface-chip-ghost">{effectiveJobId}</span>}
+                  {isComplete && (
+                    <button type="button" className="surface-button surface-button-ghost" onClick={recheckOutputs}>
+                      <RefreshCw size={14} /> Re-check outputs
+                    </button>
+                  )}
+                </div>
+              )}
+            >
+              <div className="surface-status-stack">
+                <div className="surface-status-row">
+                  <div className={`surface-status surface-status-${statusLabel}`}>
+                    {statusLabel}
+                  </div>
+                  <div className="surface-progress">
+                    <div className="surface-progress-bar" style={{ width: `${progress}%` }} />
+                  </div>
+                  <span className="surface-progress-text">{progress}%</span>
+                </div>
+
+                <div className="surface-status-grid">
+                  <div>
+                    <p className="surface-k">State</p>
+                    <p className="surface-v">{statusLabel}</p>
+                  </div>
+                  <div>
+                    <p className="surface-k">Started</p>
+                    <p className="surface-v">{startedAt ? formatTs(startedAt) : "—"}</p>
+                  </div>
+                  <div>
+                    <p className="surface-k">Assets root</p>
+                    <p className="surface-v">{SURFACE_ASSET_BASE}/</p>
+                  </div>
+                  <div>
+                    <p className="surface-k">Polling</p>
+                    <p className="surface-v">{polling ? "active" : "idle"}</p>
+                  </div>
+                </div>
+
+                {missingOutputs && (
+                  <div className="surface-alert surface-alert-warn" style={{ marginBottom: "0.75rem" }}>
+                    <AlertTriangle size={18} />
+                    <div>
+                      <p className="surface-alert-title">Outputs missing</p>
+                      <p className="surface-alert-body">Job completed but manifest outputs are missing or empty.</p>
+                    </div>
                   </div>
                 )}
-              </div>
-            </div>
 
-            <label className="surface-label">
-              <span>Job name</span>
-              <input
-                type="text"
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                placeholder="relief-2026-01-14"
-              />
-            </label>
+                <div className="surface-downloads">
+                  {target === "pi4b_case" ? (
+                    <>
+                      <button
+                        className="surface-download"
+                        type="button"
+                        onClick={() => caseBaseUrl && window.open(caseBaseUrl, "_blank")}
+                        disabled={!caseBaseUrl}
+                      >
+                        <FileDown size={18} />
+                        <div>
+                          <p>Pi4B Base STL</p>
+                          <span>{caseBaseUrl ? "Download" : missingOutputs ? "Missing from manifest" : "Unavailable"}</span>
+                        </div>
+                        <Download size={16} />
+                      </button>
 
-            <label className="surface-label">
-              <span>Quality</span>
-              <select
-                value={form.quality}
-                onChange={(e) => setForm({ ...form, quality: e.target.value })}
-              >
-                <option value="draft">Draft</option>
-                <option value="standard">Standard</option>
-                <option value="high">High</option>
-              </select>
-            </label>
+                      <button
+                        className="surface-download"
+                        type="button"
+                        onClick={() => caseLidUrl && window.open(caseLidUrl, "_blank")}
+                        disabled={!caseLidUrl}
+                      >
+                        <FileDown size={18} />
+                        <div>
+                          <p>Pi4B Lid STL</p>
+                          <span>{caseLidUrl ? "Download" : missingOutputs ? "Missing from manifest" : "Unavailable"}</span>
+                        </div>
+                        <Download size={16} />
+                      </button>
 
-            <label className="surface-label">
-              <span>Product target</span>
-              <select
-                value={form.target}
-                onChange={(e) => setForm({ ...form, target: e.target.value })}
-              >
-                <option value="tile">Relief Tile</option>
-                <option value="pi4b_case">Raspberry Pi 4B Case</option>
-              </select>
-            </label>
-
-            {form.target === "pi4b_case" && (
-              <label className="surface-label">
-                <span>Emboss mode</span>
-                <div className="surface-segmented">
-                  {["lid", "panel", "both"].map((mode) => (
+                      {(embossMode === "panel" || embossMode === "both") && (
+                        <button
+                          className="surface-download"
+                          type="button"
+                          onClick={() => casePanelUrl && window.open(casePanelUrl, "_blank")}
+                          disabled={!casePanelUrl}
+                        >
+                          <FileDown size={18} />
+                          <div>
+                            <p>Pi4B Panel STL</p>
+                            <span>{casePanelUrl ? "Download" : missingOutputs ? "Missing from manifest" : "Unavailable"}</span>
+                          </div>
+                          <Download size={16} />
+                        </button>
+                      )}
+                    </>
+                  ) : (
                     <button
-                      key={mode}
+                      className="surface-download"
                       type="button"
-                      className={`surface-segment ${form.emboss_mode === mode ? "is-active" : ""}`}
-                      onClick={() => setForm({ ...form, emboss_mode: mode })}
+                      onClick={() => stlUrl && window.open(stlUrl, "_blank")}
+                      disabled={!stlUrl}
                     >
-                      {mode === "lid" ? "Lid" : mode === "panel" ? "Panel" : "Both"}
+                      <FileDown size={18} />
+                      <div>
+                        <p>Enclosure STL</p>
+                        <span>{stlUrl ? "Download" : missingOutputs ? "Missing from manifest" : "Unavailable"}</span>
+                      </div>
+                      <Download size={16} />
                     </button>
-                  ))}
-                </div>
-              </label>
-            )}
+                  )}
 
-            <label className="surface-label">
-              <span>Notes (optional)</span>
-              <textarea
-                rows={3}
-                value={form.notes}
-                onChange={(e) => setForm({ ...form, notes: e.target.value })}
-                placeholder="Describe the relief intent or leave blank"
-              />
-            </label>
-          </div>
-
-          {error && (
-            <div className="surface-alert surface-alert-error">
-              <AlertTriangle size={18} />
-              <div>
-                <p className="surface-alert-title">Surface error</p>
-                <p className="surface-alert-body">{error}</p>
-              </div>
-              {timeoutHit && (
-                <button className="surface-link" onClick={resetJob} type="button">
-                  Try again
-                </button>
-              )}
-            </div>
-
-          )}
-
-          {timeoutHit && !error && (
-            <div className="surface-alert surface-alert-warn">
-              <Clock3 size={18} />
-              <div>
-                <p className="surface-alert-title">Polling timed out</p>
-                <p className="surface-alert-body">
-                  The job has been running for more than five minutes. You can retry or keep this
-                  page open while the engine finishes.
-                </p>
-              </div>
-              <button className="surface-link" onClick={resetJob} type="button">
-                Try again
-              </button>
-            </div>
-          )}
-        </section>
-
-        <section className="surface-card">
-          <div className="surface-card-head">
-            <div>
-              <p className="surface-eyebrow">Live status</p>
-              <h2>Pipeline monitor</h2>
-            </div>
-            {effectiveJobId && (
-              <span className="surface-chip surface-chip-ghost">{effectiveJobId}</span>
-            )}
-          </div>
-
-          <div className="surface-status-row">
-            <div className={`surface-status surface-status-${statusLabel}`}>
-              {statusLabel}
-            </div>
-            <div className="surface-progress">
-              <div className="surface-progress-bar" style={{ width: `${progress}%` }} />
-            </div>
-            <span className="surface-progress-text">{progress}%</span>
-          </div>
-
-          <div className="surface-status-grid">
-            <div>
-              <p className="surface-k">State</p>
-              <p className="surface-v">{statusLabel}</p>
-            </div>
-            <div>
-              <p className="surface-k">Started</p>
-              <p className="surface-v">{startedAt ? formatTs(startedAt) : "—"}</p>
-            </div>
-            <div>
-              <p className="surface-k">Assets root</p>
-              <p className="surface-v">{SURFACE_ASSET_BASE}/</p>
-            </div>
-            <div>
-              <p className="surface-k">Polling</p>
-              <p className="surface-v">{polling ? "active" : "idle"}</p>
-            </div>
-          </div>
-        </section>
-
-        <section className="surface-card">
-          <div className="surface-card-head">
-            <div>
-              <p className="surface-eyebrow">Preview</p>
-              <h2>Hero render</h2>
-            </div>
-            {!heroUrl && <span className="surface-chip surface-chip-ghost">Waiting</span>}
-          </div>
-
-          {heroUrl ? (
-            <div className="surface-preview">
-              <img
-                src={heroUrl}
-                alt="Surface hero preview"
-                onError={() => setArtifactWarning((prev) => prev || "Preview image missing")}
-              />
-            </div>
-          ) : (
-            <div className="surface-placeholder">
-              <ImageIcon size={22} />
-              <p>Preview will appear once the job finishes.</p>
-              {missingOutputs && <p className="surface-inline-error">Manifest missing preview output.</p>}
-            </div>
-          )}
-
-          {artifactWarning && (
-            <div className="surface-alert surface-alert-warn" style={{ marginTop: "0.75rem" }}>
-              <AlertTriangle size={18} />
-              <div>
-                <p className="surface-alert-title">Artifact warning</p>
-                <p className="surface-alert-body">{artifactWarning}</p>
-              </div>
-              <button className="surface-link" type="button" onClick={recheckOutputs}>
-                Re-check outputs
-              </button>
-            </div>
-          )}
-        </section>
-
-        <section className="surface-card">
-          <div className="surface-card-head">
-            <div>
-              <p className="surface-eyebrow">Outputs</p>
-              <h2>Downloads</h2>
-            </div>
-            <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-              {adminChecking && (
-                <span className="surface-chip surface-chip-ghost">Checking admin…</span>
-              )}
-              {isComplete && <span className="surface-chip surface-chip-success">Complete</span>}
-              {isComplete && (
-                <button type="button" className="surface-button surface-button-ghost" onClick={recheckOutputs}>
-                  <RefreshCw size={14} /> Re-check outputs
-                </button>
-              )}
-            </div>
-          </div>
-
-          {missingOutputs && (
-            <div className="surface-alert surface-alert-warn" style={{ marginBottom: "0.75rem" }}>
-              <AlertTriangle size={18} />
-              <div>
-                <p className="surface-alert-title">Outputs missing</p>
-                <p className="surface-alert-body">Job completed but manifest outputs are missing or empty.</p>
-              </div>
-            </div>
-          )}
-
-          <div className="surface-downloads">
-            {target === "pi4b_case" ? (
-              <>
-                <button
-                  className="surface-download"
-                  type="button"
-                  onClick={() => caseBaseUrl && window.open(caseBaseUrl, "_blank")}
-                  disabled={!caseBaseUrl}
-                >
-                  <FileDown size={18} />
-                  <div>
-                    <p>Pi4B Base STL</p>
-                    <span>{caseBaseUrl ? "Download" : missingOutputs ? "Missing from manifest" : "Unavailable"}</span>
-                  </div>
-                  <Download size={16} />
-                </button>
-
-                <button
-                  className="surface-download"
-                  type="button"
-                  onClick={() => caseLidUrl && window.open(caseLidUrl, "_blank")}
-                  disabled={!caseLidUrl}
-                >
-                  <FileDown size={18} />
-                  <div>
-                    <p>Pi4B Lid STL</p>
-                    <span>{caseLidUrl ? "Download" : missingOutputs ? "Missing from manifest" : "Unavailable"}</span>
-                  </div>
-                  <Download size={16} />
-                </button>
-
-                {(embossMode === "panel" || embossMode === "both") && (
                   <button
                     className="surface-download"
                     type="button"
-                    onClick={() => casePanelUrl && window.open(casePanelUrl, "_blank")}
-                    disabled={!casePanelUrl}
+                    onClick={() => textureUrl && window.open(textureUrl, "_blank")}
+                    disabled={!textureUrl}
                   >
                     <FileDown size={18} />
                     <div>
-                      <p>Pi4B Panel STL</p>
-                      <span>{casePanelUrl ? "Download" : missingOutputs ? "Missing from manifest" : "Unavailable"}</span>
+                      <p>Texture PNG</p>
+                      <span>{textureUrl ? "Download" : missingOutputs ? "Missing from manifest" : "Unavailable"}</span>
                     </div>
                     <Download size={16} />
                   </button>
-                )}
-              </>
-            ) : (
-              <button
-                className="surface-download"
-                type="button"
-                onClick={() => stlUrl && window.open(stlUrl, "_blank")}
-                disabled={!stlUrl}
-              >
-                <FileDown size={18} />
-                <div>
-                  <p>Enclosure STL</p>
-                  <span>{stlUrl ? "Download" : missingOutputs ? "Missing from manifest" : "Unavailable"}</span>
-                </div>
-                <Download size={16} />
-              </button>
-            )}
 
-            <button
-              className="surface-download"
-              type="button"
-              onClick={() => textureUrl && window.open(textureUrl, "_blank")}
-              disabled={!textureUrl}
-            >
-              <FileDown size={18} />
-              <div>
-                <p>Texture PNG</p>
-                <span>{textureUrl ? "Download" : missingOutputs ? "Missing from manifest" : "Unavailable"}</span>
-              </div>
-              <Download size={16} />
-            </button>
-
-            <button
-              className="surface-download"
-              type="button"
-              onClick={() => heightmapUrl && window.open(heightmapUrl, "_blank")}
-              disabled={!heightmapUrl}
-            >
-              <FileDown size={18} />
-              <div>
-                <p>Heightmap PNG</p>
-                <span>{heightmapUrl ? "Download" : missingOutputs ? "Missing from manifest" : "Unavailable"}</span>
-              </div>
-              <Download size={16} />
-            </button>
-          </div>
-        </section>
-
-        <section className="surface-card">
-          <div className="surface-card-head">
-            <div>
-              <p className="surface-eyebrow">Latest outputs</p>
-              <h2>Recent surface jobs</h2>
-            </div>
-            <button
-              type="button"
-              className="surface-button surface-button-ghost"
-              onClick={() => refreshLatestSurfaces()}
-              disabled={latestLoading}
-            >
-              {latestLoading ? (
-                <>
-                  <RefreshCw className="spin" size={14} /> Refreshing
-                </>
-              ) : (
-                <>
-                  <RefreshCw size={14} /> Refresh
-                </>
-              )}
-            </button>
-          </div>
-
-          {latestError && (
-            <div className="surface-alert surface-alert-error" style={{ marginBottom: "0.75rem" }}>
-              <AlertTriangle size={18} />
-              <div>
-                <p className="surface-alert-title">Latest outputs unavailable</p>
-                <p className="surface-alert-body">{latestError}</p>
-              </div>
-            </div>
-          )}
-
-          {latestLoading && <p className="surface-muted">Loading recent surface jobs…</p>}
-
-          {!latestLoading && latestSurfaces.length === 0 && !latestError && (
-            <div className="surface-placeholder">
-              <ImageIcon size={20} />
-              <p>No recent surface jobs found.</p>
-            </div>
-          )}
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-              gap: "0.75rem",
-            }}
-          >
-            {latestSurfaces.map((item) => {
-              const badge = item.subfolder ? `${item.subfolder}/${item.job_id}` : item.job_id || item.job_name || "job";
-              const manifestUrl = item.manifest_url ? resolveSurfaceUrl(item.manifest_url) : item.public_root ? resolveSurfaceUrl(`${item.public_root}/job_manifest.json`) : null;
-              const heroSrc = item.hero_url ? resolveSurfaceUrl(item.hero_url) : null;
-              const stlSrc = item.stl_url ? resolveSurfaceUrl(item.stl_url) : null;
-              const itemKey = `${item.subfolder || "root"}-${item.job_id || item.job_name || manifestUrl || badge}`;
-
-              return (
-                <div
-                  key={itemKey}
-                  style={{
-                    border: "1px solid #1f2733",
-                    borderRadius: "12px",
-                    padding: "0.75rem",
-                    display: "flex",
-                    gap: "0.75rem",
-                    alignItems: "stretch",
-                    background: "#0c1118",
-                  }}
-                >
-                  <div
-                    style={{
-                      width: "120px",
-                      height: "90px",
-                      borderRadius: "8px",
-                      background: "#0f141d",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      overflow: "hidden",
-                      flexShrink: 0,
-                    }}
+                  <button
+                    className="surface-download"
+                    type="button"
+                    onClick={() => heightmapUrl && window.open(heightmapUrl, "_blank")}
+                    disabled={!heightmapUrl}
                   >
-                    {heroSrc ? (
-                      <img
-                        src={heroSrc}
-                        alt="Latest surface preview"
-                        style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                        onError={() => setLatestError((prev) => prev || "Preview failed to load")}
-                      />
-                    ) : (
-                      <div className="surface-placeholder" style={{ height: "100%", width: "100%", border: "none" }}>
-                        <ImageIcon size={18} />
+                    <FileDown size={18} />
+                    <div>
+                      <p>Heightmap PNG</p>
+                      <span>{heightmapUrl ? "Download" : missingOutputs ? "Missing from manifest" : "Unavailable"}</span>
+                    </div>
+                    <Download size={16} />
+                  </button>
+                </div>
+
+                {isAdmin && (
+                  <div className="surface-admin-card">
+                    <div className="surface-pane-subhead">
+                      <p className="surface-k" style={{ margin: 0 }}>Admin tools</p>
+                      <p className="surface-muted" style={{ margin: 0 }}>Draft store products from this job</p>
+                    </div>
+                    <div className="surface-admin-actions">
+                      <button
+                        type="button"
+                        className="surface-button"
+                        disabled={!promoteState.ready}
+                        onClick={() => {
+                          setPromoteError("");
+                          setPromoteOpen(true);
+                          refreshAdmin();
+                        }}
+                      >
+                        Promote to Product
+                      </button>
+                      {!promoteState.ready && promoteState.reason && (
+                        <span className="surface-inline-error">Promote blocked: {promoteState.reason}</span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {error && !missingOutputs && (
+                  <div className="surface-alert surface-alert-error">
+                    <AlertTriangle size={18} />
+                    <div>
+                      <p className="surface-alert-title">Surface error</p>
+                      <p className="surface-alert-body">{error}</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </Panel>
+          </div>
+
+          <div className="surface-bottom">
+            <Panel
+              eyebrow="Recent"
+              title="Recent jobs / outputs"
+              className="surface-pane surface-pane--recent"
+              actions={(
+                <button
+                  type="button"
+                  className="surface-button surface-button-ghost"
+                  onClick={() => refreshLatestSurfaces()}
+                  disabled={latestLoading}
+                >
+                  {latestLoading ? (
+                    <>
+                      <RefreshCw className="spin" size={14} /> Refreshing
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw size={14} /> Refresh
+                    </>
+                  )}
+                </button>
+              )}
+            >
+              <div className="recentGrid">
+                <div className="recentGalleryCol surface-recent-list">
+                  {latestError && (
+                    <div className="surface-alert surface-alert-error" style={{ marginBottom: "0.75rem" }}>
+                      <AlertTriangle size={18} />
+                      <div>
+                        <p className="surface-alert-title">Latest outputs unavailable</p>
+                        <p className="surface-alert-body">{latestError}</p>
                       </div>
+                    </div>
+                  )}
+
+                  {latestLoading && <p className="surface-muted">Loading recent surface jobs…</p>}
+
+                  {!latestLoading && latestSurfaces.length === 0 && !latestError && (
+                    <div className="surface-placeholder">
+                      <ImageIcon size={20} />
+                      <p>No recent surface jobs found.</p>
+                    </div>
+                  )}
+
+                  <div className="surface-recent-grid">
+                    {latestSurfaces.map((item) => {
+                      const badge = item.subfolder ? `${item.subfolder}/${item.job_id}` : item.job_id || item.job_name || "job";
+                      const manifestHref = item.manifest_url ? resolveSurfaceUrl(item.manifest_url) : item.public_root ? resolveSurfaceUrl(`${item.public_root}/job_manifest.json`) : null;
+                      const heroSrc = item.hero_url ? resolveSurfaceUrl(item.hero_url) : null;
+                      const stlSrc = item.stl_url ? resolveSurfaceUrl(item.stl_url) : null;
+                      const itemKey = `${item.subfolder || "root"}-${item.job_id || item.job_name || manifestHref || badge}`;
+
+                      return (
+                        <div key={itemKey} className="surface-recent-card">
+                          <div className="surface-recent-thumb">
+                            {heroSrc ? (
+                              <>
+                                <img
+                                  src={heroSrc}
+                                  alt="Latest surface preview"
+                                  onError={(e) => {
+                                    e.currentTarget.style.display = "none";
+                                    const fallback = e.currentTarget.nextElementSibling;
+                                    if (fallback) fallback.style.display = "flex";
+                                    setLatestError((prev) => prev || "Preview failed to load (image)");
+                                  }}
+                                />
+                                <div className="surface-placeholder surface-thumb-fallback" style={{ display: "none", height: "100%", width: "100%", border: "none" }}>
+                                  <ImageIcon size={18} />
+                                  <span style={{ fontSize: "0.8rem", opacity: 0.8 }}>Preview unavailable</span>
+                                </div>
+                              </>
+                            ) : (
+                              <div className="surface-placeholder" style={{ height: "100%", width: "100%", border: "none" }}>
+                                <ImageIcon size={18} />
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="surface-recent-body">
+                            <div className="surface-recent-head">
+                              <p className="surface-k" style={{ margin: 0, fontWeight: 700 }}>
+                                {item.job_name || item.job_id || "Surface job"}
+                              </p>
+                              <span className="surface-chip surface-chip-ghost">{badge}</span>
+                            </div>
+                            <p className="surface-muted" style={{ margin: 0 }}>Created {formatTs(item.created_at)}</p>
+                            {item.target && (
+                              <p className="surface-muted" style={{ margin: 0 }}>Target: {item.target}</p>
+                            )}
+
+                            <div className="surface-recent-actions">
+                              <button
+                                type="button"
+                                className="surface-button surface-button-ghost"
+                                onClick={() => manifestHref && window.open(manifestHref, "_blank")}
+                                disabled={!manifestHref}
+                              >
+                                <FileDown size={14} /> Manifest
+                              </button>
+                              <button
+                                type="button"
+                                className="surface-button surface-button-ghost"
+                                onClick={() => heroSrc && window.open(heroSrc, "_blank")}
+                                disabled={!heroSrc}
+                              >
+                                <ImageIcon size={14} /> Preview
+                              </button>
+                              <button
+                                type="button"
+                                className="surface-button surface-button-ghost"
+                                onClick={() => stlSrc && window.open(stlSrc, "_blank")}
+                                disabled={!stlSrc}
+                              >
+                                <Download size={14} /> STL
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="recentMetaCol surface-meta-column">
+                  <div className="surface-meta-card">
+                    <div className="surface-pane-subhead">
+                      <p className="surface-k" style={{ margin: 0 }}>Metadata</p>
+                      <p className="surface-muted" style={{ margin: 0 }}>Source + service</p>
+                    </div>
+                    {metadata.length > 0 ? (
+                      <div className="surface-meta-grid">
+                        {metadata.map((row) => (
+                          <div key={row.label} className="surface-meta-row">
+                            <span className="surface-k">{row.label}</span>
+                            <span className="surface-v">{row.value || ""}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="surface-muted">Manifest will appear once the job completes.</p>
                     )}
                   </div>
 
-                  <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem", flex: "1 1 auto" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: "0.5rem", alignItems: "flex-start" }}>
-                      <p className="surface-k" style={{ margin: 0, fontWeight: 600 }}>
-                        {item.job_name || item.job_id || "Surface job"}
-                      </p>
-                      <span className="surface-chip surface-chip-ghost">{badge}</span>
-                    </div>
-                    <p className="surface-muted" style={{ margin: 0 }}>Created {formatTs(item.created_at)}</p>
-                    {item.target && (
-                      <p className="surface-muted" style={{ margin: 0 }}>Target: {item.target}</p>
+                  <details className="surface-details" open>
+                    <summary>Manifest JSON</summary>
+                    {manifest ? (
+                      <pre>{JSON.stringify(manifest, null, 2)}</pre>
+                    ) : (
+                      <p className="surface-muted">Manifest will appear once the job completes.</p>
                     )}
-                    <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginTop: "0.25rem" }}>
-                      <button
-                        type="button"
-                        className="surface-button surface-button-ghost"
-                        onClick={() => manifestUrl && window.open(manifestUrl, "_blank")}
-                        disabled={!manifestUrl}
-                      >
-                        <FileDown size={14} /> Manifest
-                      </button>
-                      <button
-                        type="button"
-                        className="surface-button surface-button-ghost"
-                        onClick={() => heroSrc && window.open(heroSrc, "_blank")}
-                        disabled={!heroSrc}
-                      >
-                        <ImageIcon size={14} /> Preview
-                      </button>
-                      <button
-                        type="button"
-                        className="surface-button surface-button-ghost"
-                        onClick={() => stlSrc && window.open(stlSrc, "_blank")}
-                        disabled={!stlSrc}
-                      >
-                        <Download size={14} /> STL
-                      </button>
-                    </div>
-                  </div>
+                  </details>
+
+                  <details className="surface-details">
+                    <summary>Job JSON</summary>
+                    {jobStatus ? (
+                      <pre>{JSON.stringify(jobStatus, null, 2)}</pre>
+                    ) : lastCreatePayload ? (
+                      <pre>{JSON.stringify(lastCreatePayload, null, 2)}</pre>
+                    ) : (
+                      <p className="surface-muted">Job not started yet.</p>
+                    )}
+                  </details>
+
+                  {IS_DEV && (
+                    <details className="surface-details">
+                      <summary>Debug (dev-only)</summary>
+                      <div className="surface-meta-grid">
+                        <div className="surface-meta-row">
+                          <span className="surface-k">Job ID</span>
+                          <span className="surface-v">{jobId || ""}</span>
+                        </div>
+                        <div className="surface-meta-row">
+                          <span className="surface-k">Manifest URL</span>
+                          <span className="surface-v">{resolvedManifestUrl || manifestUrl || ""}</span>
+                        </div>
+                        <div className="surface-meta-row">
+                          <span className="surface-k">Payload heightmap_url</span>
+                          <span className="surface-v">{lastCreatePayload?.source_heightmap_url || selectedHeightmap?.heightmapUrl || ""}</span>
+                        </div>
+                        <div className="surface-meta-row">
+                          <span className="surface-k">Payload heightmap_job_id</span>
+                          <span className="surface-v">{lastCreatePayload?.source_heightmap_job_id || selectedHeightmap?.id || ""}</span>
+                        </div>
+                      </div>
+
+                      {lastCreatePayload && (
+                        <details className="surface-details" open>
+                          <summary>Create payload</summary>
+                          <pre>{JSON.stringify(lastCreatePayload, null, 2)}</pre>
+                        </details>
+                      )}
+
+                      {outputs.list.length > 0 ? (
+                        <div className="surface-meta-grid">
+                          {outputs.list.map((o, idx) => (
+                            <div key={`${o.type || "out"}-${idx}`} className="surface-meta-row">
+                              <span className="surface-k">{o.type || o.name || `output-${idx}`}</span>
+                              <span className="surface-v">{o.url || "(no url)"}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="surface-muted">No manifest outputs yet.</p>
+                      )}
+                    </details>
+                  )}
                 </div>
-              );
-            })}
+              </div>
+            </Panel>
           </div>
-        </section>
-
-        {isAdmin && (
-          <section className="surface-card" style={{ minWidth: "260px" }}>
-            <div className="surface-card-head">
-              <div>
-                <p className="surface-eyebrow">Admin</p>
-                <h2>Admin Tools</h2>
-              </div>
-              <span className="surface-chip surface-chip-ghost">Admin</span>
-            </div>
-
-            <p className="surface-muted" style={{ marginTop: "0.25rem" }}>
-              Draft a store product from this surface job.
-            </p>
-
-            <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginTop: "0.5rem" }}>
-              <button
-                type="button"
-                className="surface-button"
-                disabled={!promoteState.ready}
-                onClick={() => {
-                  setPromoteError("");
-                  setPromoteOpen(true);
-                  refreshAdmin();
-                }}
-              >
-                Promote to Product
-              </button>
-
-              {!promoteState.ready && promoteState.reason && (
-                <span className="surface-inline-error">Promote blocked: {promoteState.reason}</span>
-              )}
-            </div>
-          </section>
-        )}
-
-        <section className="surface-card">
-          <div className="surface-card-head">
-            <div>
-              <p className="surface-eyebrow">Manifest</p>
-              <h2>Metadata</h2>
-            </div>
-            {manifestUrl && (
-              <button
-                type="button"
-                className="surface-button surface-button-ghost"
-                onClick={() => window.open(resolveSurfaceUrl(manifestUrl), "_blank")}
-              >
-                <FileDown size={14} /> Open Manifest
-              </button>
-            )}
-          </div>
-
-          <details className="surface-details" open>
-            <summary>Created + service version</summary>
-            {metadata.length > 0 ? (
-              <div className="surface-meta-grid">
-                {metadata.map((row) => (
-                  <div key={row.label} className="surface-meta-row">
-                    <span className="surface-k">{row.label}</span>
-                    <span className="surface-v">{row.value || ""}</span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="surface-muted">Manifest will appear once the job completes.</p>
-            )}
-          </details>
-
-          {manifest && (
-            <details className="surface-details">
-              <summary>Raw manifest</summary>
-              <pre>{JSON.stringify(manifest, null, 2)}</pre>
-            </details>
-          )}
-
-          {IS_DEV && (
-            <details className="surface-details">
-              <summary>Debug (dev-only)</summary>
-              <div className="surface-meta-grid">
-                <div className="surface-meta-row">
-                  <span className="surface-k">Job ID</span>
-                  <span className="surface-v">{jobId || ""}</span>
-                </div>
-                <div className="surface-meta-row">
-                  <span className="surface-k">Manifest URL</span>
-                  <span className="surface-v">{manifestUrl || ""}</span>
-                </div>
-                <div className="surface-meta-row">
-                  <span className="surface-k">Payload heightmap_url</span>
-                  <span className="surface-v">{lastCreatePayload?.source_heightmap_url || selectedHeightmap?.heightmapUrl || ""}</span>
-                </div>
-                <div className="surface-meta-row">
-                  <span className="surface-k">Payload heightmap_job_id</span>
-                  <span className="surface-v">{lastCreatePayload?.source_heightmap_job_id || selectedHeightmap?.id || ""}</span>
-                </div>
-              </div>
-
-              {lastCreatePayload && (
-                <details className="surface-details" open>
-                  <summary>Create payload</summary>
-                  <pre>{JSON.stringify(lastCreatePayload, null, 2)}</pre>
-                </details>
-              )}
-
-              {outputs.list.length > 0 ? (
-                <div className="surface-meta-grid">
-                  {outputs.list.map((o, idx) => (
-                    <div key={`${o.type || "out"}-${idx}`} className="surface-meta-row">
-                      <span className="surface-k">{o.type || o.name || `output-${idx}`}</span>
-                      <span className="surface-v">{o.url || "(no url)"}</span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="surface-muted">No manifest outputs yet.</p>
-              )}
-            </details>
-          )}
-        </section>
+        </main>
       </div>
 
       {promoteOpen && (
@@ -1762,6 +1833,46 @@ export default function SurfacePage() {
                 Close
               </button>
             </div>
+
+            <div className="surface-meta-grid" style={{ marginBottom: "10px" }}>
+              <div className="surface-meta-row">
+                <span className="surface-k">Job</span>
+                <span className="surface-v">{effectiveJobId || "n/a"}</span>
+              </div>
+              <div className="surface-meta-row">
+                <span className="surface-k">Status</span>
+                <span className="surface-v">{statusLabel}</span>
+              </div>
+              <div className="surface-meta-row">
+                <span className="surface-k">Assets</span>
+                <span className="surface-v">{manifest?.assetsRoot || manifest?.public_root || ""}</span>
+              </div>
+              <div className="surface-meta-row">
+                <span className="surface-k">Manifest</span>
+                <span className="surface-v">{manifestUrl || ""}</span>
+              </div>
+            </div>
+
+            {promoteBlockedReason && (
+              <div className="surface-alert surface-alert-warn" style={{ marginBottom: "10px" }}>
+                <AlertTriangle size={16} />
+                <div>
+                  <p className="surface-alert-title">Promotion blocked</p>
+                  <p className="surface-alert-body">{promoteBlockedReason}</p>
+                </div>
+              </div>
+            )}
+
+            {missingOutputs && (
+              <div className="surface-alert surface-alert-warn" style={{ marginBottom: "10px" }}>
+                <AlertTriangle size={16} />
+                <div>
+                  <p className="surface-alert-title">Outputs missing</p>
+                  <p className="surface-alert-body">Re-check the manifest before promoting.</p>
+                </div>
+                <button className="surface-link" type="button" onClick={recheckOutputs}>Re-check</button>
+              </div>
+            )}
 
             <form onSubmit={handlePromoteSubmit} className="surface-form" style={{ gap: "12px" }}>
               <label className="surface-label">
