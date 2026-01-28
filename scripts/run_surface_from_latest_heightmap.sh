@@ -155,7 +155,7 @@ while (( polls < POLL_MAX )); do
     fail "Surface job failed"
   fi
 
-  ((polls++))
+  polls=$((polls + 1))
   sleep "${POLL_INTERVAL}"
 done
 
