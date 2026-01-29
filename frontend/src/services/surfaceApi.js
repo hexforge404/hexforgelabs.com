@@ -1,7 +1,12 @@
 import axios from "axios";
 
-const SURFACE_BASES = ["/api/store/surface", "/api/surface"];
-const HEIGHTMAP_BASES = ["/api/store/heightmap", "/api/heightmap"];
+const API_BASE = (() => {
+  const raw = (process.env.VITE_API_BASE_URL || process.env.REACT_APP_API_BASE_URL || "").trim();
+  return raw ? raw.replace(/\/+$/, "") : "";
+})();
+
+const SURFACE_BASES = [API_BASE ? `${API_BASE}/api/surface` : "/api/surface"];
+const HEIGHTMAP_BASES = [API_BASE ? `${API_BASE}/api/heightmap` : "/api/heightmap"];
 
 class SurfaceApiError extends Error {
   constructor(message, status, data) {
