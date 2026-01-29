@@ -127,13 +127,9 @@ def _build_manifest(job_id: str, subfolder: Optional[str]) -> dict:
         "public_root": public_root,
         "public": {
             "job_json": job_json_url,
-            "enclosure": {
-                "stl": enclosure_stl_url,
-            },
-            "textures": {
-                "texture_png": texture_png_url,
-                "heightmap_png": heightmap_png_url,
-            },
+            "enclosure": {"stl": enclosure_stl_url},
+            "textures": {"texture_png": texture_png_url, "heightmap_png": heightmap_png_url},
+            "heightmap_url": heightmap_png_url,
             "previews": previews,
         },
     }
@@ -166,7 +162,7 @@ def _run_job(job_id: str, subfolder: Optional[str]):
 @app.post("/api/heightmap/jobs")
 def create_job(body: CreateJobRequest, background_tasks: BackgroundTasks):
     job_id = uuid.uuid4().hex
-    JOBS[job_id] = {"status": "queued", "manifest": None}
+    JOBS[job_id] = {"status": "queued", "manifest": None, "created_at": _iso_now()}
     background_tasks.add_task(_run_job, job_id, body.subfolder)
     return _status(job_id)
 
@@ -187,6 +183,33 @@ def get_assets(job_id: str):
     if not job.get("manifest"):
         raise HTTPException(status_code=404, detail="manifest not ready")
     return job["manifest"]
+
+
+@app.get("/api/heightmap/v1/jobs")
+def list_jobs(limit: int = 25, offset: int = 0):
+    limit = max(1, min(limit, 50))
+    offset = max(offset, 0)
+
+    items = []
+    for job_id, job in reversed(list(JOBS.items())):
+        manifest = job.get("manifest") or {}
+        public = manifest.get("public") or {}
+        heightmap_url = public.get("heightmap_url") or (public.get("textures") or {}).get("heightmap_png")
+
+        items.append(
+            {
+                "id": job_id,
+                "status": job.get("status"),
+                "created_at": job.get("created_at"),
+                "public": {
+                    **public,
+                    "heightmap_url": heightmap_url,
+                },
+            }
+        )
+
+    slice_items = items[offset : offset + limit]
+    return {"jobs": {"items": slice_items, "count": len(items)}}
 
 
 @app.get("/health")
