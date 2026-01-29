@@ -21,6 +21,11 @@ const DEFAULT_SUBFOLDER = process.env.SURFACE_DEFAULT_SUBFOLDER || (SMOKE_MODE ?
 const SURFACE_OUTPUT_DIR = process.env.SURFACE_OUTPUT_DIR || "/var/www/hexforge3d/surface";
 const SURFACE_PUBLIC_PREFIX = process.env.SURFACE_PUBLIC_PREFIX || "/assets/surface";
 const SURFACE_DEBUG = (process.env.SURFACE_DEBUG || "").toLowerCase() === "1";
+const HEIGHTMAP_INTERNAL_BASE =
+  (process.env.HEIGHTMAP_INTERNAL_BASE ||
+    process.env.SURFACE_HEIGHTMAP_INTERNAL_BASE ||
+    process.env.SURFACE_HEIGHTMAP_BASE ||
+  "http://nginx").replace(/\/+$/, "");
 
 const limiter = rateLimit({
   windowMs: 60 * 1000,
@@ -166,6 +171,32 @@ function pickHeightmapUrl(payload = {}) {
     payload.source_heightmapUrl ||
     null
   );
+}
+
+function toAbsoluteHeightmapUrl(url) {
+  if (!url) return null;
+  const raw = String(url).trim();
+  if (!raw) return null;
+  if (/^https?:\/\//i.test(raw)) {
+    try {
+      const parsed = new URL(raw);
+      const host = (parsed.hostname || "").toLowerCase();
+      const isLocalHost = host === "localhost" || host === "127.0.0.1" || host === "0.0.0.0";
+
+      if (isLocalHost) {
+        const base = HEIGHTMAP_INTERNAL_BASE.replace(/\/+$/, "");
+        return `${base}${parsed.pathname}${parsed.search}${parsed.hash}`;
+      }
+
+      return raw;
+    } catch {
+      // fall through and treat as relative
+    }
+  }
+
+  const base = HEIGHTMAP_INTERNAL_BASE.replace(/\/+$/, "");
+  const path = raw.startsWith("/") ? raw : `/${raw}`;
+  return `${base}${path}`;
 }
 
 function buildManifestUrl(subfolder, jobId) {
@@ -323,6 +354,111 @@ async function fileExists(filePath) {
   }
 }
 
+function resolvePublicRoot(subfolder, jobId) {
+  const prefix = SURFACE_PUBLIC_PREFIX.replace(/\/$/, "");
+  return [prefix, subfolder, jobId].filter(Boolean).join("/").replace(/\/+/g, "/");
+}
+
+function resolveAssetUrl(maybeRelative, publicRoot) {
+  if (!maybeRelative) return null;
+  const raw = String(maybeRelative).trim();
+  if (!raw) return null;
+
+  if (/^https?:\/\//i.test(raw)) return raw;
+  if (raw.startsWith("/assets/surface/")) return raw;
+
+  const cleaned = raw.replace(/^\/+/, "");
+  if (cleaned.startsWith("assets/surface/")) return `/${cleaned}`;
+
+  if (publicRoot) return `${publicRoot}/${cleaned}`.replace(/\/+/g, "/");
+  return `${SURFACE_PUBLIC_PREFIX.replace(/\/$/, "")}/${cleaned}`.replace(/\/+/g, "/");
+}
+
+async function collectJobsFromDir(dirPath, subfolder = "") {
+  const jobs = [];
+  let entries = [];
+  try {
+    entries = await fs.readdir(dirPath, { withFileTypes: true });
+  } catch (err) {
+    if (err?.code === "ENOENT") return jobs;
+    throw err;
+  }
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+
+    const jobId = entry.name;
+    const jobDir = path.join(dirPath, jobId);
+    const manifestPath = path.join(jobDir, "job_manifest.json");
+    const manifestExists = await fileExists(manifestPath);
+
+    // If this directory has no manifest but has children, treat it as a nested subfolder.
+    if (!manifestExists) {
+      const nestedEntries = await fs.readdir(jobDir, { withFileTypes: true });
+      const hasChildJobs = nestedEntries.some((child) => child.isDirectory());
+      if (hasChildJobs) {
+        const nestedJobs = await collectJobsFromDir(jobDir, subfolder ? `${subfolder}/${jobId}` : jobId);
+        jobs.push(...nestedJobs);
+        continue;
+      }
+    }
+
+    let manifest = null;
+    if (manifestExists) {
+      try {
+        const raw = await fs.readFile(manifestPath, "utf8");
+        manifest = JSON.parse(raw);
+      } catch (err) {
+        debugLog("manifest_parse_error", { job_id: jobId, err });
+      }
+    }
+
+    const stats = await fs.stat(jobDir);
+    const publicRoot = resolvePublicRoot(subfolder, jobId);
+    const manifestUrl = `${publicRoot}/job_manifest.json`;
+
+    const outputsArray = Array.isArray(manifest?.outputs)
+      ? manifest.outputs
+      : manifest?.outputs && typeof manifest.outputs === "object"
+        ? Object.entries(manifest.outputs).map(([type, val]) => ({ type, ...(val && typeof val === "object" ? val : { url: val }) }))
+        : [];
+
+    const pickOutputUrl = (predicate) => {
+      const found = outputsArray.find(predicate);
+      if (!found) return null;
+      return resolveAssetUrl(found.url || found.path || found.public_url, publicRoot);
+    };
+
+    const heroUrl = resolveAssetUrl(
+      manifest?.public?.previews?.hero ||
+        manifest?.public?.hero ||
+        pickOutputUrl((o) => (o.type || "").toLowerCase().includes("hero")),
+      publicRoot
+    );
+
+    const stlUrl = pickOutputUrl((o) => {
+      const type = (o.type || "").toLowerCase();
+      const name = (o.name || o.label || o.url || "").toLowerCase();
+      return type.includes("stl") || name.endsWith(".stl");
+    });
+
+    jobs.push({
+      job_id: jobId,
+      job_name: manifest?.job_name || manifest?.name || manifest?.meta?.name || jobId,
+      subfolder: subfolder || "",
+      manifest_url: manifestUrl,
+      public_root: publicRoot,
+      hero_url: heroUrl,
+      stl_url: stlUrl,
+      target: manifest?.target || manifest?.meta?.target || null,
+      state: manifest?.state || manifest?.status || null,
+      created_at: stats.mtimeMs || stats.ctimeMs || Date.now(),
+    });
+  }
+
+  return jobs;
+}
+
 router.post("/jobs", limiter, async (req, res) => {
   try {
     const payload = { ...(req.body || {}) };
@@ -333,11 +469,11 @@ router.post("/jobs", limiter, async (req, res) => {
     }
 
     const heightmapUrl = pickHeightmapUrl(payload);
-    if (!payload.heightmap_url && heightmapUrl) {
-      payload.heightmap_url = heightmapUrl;
-    }
-    if (!payload.source_heightmap_url && heightmapUrl) {
-      payload.source_heightmap_url = heightmapUrl;
+    const absoluteHeightmapUrl = toAbsoluteHeightmapUrl(heightmapUrl);
+
+    if (absoluteHeightmapUrl) {
+      payload.heightmap_url = absoluteHeightmapUrl;
+      payload.source_heightmap_url = absoluteHeightmapUrl;
     }
     if (!payload.heightmap_job_id && payload.source_heightmap_job_id) {
       payload.heightmap_job_id = payload.source_heightmap_job_id;
@@ -346,7 +482,7 @@ router.post("/jobs", limiter, async (req, res) => {
     debugLog("create_job_payload", {
       job_name: payload.name || null,
       subfolder: payload.subfolder || null,
-      heightmap_url: heightmapUrl || null,
+      heightmap_url: absoluteHeightmapUrl || heightmapUrl || null,
       heightmap_job_id: payload.source_heightmap_job_id || payload.heightmap_job_id || null,
       request_id: req.requestId,
     });
@@ -541,6 +677,20 @@ router.get("/jobs/:jobId/manifest", limiter, async (req, res) => {
   }
 });
 
-router.get("/latest", limiter, handleLatestRequest);
+<<<<<<< HEAD
+router.get("/latest", limiter, async (req, res) => {
+  try {
+    const n = Number.parseInt(req.query.limit, 10);
+    const limit = Number.isFinite(n) ? Math.min(Math.max(n, 1), 50) : 10;
+
+    const jobs = await collectJobsFromDir(SURFACE_OUTPUT_DIR, "");
+    const sorted = jobs.sort((a, b) => (b.created_at || 0) - (a.created_at || 0)).slice(0, limit);
+
+    return res.json({ ok: true, count: sorted.length, items: sorted });
+  } catch (err) {
+    console.error("surface latest error", err);
+    return sendError(res, 500, "Unable to list surface jobs", err?.message || err);
+  }
+});
 
 module.exports = router;

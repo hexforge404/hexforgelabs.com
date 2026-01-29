@@ -3,8 +3,9 @@ import React, { useState } from 'react';
 import PropTypes from 'prop-types';
 import { Link, useLocation } from 'react-router-dom';
 import './GlobalNav.css';
+import { useAdmin } from '../context/AdminContext';
 
-const routes = [
+const baseRoutes = [
   { path: '/', label: 'Home' },
   { path: '/store', label: 'Store' },
   { path: '/chat', label: 'Chat' },
@@ -18,11 +19,14 @@ const routes = [
 const GlobalNav = ({ onLogout, member, onMemberLogout }) => {
   const [open, setOpen] = useState(false);
   const location = useLocation();
+  const { isAdmin } = useAdmin();
 
   const toggle = () => setOpen(v => !v);
   const close = () => setOpen(false);
 
   const isAdminRoute = location.pathname.startsWith('/admin');
+  const routes = isAdmin ? [...baseRoutes, { path: '/admin', label: 'Admin' }] : baseRoutes;
+  const showAdminLogout = isAdmin && onLogout;
 
   return (
     <div className="hf-global-nav">
@@ -106,8 +110,8 @@ const GlobalNav = ({ onLogout, member, onMemberLogout }) => {
               </Link>
             )}
 
-            {/* Admin logout only on /admin */}
-            {isAdminRoute && onLogout && (
+            {/* Admin controls visible while session is active */}
+            {showAdminLogout && (
               <button
                 type="button"
                 onClick={() => {
