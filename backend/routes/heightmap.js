@@ -90,23 +90,6 @@ router.get("/jobs/:jobId/assets", async (req, res) => {
   }
 });
 
-router.get("/v1/jobs", async (req, res) => {
-  try {
-    const limit = Number.parseInt(req.query.limit, 10);
-    const offset = Number.parseInt(req.query.offset, 10);
-    const params = new URLSearchParams();
-    if (Number.isFinite(limit)) params.set("limit", Math.min(Math.max(limit, 1), 50));
-    if (Number.isFinite(offset)) params.set("offset", Math.max(offset, 0));
-
-    const qs = params.toString();
-    const path = qs ? `/api/heightmap/v1/jobs?${qs}` : `/api/heightmap/v1/jobs`;
-    const { status, data } = await proxyJson(path);
-    return res.status(status).json(data);
-  } catch (err) {
-    return handleError(res, err);
-  }
-});
-
 router.get("/docs", async (req, res) => {
   try {
     const url = `${ENGINE_BASE_URL}/docs`;

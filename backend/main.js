@@ -177,7 +177,6 @@ app.use('/api/notion', notionRoutes);
 app.use('/api/blog', blogRoutes);
 app.use('/tool', toolRoutes);
 app.use('/api/store/surface', apiLimiter, surfaceRoutes);
-app.use('/api/store/heightmap', apiLimiter, heightmapRoutes);
 app.use('/api/surface', apiLimiter, surfaceRoutes);
 
 app.use('/api/editor', editorRouter);

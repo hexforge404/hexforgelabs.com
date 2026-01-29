@@ -4,12 +4,6 @@ const STATUS_VALUES = ['draft', 'active', 'archived'];
 
 const productSchema = new mongoose.Schema(
   {
-    // Keep a dedicated name field to satisfy legacy unique index and align with title
-    name: {
-      type: String,
-      trim: true,
-      index: true,
-    },
     title: {
       type: String,
       required: [true, 'Product title is required'],
@@ -109,16 +103,13 @@ productSchema.virtual('priceFormatted').get(function priceFormatted() {
   return `$${this.price.toFixed(2)}`;
 });
 
-// Keep name/title in sync for legacy consumers and existing DB indexes
-productSchema.pre('validate', function syncNameAndTitle(next) {
-  if (!this.name && this.title) {
-    this.name = this.title;
-  }
-  if (!this.title && this.name) {
-    this.title = this.name;
-  }
-  next();
-});
+productSchema.virtual('name')
+  .get(function nameGetter() {
+    return this.title;
+  })
+  .set(function nameSetter(v) {
+    this.title = v;
+  });
 
 productSchema.virtual('image')
   .get(function imageGetter() {

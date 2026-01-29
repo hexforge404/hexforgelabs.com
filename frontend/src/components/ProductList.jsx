@@ -52,15 +52,7 @@ function ProductList() {
           throw new Error(`HTTP ${res.status}`);
         }
         const data = await res.json();
-        const list = Array.isArray(data)
-          ? data
-          : Array.isArray(data.data)
-            ? data.data
-            : Array.isArray(data.products)
-              ? data.products
-              : (data.data && Array.isArray(data.data.items))
-                ? data.data.items
-                : [];
+        const list = Array.isArray(data) ? data : Array.isArray(data.data) ? data.data : [];
         const normalized = list.map(normalizeProduct);
         setProducts(normalized.length ? normalized : FALLBACK_PRODUCTS.map(normalizeProduct));
       } catch (err) {
