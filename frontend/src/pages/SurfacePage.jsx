@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { toast } from "react-toastify";
 import {
   AlertTriangle,
@@ -13,25 +13,25 @@ import {
   createSurfaceJob,
   getSurfaceJobStatus,
   getSurfaceManifest,
-  getSurfaceLatest,
-  getHeightmapLatest,
 } from "../services/surfaceApi";
 import { useAdmin } from "../context/AdminContext";
-import Panel from "../components/Panel";
-import PreviewGallery from "../components/PreviewGallery";
-import StlViewer from "../components/StlViewer";
 import "./SurfacePage.css";
 
 // Phase 0 findings (2026-01-18): nginx serves /api/heightmap and /api/surface plus assets; heightmap flow returns public.heightmap_url; /surface currently posts only name/quality/notes with no heightmap selector.
 
-const API_BASE = (() => {
-  const raw = (process.env.VITE_API_BASE_URL || process.env.REACT_APP_API_BASE_URL || "").trim();
-  return raw ? raw.replace(/\/+$/, "") : "";
-})();
+const SURFACE_ASSET_BASE = (
+  process.env.REACT_APP_SURFACE_ASSETS_URL || "/assets/surface"
+).replace(/\/+$/, "");
 
-const SURFACE_ASSET_BASE = `${API_BASE || ""}/assets/surface`.replace(/\/+$/, "");
-const HEIGHTMAP_ASSET_BASE = `${API_BASE || ""}/assets/heightmap`.replace(/\/+$/, "");
+const HEIGHTMAP_API_BASE = (
+  process.env.REACT_APP_HEIGHTMAP_API_BASE || "/api/heightmap"
+).replace(/\/+$/, "");
 
+const HEIGHTMAP_ASSET_BASE = (
+  process.env.REACT_APP_HEIGHTMAP_ASSETS_URL || "/assets/heightmap"
+).replace(/\/+$/, "");
+
+const HEIGHTMAP_API_KEY = process.env.REACT_APP_HEIGHTMAP_API_KEY || "";
 const HEIGHTMAP_STORAGE_KEY = "surface:selectedHeightmapJobId";
 const IS_DEV = process.env.NODE_ENV !== "production";
 const DEBUG_QUERY = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
@@ -110,7 +110,7 @@ function resolveSurfaceUrl(pathOrUrl) {
 
   if (/^https?:\/\//i.test(raw)) return raw;
 
-  if (raw.startsWith("/assets/surface/")) return API_BASE ? `${API_BASE}${raw}` : raw;
+  if (raw.startsWith("/assets/surface/")) return raw;
   if (raw.startsWith("assets/surface/")) return `/${raw}`;
 
   const cleaned = raw.replace(/^\/+/g, "");
@@ -125,29 +125,16 @@ function resolveSurfaceUrl(pathOrUrl) {
   return `${SURFACE_ASSET_BASE}/${cleaned}`;
 }
 
-function normalizePublicRoot(publicRoot, subfolder, jobId) {
-  const raw = String(publicRoot || "").trim();
-  if (raw) {
-    const base = raw.replace(/\/+$/, "");
-    if (/^https?:\/\//i.test(base)) return base;
-    if (base.startsWith("/")) return API_BASE ? `${API_BASE}${base}` : base;
-    if (base.startsWith("assets/")) return `${API_BASE || ""}/${base}`.replace(/\/+$/, "");
-    return `${API_BASE || ""}/${base}`.replace(/\/+$/, "");
-  }
-
-  const withSubfolder = subfolder ? `${SURFACE_ASSET_BASE}/${subfolder}` : SURFACE_ASSET_BASE;
-  if (subfolder && jobId) return `${withSubfolder}/${jobId}`.replace(/\/+$/, "");
-  if (jobId) return `${SURFACE_ASSET_BASE}/${jobId}`.replace(/\/+$/, "");
-  return withSubfolder.replace(/\/+$/, "");
-}
-
 function defaultJobName() {
   const t = new Date();
   const iso = t.toISOString().replace(/[:.]/g, "-");
   return `relief-${iso}`;
 }
 
-function resolveOutputUrl(output, publicRoot) {
+function resolveOutputUrl(output, manifest) {
+  const publicRoot = (manifest?.public_root || manifest?.public?.public_root || manifest?.public_root_url || "")
+    .replace(/\/+$/, "");
+
   const candidate =
     output?.url ||
     output?.public_url ||
@@ -161,11 +148,11 @@ function resolveOutputUrl(output, publicRoot) {
   const raw = String(candidate).trim();
   if (!raw) return null;
   if (/^https?:\/\//i.test(raw)) return raw;
-  if (raw.startsWith("/assets/surface/")) return API_BASE ? `${API_BASE}${raw}` : raw;
+  if (raw.startsWith("/assets/surface/")) return raw;
 
   const rel = raw.replace(/^\/+/, "");
   if (publicRoot) return `${publicRoot}/${rel}`;
-  return resolveSurfaceUrl(rel);
+  return `${SURFACE_ASSET_BASE}/${rel}`;
 }
 
 function deriveSubfolderFromUrl(manifestObj, manifestUrl, jobId) {
@@ -187,82 +174,174 @@ function computeAssetsRoot(manifest) {
   const pub = manifest?.public || {};
   const candidates = [manifest?.public_root, pub.public_root, manifest?.public_root_url].filter(Boolean);
   if (candidates.length > 0) {
-    const normalized = resolveSurfaceUrl(candidates[0]) || normalizePublicRoot(candidates[0]);
-    return String(normalized || candidates[0]).replace(/\/+$/, "");
+    return String(candidates[0]).replace(/\/+$/, "");
   }
 
   if (manifest?.subfolder) {
-    return normalizePublicRoot(null, manifest.subfolder, manifest?.job_id || manifest?.jobId || "");
+    return `${SURFACE_ASSET_BASE}/${manifest.subfolder}`.replace(/\/+$/, "");
   }
   return "";
 }
 
-function deriveOutputs(source, jobId, manifestUrlHint = "") {
+function resolvePreviewsFromManifest(manifest) {
+  const previews = manifest?.public?.previews || manifest?.public?.blender_previews_urls || {};
+  const publicRoot = (manifest?.public_root || manifest?.public?.public_root || "").replace(/\/+$/, "");
+  const pick = (key) => {
+    const raw = previews?.[key];
+    if (!raw) return null;
+    if (/^https?:\/\//i.test(raw) || raw.startsWith("/assets/surface/")) return raw;
+    if (publicRoot) return `${publicRoot}/${raw.replace(/^\/+/, "")}`;
+    return resolveSurfaceUrl(raw);
+  };
+  return {
+    hero: pick("hero"),
+    iso: pick("iso"),
+    top: pick("top"),
+    side: pick("side"),
+  };
+}
+
+function deriveOutputs(manifest, jobId, manifestUrlHint = "") {
   const effectiveJobId = (() => {
-    if (source?.job_id || source?.jobId) return source.job_id || source.jobId;
+    if (manifest?.job_id || manifest?.jobId) return manifest.job_id || manifest.jobId;
     const url = manifestUrlHint || "";
     const parts = url.split("/").filter(Boolean);
     if (parts.length >= 2) return parts[parts.length - 2];
     return jobId;
   })();
 
-  const outputsBlob = source?.outputs || source?.public?.outputs || {};
-  const subfolder = source?.subfolder || deriveSubfolderFromUrl(source, manifestUrlHint, effectiveJobId);
-  const publicRoot = normalizePublicRoot(source?.public_root || source?.public?.public_root, subfolder, effectiveJobId);
-
-  const rawList = Array.isArray(outputsBlob)
-    ? outputsBlob
-    : outputsBlob && typeof outputsBlob === "object"
-      ? Object.entries(outputsBlob).map(([type, val]) => {
+  const rawList = Array.isArray(manifest?.outputs)
+    ? manifest.outputs
+    : manifest?.outputs && typeof manifest.outputs === "object"
+      ? Object.entries(manifest.outputs).map(([type, val]) => {
           if (val && typeof val === "object") return { type, ...val };
           return { type, url: val };
         })
       : [];
+  const list = rawList.map((o) => ({ ...o, url: resolveOutputUrl(o, manifest) }));
 
-  const list = rawList.map((o) => ({ ...o, url: resolveOutputUrl(o, publicRoot) }));
+  const outputsByType = {};
+  list.forEach((o) => {
+    const key = (o.type || "").toLowerCase();
+    if (key && !outputsByType[key]) {
+      outputsByType[key] = o;
+    }
+  });
 
-  const pick = (...keys) => {
-    for (const key of keys) {
-      const val = outputsBlob?.[key];
-      if (val) {
-        if (typeof val === "string") return val;
-        if (val.url || val.path || val.href || val.file) return val.url || val.path || val.href || val.file;
-      }
+  const findFirst = (fn) => {
+    for (const o of list) {
+      if (fn(o)) return o;
     }
     return null;
   };
 
-  const manifestCandidate =
-    pick("manifest", "manifest_url") ||
-    source?.manifest_url ||
-    source?.public?.job_manifest ||
-    manifestUrlHint ||
-    (publicRoot ? `${publicRoot}/job.json` : "");
+  const candidateLabel = (o) => (o.url || o.path || o.public_url || o.name || o.label || "").toLowerCase();
 
-  const heroCandidate = pick("preview", "hero", "preview_url", "hero_url") || (publicRoot ? `${publicRoot}/previews/hero.png` : null);
-  const stlCandidate = pick("stl", "mesh", "model", "product", "product_stl", "productStl") ||
-    (publicRoot ? `${publicRoot}/enclosure/enclosure.stl` : null);
+  const manifestPreviews = resolvePreviewsFromManifest(manifest);
 
-  const previewUrls = {
-    hero: resolveSurfaceUrl(heroCandidate),
-    iso: resolveSurfaceUrl(pick("iso", "iso_url")),
-    top: resolveSurfaceUrl(pick("top", "top_url")),
-    side: resolveSurfaceUrl(pick("side", "side_url")),
-  };
+  const preview =
+    outputsByType.hero_png ||
+    outputsByType.preview ||
+    findFirst((o) => {
+      const name = (o.name || o.label || "").toLowerCase();
+      const type = (o.type || "").toLowerCase();
+      return name.includes("preview") || name.includes("hero") || type.includes("preview") || type.includes("hero");
+    }) ||
+    (manifestPreviews.hero
+      ? { url: manifestPreviews.hero, type: "preview.hero" }
+      : null);
+
+  const productStl =
+    outputsByType.product_stl ||
+    findFirst((o) => {
+      const name = (o.name || o.label || o.url || "").toLowerCase();
+      const type = (o.type || "").toLowerCase();
+      return type === "product_stl" || name.includes("product") || name.endsWith("product.stl");
+    });
+
+  const stl =
+    productStl ||
+    outputsByType.stl ||
+    findFirst((o) => {
+      const name = (o.name || o.label || o.url || "").toLowerCase();
+      const type = (o.type || "").toLowerCase();
+      return name.endsWith(".stl") || name.includes("stl") || type.includes("stl");
+    });
+
+  const texture =
+    outputsByType.texture ||
+    outputsByType.albedo ||
+    findFirst((o) => {
+      const name = (o.name || o.label || o.url || "").toLowerCase();
+      const type = (o.type || "").toLowerCase();
+      return name.includes("texture") || name.endsWith(".png") || type.includes("texture") || type.includes("albedo");
+    });
+
+  const heightmap =
+    outputsByType.heightmap ||
+    findFirst((o) => {
+      const name = (o.name || o.label || o.url || "").toLowerCase();
+      const type = (o.type || "").toLowerCase();
+      return name.includes("heightmap") || type.includes("heightmap");
+    });
+
+  let heroUrl = preview?.url || manifestPreviews.hero || null;
+
+  if (!heroUrl && manifest?.public_root) {
+    const base = manifest.public_root.replace(/\/$/, "");
+    heroUrl = `${base}/previews/hero.png`;
+  }
+
+  if (!heroUrl && manifest?.subfolder && effectiveJobId) {
+    heroUrl = `${SURFACE_ASSET_BASE}/${manifest.subfolder}/${effectiveJobId}/previews/hero.png`;
+  }
+
+  if (!heroUrl && effectiveJobId) {
+    heroUrl = `${SURFACE_ASSET_BASE}/${effectiveJobId}/previews/hero.png`;
+  }
+
+  // If we have a preview URL but it lacks the job-specific path, rewrite using subfolder/jobId when available, unless public_root already handled.
+  const hasPublicRoot = !!manifest?.public_root;
+  if (!hasPublicRoot && heroUrl && manifest?.subfolder && effectiveJobId && !heroUrl.includes(`/${manifest.subfolder}/${effectiveJobId}/`)) {
+    heroUrl = `${SURFACE_ASSET_BASE}/${manifest.subfolder}/${effectiveJobId}/previews/hero.png`;
+  }
+  if (!hasPublicRoot && heroUrl && effectiveJobId && !heroUrl.includes(`/${effectiveJobId}/`)) {
+    heroUrl = `${SURFACE_ASSET_BASE}/${effectiveJobId}/previews/hero.png`;
+  }
+
+  const caseBase =
+    outputsByType.case_base ||
+    outputsByType.pi4b_case_base ||
+    findFirst((o) => {
+      const name = candidateLabel(o);
+      return /case[_-]?base/.test(name) && name.includes(".stl");
+    });
+
+  const caseLid =
+    outputsByType.case_lid ||
+    outputsByType.pi4b_case_lid ||
+    findFirst((o) => {
+      const name = candidateLabel(o);
+      return /case[_-]?lid/.test(name) && name.includes(".stl");
+    });
+
+  const pi4bPanel =
+    outputsByType.pi4b_case_panel ||
+    findFirst((o) => {
+      const name = (o.name || o.label || o.url || "").toLowerCase();
+      return name.includes("pi4b_case_panel.stl") || name.includes("case_panel.stl") || name.includes("pi4b_case_panel");
+    });
 
   return {
     list,
-    previewUrls,
-    heroUrl: previewUrls.hero,
-    stlUrl: resolveSurfaceUrl(stlCandidate),
-    productStlUrl: resolveSurfaceUrl(stlCandidate),
-    textureUrl: resolveSurfaceUrl(pick("texture", "albedo")) || null,
-    heightmapUrl: resolveSurfaceUrl(pick("heightmap")) || null,
-    caseBaseUrl: resolveSurfaceUrl(pick("case_base")) || null,
-    caseLidUrl: resolveSurfaceUrl(pick("case_lid")) || null,
-    casePanelUrl: resolveSurfaceUrl(pick("case_panel", "pi4b_case_panel")) || null,
-    manifestUrl: resolveSurfaceUrl(manifestCandidate) || null,
-    publicRoot: publicRoot || null,
+    heroUrl: heroUrl || null,
+    stlUrl: stl?.url || null,
+    productStlUrl: productStl?.url || stl?.url || null,
+    textureUrl: texture?.url || null,
+    heightmapUrl: heightmap?.url || null,
+    caseBaseUrl: caseBase?.url || null,
+    caseLidUrl: caseLid?.url || null,
+    casePanelUrl: pi4bPanel?.url || null,
   };
 }
 
@@ -343,7 +422,6 @@ export default function SurfacePage() {
   const [manifestUrl, setManifestUrl] = useState("");
   const [outputs, setOutputs] = useState({
     list: [],
-    previewUrls: { hero: null, iso: null, top: null, side: null },
     heroUrl: null,
     stlUrl: null,
     productStlUrl: null,
@@ -376,17 +454,10 @@ export default function SurfacePage() {
     freeze_assets: true,
   });
 
-  const autoRecheckRef = useRef(false);
-  const previewRetryRef = useRef(0);
-
   const [heightmapJobs, setHeightmapJobs] = useState([]);
   const [heightmapLoading, setHeightmapLoading] = useState(false);
   const [heightmapError, setHeightmapError] = useState("");
   const [selectedHeightmapId, setSelectedHeightmapId] = useState("");
-
-  const [latestSurfaces, setLatestSurfaces] = useState([]);
-  const [latestLoading, setLatestLoading] = useState(false);
-  const [latestError, setLatestError] = useState("");
 
   const { adminStatus, isAdmin, refreshAdmin } = useAdmin();
   const adminChecking = adminStatus === "checking" || adminStatus === "unknown";
@@ -409,21 +480,9 @@ export default function SurfacePage() {
     );
   }, [manifest, jobStatus, jobId]);
 
-  const previewUrls = useMemo(() => {
-    const map = outputs.previewUrls || {};
-    const applyBust = (url) => (url ? `${url}?t=${previewBust}` : null);
-    return {
-      hero: applyBust(map.hero || outputs.heroUrl || null),
-      iso: applyBust(map.iso || null),
-      top: applyBust(map.top || null),
-      side: applyBust(map.side || null),
-    };
-  }, [outputs.previewUrls, outputs.heroUrl, previewBust]);
-
   const heroUrl = useMemo(() => {
-    if (previewUrls.hero) return previewUrls.hero;
     return outputs.heroUrl ? `${outputs.heroUrl}?t=${previewBust}` : null;
-  }, [previewUrls.hero, outputs.heroUrl, previewBust]);
+  }, [outputs.heroUrl, previewBust]);
 
   const stlUrl = useMemo(() => outputs.stlUrl || outputs.productStlUrl, [outputs.stlUrl, outputs.productStlUrl]);
   const caseBaseUrl = useMemo(() => outputs.caseBaseUrl, [outputs.caseBaseUrl]);
@@ -431,16 +490,6 @@ export default function SurfacePage() {
   const casePanelUrl = useMemo(() => outputs.casePanelUrl, [outputs.casePanelUrl]);
   const textureUrl = useMemo(() => outputs.textureUrl, [outputs.textureUrl]);
   const heightmapUrl = useMemo(() => outputs.heightmapUrl, [outputs.heightmapUrl]);
-  const stlViewerUrls = useMemo(
-    () => ({
-      main: stlUrl,
-      base: caseBaseUrl,
-      lid: caseLidUrl,
-      panel: casePanelUrl,
-    }),
-    [stlUrl, caseBaseUrl, caseLidUrl, casePanelUrl]
-  );
-  const resolvedManifestUrl = useMemo(() => (manifestUrl ? resolveSurfaceUrl(manifestUrl) : null), [manifestUrl]);
 
   const selectedHeightmap = useMemo(
     () => heightmapJobs.find((j) => j.id === selectedHeightmapId) || null,
@@ -488,8 +537,6 @@ export default function SurfacePage() {
     };
   }, [adminKnown, isAdmin, isComplete, manifest, effectiveJobId]);
 
-  const promoteBlockedReason = promoteState.ready ? "" : promoteState.reason || "";
-
   useEffect(() => {
     if (!jobId || !polling) return undefined;
 
@@ -510,40 +557,25 @@ export default function SurfacePage() {
         const statusResp = await getSurfaceJobStatus(jobId);
         if (cancelled) return;
 
-        const state = normalizeState(statusResp?.state || statusResp?.status || "unknown");
-        const progressVal = deriveProgress(state, statusResp?.progress);
+        const state = normalizeState(statusResp.state || statusResp.status);
+        const next = { ...statusResp, state, status: state, progress: deriveProgress(state, statusResp.progress) };
+        setJobStatus(next);
 
-        setJobStatus({
-          ...statusResp,
-          state,
-          progress: progressVal,
-          job_id: statusResp?.job_id || statusResp?.jobId || jobId,
-        });
-
-        const derivedFromStatus = deriveOutputs(statusResp, jobId, statusResp?.manifest_url || manifestUrl || "");
-        if (derivedFromStatus) {
-          setOutputs((prev) => ({ ...prev, ...derivedFromStatus }));
-          if (derivedFromStatus.heroUrl || (derivedFromStatus.list || []).length > 0) {
-            setPreviewBust(Date.now());
-          }
-
-          if (derivedFromStatus.manifestUrl) {
-            const resolvedHint = resolveSurfaceUrl(derivedFromStatus.manifestUrl);
-            setManifestUrl((prev) => {
-              if (!prev) return resolvedHint;
-              return prev !== resolvedHint ? resolvedHint : prev;
-            });
-          }
-        }
-
+        const manifestFromStatus = next.manifest || next.result?.manifest;
         const manifestUrlHint =
-          derivedFromStatus?.manifestUrl ||
-          statusResp?.manifest_url ||
-          statusResp?.public?.job_manifest ||
+          next.manifest_url ||
+          manifestFromStatus?.manifest_url ||
+          manifestFromStatus?.public?.job_manifest ||
           manifestUrl ||
           "";
 
-        const manifestFromStatus = statusResp?.manifest || null;
+        if (manifestUrlHint) {
+          const resolvedHint = resolveSurfaceUrl(manifestUrlHint);
+          setManifestUrl((prev) => {
+            if (!prev) return resolvedHint;
+            return prev !== resolvedHint ? resolvedHint : prev;
+          });
+        }
 
         if (!manifest && (manifestFromStatus || manifestUrlHint)) {
           await fetchAndApplyManifest(manifestUrlHint, manifestFromStatus || null, state, { allowMissing: state !== "complete" });
@@ -564,8 +596,9 @@ export default function SurfacePage() {
         }
       } catch (err) {
         if (cancelled) return;
+        setJobStatus({ state: "failed", status: "failed", progress: 0, job_id: jobId });
         setError(err?.message || "Surface status check failed.");
-        timer = setTimeout(pollOnce, 2000);
+        setPolling(false);
         return;
       }
 
@@ -579,31 +612,6 @@ export default function SurfacePage() {
       if (timer) clearTimeout(timer);
     };
   }, [jobId, polling, startedAt, manifest, manifestUrl]);
-
-  useEffect(() => {
-    if (statusLabel !== "complete") {
-      previewRetryRef.current = 0;
-      return undefined;
-    }
-
-    if (outputs.heroUrl) return undefined;
-    if (!manifest && !manifestUrl) return undefined;
-    if (previewRetryRef.current >= 6) return undefined;
-
-    const attempt = previewRetryRef.current + 1;
-    const delay = Math.min(15000, 1000 + attempt * 2500);
-
-    const timer = setTimeout(async () => {
-      previewRetryRef.current += 1;
-      try {
-        await fetchAndApplyManifest(manifestUrl, null, "complete", { allowMissing: true });
-      } catch (err) {
-        if (DEBUG_MODE) console.warn("preview auto-recheck failed", err);
-      }
-    }, delay);
-
-    return () => clearTimeout(timer);
-  }, [statusLabel, outputs.heroUrl, manifestUrl, manifest]);
 
   useEffect(() => {
     try {
@@ -683,7 +691,6 @@ export default function SurfacePage() {
 
   useEffect(() => {
     refreshHeightmapJobs();
-    refreshLatestSurfaces();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -691,86 +698,63 @@ export default function SurfacePage() {
     setHeightmapLoading(true);
     setHeightmapError("");
     try {
-      const data = await getHeightmapLatest(25);
-      const items = Array.isArray(data?.items) ? data.items : [];
-
-      const mapped = items.map((job) => {
-        const heightmapUrl = resolveHeightmapUrl(job.heightmap_url || job.heightmapUrl);
-        const previewUrl = resolveHeightmapUrl(
-          job.preview_url || job.previewUrl || job.heightmap_url || job.heightmapUrl || ""
-        );
-
-        return {
-          id: job.job_id || job.id,
-          name: job.job_name || job.name || job.jobId || job.job_id || job.id,
-          status: job.status || "complete",
-          created_at: job.created_at,
-          updated_at: job.updated_at,
-          heightmapUrl,
-          previewUrl,
-          manifestUrl: job.manifest_url || job.manifestUrl || null,
-          subfolder: job.subfolder || "",
-        };
+      const res = await fetch(`${HEIGHTMAP_API_BASE}/v1/jobs?limit=25&offset=0`, {
+        headers: HEIGHTMAP_API_KEY ? { "x-api-key": HEIGHTMAP_API_KEY } : undefined,
       });
-
-      if (mapped.length === 0) {
-        setHeightmapJobs([]);
-        setSelectedHeightmapId("");
-        setHeightmapError("No completed heightmaps found");
-        return;
+      const data = await res.json();
+      if (!res.ok || !data?.ok) {
+        throw new Error(data?.detail || data?.error || `Heightmap jobs fetch failed (${res.status})`);
       }
 
-      const valid = mapped.filter((j) => !!j.heightmapUrl);
+      const items = (data.jobs?.items || [])
+        .filter((job) => {
+          const status = String(job.status || "").toLowerCase();
+          return status === "done" || status === "complete" || status === "completed";
+        })
+        .map((job) => {
+          const pub = job.result?.public || job.public || {};
+          const previews = pub.blender_previews_urls || pub.previews || {};
+          const hero = previews.hero || previews.iso || previews.top || previews.side || pub.heightmap_url;
+          const heightmapUrl = resolveHeightmapUrl(pub.heightmap_url || job.result?.heightmap);
+          return {
+            id: job.id,
+            name: job.name || job.id,
+            status: job.status,
+            created_at: job.created_at,
+            updated_at: job.updated_at,
+            heightmapUrl,
+            previewUrl: resolveHeightmapUrl(hero || ""),
+          };
+        });
 
-      if (valid.length === 0) {
-        setHeightmapJobs(mapped);
-        setSelectedHeightmapId("");
-        setHeightmapError("No heightmap artifact found for the latest jobs");
-        return;
-      }
+      setHeightmapJobs(items);
 
       const preferredId = (() => {
-        if (selectedHeightmapId && mapped.some((j) => j.id === selectedHeightmapId)) {
+        if (selectedHeightmapId && items.some((j) => j.id === selectedHeightmapId)) {
           return selectedHeightmapId;
         }
         try {
           const stored = window.localStorage.getItem(HEIGHTMAP_STORAGE_KEY);
-          if (stored && mapped.some((j) => j.id === stored)) return stored;
+          if (stored && items.some((j) => j.id === stored)) return stored;
         } catch {
           /* ignore */
         }
-        return valid[0]?.id || "";
+        return items[0]?.id || "";
       })();
 
-      setHeightmapJobs(mapped);
-      setSelectedHeightmapId(preferredId);
-      try {
-        window.localStorage.setItem(HEIGHTMAP_STORAGE_KEY, preferredId);
-      } catch {
-        /* ignore */
+      if (preferredId) {
+        setSelectedHeightmapId(preferredId);
+        try {
+          window.localStorage.setItem(HEIGHTMAP_STORAGE_KEY, preferredId);
+        } catch {
+          /* ignore */
+        }
       }
     } catch (err) {
-      const endpointMissing = err?.endpointNotFound || err?.status === 404;
-      setHeightmapError(endpointMissing ? "Endpoint not found" : err?.message || "Failed to load heightmap jobs.");
+      setHeightmapError(err?.message || "Failed to load heightmap jobs.");
       setHeightmapJobs([]);
-      setSelectedHeightmapId("");
     } finally {
       setHeightmapLoading(false);
-    }
-  }
-
-  async function refreshLatestSurfaces(limit = 10) {
-    setLatestLoading(true);
-    setLatestError("");
-    try {
-      const data = await getSurfaceLatest(limit);
-      const items = Array.isArray(data?.items) ? data.items : [];
-      setLatestSurfaces(items);
-    } catch (err) {
-      setLatestError(err?.message || "Failed to load latest surface jobs.");
-      setLatestSurfaces([]);
-    } finally {
-      setLatestLoading(false);
     }
   }
 
@@ -782,7 +766,6 @@ export default function SurfacePage() {
     setManifestUrl("");
     setOutputs({
       list: [],
-      previewUrls: { hero: null, iso: null, top: null, side: null },
       heroUrl: null,
       stlUrl: null,
       productStlUrl: null,
@@ -799,7 +782,6 @@ export default function SurfacePage() {
     setStartedAt(null);
     setPreviewBust(Date.now());
     setLastCreatePayload(null);
-    autoRecheckRef.current = false;
 
     if (!selectedHeightmap || !selectedHeightmap.heightmapUrl) {
       setError("Select a completed heightmap first.");
@@ -890,9 +872,9 @@ export default function SurfacePage() {
 
     const derived = deriveOutputs(mf, jobId, manifestUrlResolved || manifestHint || "");
     const targetForChecks = mf?.target || mf?.meta?.target || form.target;
-    const assetsRoot = computeAssetsRoot(derived?.publicRoot ? { ...mf, public_root: derived.publicRoot } : mf);
-    setManifestUrl(derived?.manifestUrl || resolvedManifestUrl || "");
-    setManifest({ ...mf, assetsRoot, public_root: derived?.publicRoot || mf?.public_root });
+    const assetsRoot = computeAssetsRoot(mf);
+    setManifestUrl(resolvedManifestUrl || "");
+    setManifest({ ...mf, assetsRoot });
     setOutputs(derived);
     setPreviewBust(Date.now());
     setOutputsCheckedAt(Date.now());
@@ -948,8 +930,13 @@ export default function SurfacePage() {
     setMissingRequiredOutputs(requiredWarnings);
 
     if (stateHint === "complete") {
-      setJobStatus((prev) => ({ ...(prev || {}), state: "complete", status: "complete", progress: deriveProgress("complete", prev?.progress) }));
-      setError(warningText || "");
+      if (requiredWarnings.length > 0) {
+        setJobStatus((prev) => ({ ...(prev || {}), state: "failed", status: "failed", progress: deriveProgress("failed") }));
+        setError(warningText || "Manifest outputs are missing or invalid.");
+      } else {
+        setJobStatus((prev) => ({ ...(prev || {}), state: "complete", status: "complete", progress: deriveProgress("complete", prev?.progress) }));
+        setError(optionalWarnings.length ? optionalWarnings.join("; ") : "");
+      }
     } else if (requiredWarnings.length === 0) {
       setError(optionalWarnings.length ? optionalWarnings.join("; ") : "");
     }
@@ -1023,10 +1010,10 @@ export default function SurfacePage() {
       { label: "Created", value: formatTs(meta.created_at || manifest.created_at) },
       { label: "Service", value: meta.service_version || manifest.service_version || "n/a" },
       { label: "Assets", value: SURFACE_ASSET_BASE },
-      { label: "Manifest", value: resolvedManifestUrl || manifestUrl || "" },
+      { label: "Manifest", value: manifestUrl || "" },
       { label: "Heightmap", value: selectedHeightmap?.name || "none" },
     ];
-  }, [manifest, effectiveJobId, selectedHeightmap, manifestUrl, resolvedManifestUrl]);
+  }, [manifest, effectiveJobId, selectedHeightmap, manifestUrl]);
 
   function resetJob() {
     setJobId("");
@@ -1035,7 +1022,6 @@ export default function SurfacePage() {
     setManifestUrl("");
     setOutputs({
       list: [],
-      previewUrls: { hero: null, iso: null, top: null, side: null },
       heroUrl: null,
       stlUrl: null,
       productStlUrl: null,
@@ -1054,657 +1040,525 @@ export default function SurfacePage() {
     setLastCreatePayload(null);
     setForm((prev) => ({ ...prev, name: defaultJobName() }));
   }
+
   return (
     <div className="surface-page">
-      <div className="surface-wrap">
-        <main className="surface-main">
-          <div className="surface-header">
+      <div className="surface-header">
+        <div>
+          {/* Engine Identity: consumes heightmaps to produce modular, functional enclosure geometry (Raspberry Pi-first). */}
+          <p className="surface-eyebrow">Surface Engine</p>
+          <h1>Generate Relief</h1>
+          <p className="surface-lede">
+            Launch a surface job, watch status in real-time, and grab previews and meshes
+            directly from the assets bucket.
+          </p>
+        </div>
+        <div className="surface-chip">
+          <Sparkles size={18} />
+          <span>Stabilized API</span>
+        </div>
+      </div>
+
+      <div className="surface-grid">
+        <section className="surface-card">
+          <div className="surface-card-head">
             <div>
-              <p className="surface-eyebrow">Surface Engine</p>
-              <h1>Surface Control</h1>
-              <p className="surface-lede">
-                Launch a surface job, monitor live progress, and browse previews and meshes directly from the bucket.
-              </p>
+              <p className="surface-eyebrow">Job setup</p>
+              <h2>Surface parameters</h2>
             </div>
-            <div className="surface-chip">
-              <Sparkles size={18} />
-              <span>Stabilized API</span>
-            </div>
+            <button
+              className="surface-button"
+              onClick={startJob}
+              disabled={loading}
+              type="button"
+            >
+              {loading ? (
+                <>
+                  <RefreshCw className="spin" size={16} /> Running...
+                </>
+              ) : (
+                <>
+                  <Sparkles size={16} /> Generate Relief
+                </>
+              )}
+            </button>
           </div>
 
-          <div className="surface-layout controlGrid">
-            <Panel
-              eyebrow="Job setup"
-              title="Surface parameters"
-              className="surface-pane surface-pane--setup"
-              actions={(
-                <button className="surface-button" onClick={startJob} disabled={loading} type="button">
-                  {loading ? (
-                    <>
-                      <RefreshCw className="spin" size={16} /> Running…
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles size={16} /> Generate Relief
-                    </>
-                  )}
+          <div className="surface-form">
+            <div className="surface-heightmap-box">
+              <div className="surface-label">
+                <span>Input heightmap</span>
+                <div className="surface-heightmap-row">
+                  <select
+                    value={selectedHeightmapId}
+                    onChange={(e) => {
+                      setSelectedHeightmapId(e.target.value);
+                      try {
+                        window.localStorage.setItem(HEIGHTMAP_STORAGE_KEY, e.target.value);
+                      } catch {
+                        /* ignore */
+                      }
+                    }}
+                    disabled={heightmapLoading || loading || heightmapJobs.length === 0}
+                  >
+                    {heightmapJobs.map((job) => (
+                      <option key={job.id} value={job.id}>
+                        {job.name} - {formatTs(job.updated_at || job.created_at)}
+                      </option>
+                    ))}
+                    {heightmapJobs.length === 0 && <option value="">No completed heightmaps found</option>}
+                  </select>
+                  <button
+                    type="button"
+                    className="surface-button surface-button-ghost"
+                    onClick={refreshHeightmapJobs}
+                    disabled={heightmapLoading}
+                  >
+                    {heightmapLoading ? (
+                      <>
+                        <RefreshCw className="spin" size={14} /> Refreshing
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw size={14} /> Refresh
+                      </>
+                    )}
+                  </button>
+                </div>
+                <p className="surface-muted">
+                  Shows completed heightmaps from the Heightmap tool. Create one if empty.
+                </p>
+                {heightmapError && <p className="surface-inline-error">{heightmapError}</p>}
+              </div>
+
+              <div className="surface-heightmap-preview">
+                {selectedHeightmapPreview ? (
+                  <img src={selectedHeightmapPreview} alt="Selected heightmap preview" />
+                ) : (
+                  <div className="surface-placeholder">
+                    <ImageIcon size={18} />
+                    <p>Select a completed heightmap to preview.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <label className="surface-label">
+              <span>Job name</span>
+              <input
+                type="text"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                placeholder="relief-2026-01-14"
+              />
+            </label>
+
+            <label className="surface-label">
+              <span>Quality</span>
+              <select
+                value={form.quality}
+                onChange={(e) => setForm({ ...form, quality: e.target.value })}
+              >
+                <option value="draft">Draft</option>
+                <option value="standard">Standard</option>
+                <option value="high">High</option>
+              </select>
+            </label>
+
+            <label className="surface-label">
+              <span>Product target</span>
+              <select
+                value={form.target}
+                onChange={(e) => setForm({ ...form, target: e.target.value })}
+              >
+                <option value="tile">Relief Tile</option>
+                <option value="pi4b_case">Raspberry Pi 4B Case</option>
+              </select>
+            </label>
+
+            {form.target === "pi4b_case" && (
+              <label className="surface-label">
+                <span>Emboss mode</span>
+                <div className="surface-segmented">
+                  {["lid", "panel", "both"].map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      className={`surface-segment ${form.emboss_mode === mode ? "is-active" : ""}`}
+                      onClick={() => setForm({ ...form, emboss_mode: mode })}
+                    >
+                      {mode === "lid" ? "Lid" : mode === "panel" ? "Panel" : "Both"}
+                    </button>
+                  ))}
+                </div>
+              </label>
+            )}
+
+            <label className="surface-label">
+              <span>Notes (optional)</span>
+              <textarea
+                rows={3}
+                value={form.notes}
+                onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                placeholder="Describe the relief intent or leave blank"
+              />
+            </label>
+          </div>
+
+          {error && (
+            <div className="surface-alert surface-alert-error">
+              <AlertTriangle size={18} />
+              <div>
+                <p className="surface-alert-title">Surface error</p>
+                <p className="surface-alert-body">{error}</p>
+              </div>
+              {timeoutHit && (
+                <button className="surface-link" onClick={resetJob} type="button">
+                  Try again
                 </button>
               )}
-            >
-              <div className="surface-form-grid">
-                <div className="surface-field surface-field--heightmap">
-                  <div className="surface-heightmap-box">
-                    <div className="surface-heightmap-controls">
-                      <label className="surface-label">
-                        <span>Input heightmap</span>
-                        <div className="surface-heightmap-row">
-                          <select
-                            value={selectedHeightmapId}
-                            onChange={(e) => {
-                              setSelectedHeightmapId(e.target.value);
-                              try {
-                                window.localStorage.setItem(HEIGHTMAP_STORAGE_KEY, e.target.value);
-                              } catch {
-                                /* ignore */
-                              }
-                            }}
-                            disabled={heightmapLoading || loading || heightmapJobs.length === 0}
-                          >
-                            {heightmapJobs.map((job) => (
-                              <option key={job.id} value={job.id} disabled={!job.heightmapUrl}>
-                                {job.name} – {formatTs(job.updated_at || job.created_at)}
-                                {!job.heightmapUrl ? " (no heightmap artifact)" : ""}
-                              </option>
-                            ))}
-                            {heightmapJobs.length === 0 && <option value="">No completed heightmaps found</option>}
-                          </select>
-                          <button
-                            type="button"
-                            className="surface-button surface-button-ghost"
-                            onClick={refreshHeightmapJobs}
-                            disabled={heightmapLoading}
-                          >
-                            {heightmapLoading ? (
-                              <>
-                                <RefreshCw className="spin" size={14} /> Refreshing
-                              </>
-                            ) : (
-                              <>
-                                <RefreshCw size={14} /> Refresh
-                              </>
-                            )}
-                          </button>
-                        </div>
-                        <p className="surface-muted">
-                          Shows completed heightmaps from the Heightmap tool. Create one if empty.
-                        </p>
-                        {heightmapError && <p className="surface-inline-error">{heightmapError}</p>}
-                      </label>
-                    </div>
+            </div>
 
-                    <div className="surface-heightmap-preview-card">
-                      {selectedHeightmapPreview ? (
-                        <img src={selectedHeightmapPreview} alt="Selected heightmap preview" />
-                      ) : (
-                        <div className="surface-placeholder">
-                          <ImageIcon size={18} />
-                          <p>Select a completed heightmap to preview.</p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
+          )}
 
-                <div className="surface-field-grid">
-                  <label className="surface-label">
-                    <span>Job name</span>
-                    <input
-                      type="text"
-                      value={form.name}
-                      onChange={(e) => setForm({ ...form, name: e.target.value })}
-                      placeholder="relief-2026-01-14"
-                    />
-                  </label>
-
-                  <label className="surface-label">
-                    <span>Quality</span>
-                    <select
-                      value={form.quality}
-                      onChange={(e) => setForm({ ...form, quality: e.target.value })}
-                    >
-                      <option value="draft">Draft</option>
-                      <option value="standard">Standard</option>
-                      <option value="high">High</option>
-                    </select>
-                  </label>
-                </div>
-
-                <div className="surface-field-grid">
-                  <label className="surface-label">
-                    <span>Product target</span>
-                    <select
-                      value={form.target}
-                      onChange={(e) => setForm({ ...form, target: e.target.value })}
-                    >
-                      <option value="tile">Relief Tile</option>
-                      <option value="pi4b_case">Raspberry Pi 4B Case</option>
-                    </select>
-                  </label>
-
-                  {form.target === "pi4b_case" && (
-                    <label className="surface-label">
-                      <span>Emboss mode</span>
-                      <div className="surface-segmented">
-                        {["lid", "panel", "both"].map((mode) => (
-                          <button
-                            key={mode}
-                            type="button"
-                            className={`surface-segment ${form.emboss_mode === mode ? "is-active" : ""}`}
-                            onClick={() => setForm({ ...form, emboss_mode: mode })}
-                          >
-                            {mode === "lid" ? "Lid" : mode === "panel" ? "Panel" : "Both"}
-                          </button>
-                        ))}
-                      </div>
-                    </label>
-                  )}
-                </div>
-
-                <label className="surface-label">
-                  <span>Notes (optional)</span>
-                  <textarea
-                    rows={3}
-                    value={form.notes}
-                    onChange={(e) => setForm({ ...form, notes: e.target.value })}
-                    placeholder="Describe the relief intent or leave blank"
-                  />
-                </label>
+          {timeoutHit && !error && (
+            <div className="surface-alert surface-alert-warn">
+              <Clock3 size={18} />
+              <div>
+                <p className="surface-alert-title">Polling timed out</p>
+                <p className="surface-alert-body">
+                  The job has been running for more than five minutes. You can retry or keep this
+                  page open while the engine finishes.
+                </p>
               </div>
+              <button className="surface-link" onClick={resetJob} type="button">
+                Try again
+              </button>
+            </div>
+          )}
+        </section>
 
-              {error && (
-                <div className="surface-alert surface-alert-error">
-                  <AlertTriangle size={18} />
-                  <div>
-                    <p className="surface-alert-title">Surface error</p>
-                    <p className="surface-alert-body">{error}</p>
-                  </div>
-                  {timeoutHit && (
-                    <button className="surface-link" onClick={resetJob} type="button">
-                      Try again
-                    </button>
-                  )}
-                </div>
-              )}
-
-              {timeoutHit && !error && (
-                <div className="surface-alert surface-alert-warn">
-                  <Clock3 size={18} />
-                  <div>
-                    <p className="surface-alert-title">Polling timed out</p>
-                    <p className="surface-alert-body">
-                      The job has been running for more than five minutes. You can retry or keep this
-                      page open while the engine finishes.
-                    </p>
-                  </div>
-                  <button className="surface-link" onClick={resetJob} type="button">
-                    Try again
-                  </button>
-                </div>
-              )}
-            </Panel>
-
-            <Panel
-              eyebrow="Visual"
-              title="Live preview + 3D"
-              className="surface-pane surface-pane--visual"
-              actions={(
-                <div className="surface-panel-actions">
-                  {resolvedManifestUrl && (
-                    <button
-                      type="button"
-                      className="surface-button surface-button-ghost"
-                      onClick={() => window.open(resolvedManifestUrl, "_blank")}
-                    >
-                      <FileDown size={14} /> Manifest
-                    </button>
-                  )}
-                  {artifactWarning && (
-                    <span className="surface-chip surface-chip-ghost">Check assets</span>
-                  )}
-                </div>
-              )}
-            >
-              <div className="surface-visual-grid">
-                <PreviewGallery
-                  previews={previewUrls}
-                  manifestUrl={resolvedManifestUrl}
-                  missingLabel={missingOutputs ? "Preview missing" : "Preview pending"}
-                  onReload={recheckOutputs}
-                />
-
-                <div className="surface-3d-pane">
-                  <div className="surface-pane-subhead">
-                    <p className="surface-k" style={{ margin: 0 }}>3D viewer</p>
-                    <p className="surface-muted" style={{ margin: 0 }}>Orbit, pan, zoom; pick STL</p>
-                  </div>
-                  <StlViewer urls={stlViewerUrls} />
-                </div>
-              </div>
-
-              {artifactWarning && (
-                <div className="surface-alert surface-alert-warn" style={{ marginTop: "0.75rem" }}>
-                  <AlertTriangle size={18} />
-                  <div>
-                    <p className="surface-alert-title">Artifact warning</p>
-                    <p className="surface-alert-body">{artifactWarning}</p>
-                  </div>
-                  <button className="surface-link" type="button" onClick={recheckOutputs}>
-                    Re-check outputs
-                  </button>
-                </div>
-              )}
-            </Panel>
-
-            <Panel
-              eyebrow="Status"
-              title="Job status + outputs"
-              className="surface-pane surface-pane--status"
-              actions={(
-                <div className="surface-panel-actions">
-                  {adminChecking && <span className="surface-chip surface-chip-ghost">Checking admin…</span>}
-                  {effectiveJobId && <span className="surface-chip surface-chip-ghost">{effectiveJobId}</span>}
-                  {isComplete && (
-                    <button type="button" className="surface-button surface-button-ghost" onClick={recheckOutputs}>
-                      <RefreshCw size={14} /> Re-check outputs
-                    </button>
-                  )}
-                </div>
-              )}
-            >
-              <div className="surface-status-stack">
-                <div className="surface-status-row">
-                  <div className={`surface-status surface-status-${statusLabel}`}>
-                    {statusLabel}
-                  </div>
-                  <div className="surface-progress">
-                    <div className="surface-progress-bar" style={{ width: `${progress}%` }} />
-                  </div>
-                  <span className="surface-progress-text">{progress}%</span>
-                </div>
-
-                <div className="surface-status-grid">
-                  <div>
-                    <p className="surface-k">State</p>
-                    <p className="surface-v">{statusLabel}</p>
-                  </div>
-                  <div>
-                    <p className="surface-k">Started</p>
-                    <p className="surface-v">{startedAt ? formatTs(startedAt) : "—"}</p>
-                  </div>
-                  <div>
-                    <p className="surface-k">Assets root</p>
-                    <p className="surface-v">{SURFACE_ASSET_BASE}/</p>
-                  </div>
-                  <div>
-                    <p className="surface-k">Polling</p>
-                    <p className="surface-v">{polling ? "active" : "idle"}</p>
-                  </div>
-                </div>
-
-                {missingOutputs && (
-                  <div className="surface-alert surface-alert-warn" style={{ marginBottom: "0.75rem" }}>
-                    <AlertTriangle size={18} />
-                    <div>
-                      <p className="surface-alert-title">Outputs missing</p>
-                      <p className="surface-alert-body">Job completed but manifest outputs are missing or empty.</p>
-                    </div>
-                  </div>
-                )}
-
-                <div className="surface-downloads">
-                  {target === "pi4b_case" ? (
-                    <>
-                      <button
-                        className="surface-download"
-                        type="button"
-                        onClick={() => caseBaseUrl && window.open(caseBaseUrl, "_blank")}
-                        disabled={!caseBaseUrl}
-                      >
-                        <FileDown size={18} />
-                        <div>
-                          <p>Pi4B Base STL</p>
-                          <span>{caseBaseUrl ? "Download" : missingOutputs ? "Missing from manifest" : "Unavailable"}</span>
-                        </div>
-                        <Download size={16} />
-                      </button>
-
-                      <button
-                        className="surface-download"
-                        type="button"
-                        onClick={() => caseLidUrl && window.open(caseLidUrl, "_blank")}
-                        disabled={!caseLidUrl}
-                      >
-                        <FileDown size={18} />
-                        <div>
-                          <p>Pi4B Lid STL</p>
-                          <span>{caseLidUrl ? "Download" : missingOutputs ? "Missing from manifest" : "Unavailable"}</span>
-                        </div>
-                        <Download size={16} />
-                      </button>
-
-                      {(embossMode === "panel" || embossMode === "both") && (
-                        <button
-                          className="surface-download"
-                          type="button"
-                          onClick={() => casePanelUrl && window.open(casePanelUrl, "_blank")}
-                          disabled={!casePanelUrl}
-                        >
-                          <FileDown size={18} />
-                          <div>
-                            <p>Pi4B Panel STL</p>
-                            <span>{casePanelUrl ? "Download" : missingOutputs ? "Missing from manifest" : "Unavailable"}</span>
-                          </div>
-                          <Download size={16} />
-                        </button>
-                      )}
-                    </>
-                  ) : (
-                    <button
-                      className="surface-download"
-                      type="button"
-                      onClick={() => stlUrl && window.open(stlUrl, "_blank")}
-                      disabled={!stlUrl}
-                    >
-                      <FileDown size={18} />
-                      <div>
-                        <p>Enclosure STL</p>
-                        <span>{stlUrl ? "Download" : missingOutputs ? "Missing from manifest" : "Unavailable"}</span>
-                      </div>
-                      <Download size={16} />
-                    </button>
-                  )}
-
-                  <button
-                    className="surface-download"
-                    type="button"
-                    onClick={() => textureUrl && window.open(textureUrl, "_blank")}
-                    disabled={!textureUrl}
-                  >
-                    <FileDown size={18} />
-                    <div>
-                      <p>Texture PNG</p>
-                      <span>{textureUrl ? "Download" : missingOutputs ? "Missing from manifest" : "Unavailable"}</span>
-                    </div>
-                    <Download size={16} />
-                  </button>
-
-                  <button
-                    className="surface-download"
-                    type="button"
-                    onClick={() => heightmapUrl && window.open(heightmapUrl, "_blank")}
-                    disabled={!heightmapUrl}
-                  >
-                    <FileDown size={18} />
-                    <div>
-                      <p>Heightmap PNG</p>
-                      <span>{heightmapUrl ? "Download" : missingOutputs ? "Missing from manifest" : "Unavailable"}</span>
-                    </div>
-                    <Download size={16} />
-                  </button>
-                </div>
-
-                {isAdmin && (
-                  <div className="surface-admin-card">
-                    <div className="surface-pane-subhead">
-                      <p className="surface-k" style={{ margin: 0 }}>Admin tools</p>
-                      <p className="surface-muted" style={{ margin: 0 }}>Draft store products from this job</p>
-                    </div>
-                    <div className="surface-admin-actions">
-                      <button
-                        type="button"
-                        className="surface-button"
-                        disabled={!promoteState.ready}
-                        onClick={() => {
-                          setPromoteError("");
-                          setPromoteOpen(true);
-                          refreshAdmin();
-                        }}
-                      >
-                        Promote to Product
-                      </button>
-                      {!promoteState.ready && promoteState.reason && (
-                        <span className="surface-inline-error">Promote blocked: {promoteState.reason}</span>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {error && !missingOutputs && (
-                  <div className="surface-alert surface-alert-error">
-                    <AlertTriangle size={18} />
-                    <div>
-                      <p className="surface-alert-title">Surface error</p>
-                      <p className="surface-alert-body">{error}</p>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </Panel>
+        <section className="surface-card">
+          <div className="surface-card-head">
+            <div>
+              <p className="surface-eyebrow">Live status</p>
+              <h2>Pipeline monitor</h2>
+            </div>
+            {effectiveJobId && (
+              <span className="surface-chip surface-chip-ghost">{effectiveJobId}</span>
+            )}
           </div>
 
-          <div className="surface-bottom">
-            <Panel
-              eyebrow="Recent"
-              title="Recent jobs / outputs"
-              className="surface-pane surface-pane--recent"
-              actions={(
+          <div className="surface-status-row">
+            <div className={`surface-status surface-status-${statusLabel}`}>
+              {statusLabel}
+            </div>
+            <div className="surface-progress">
+              <div className="surface-progress-bar" style={{ width: `${progress}%` }} />
+            </div>
+            <span className="surface-progress-text">{progress}%</span>
+          </div>
+
+          <div className="surface-status-grid">
+            <div>
+              <p className="surface-k">State</p>
+              <p className="surface-v">{statusLabel}</p>
+            </div>
+            <div>
+              <p className="surface-k">Started</p>
+              <p className="surface-v">{startedAt ? formatTs(startedAt) : "—"}</p>
+            </div>
+            <div>
+              <p className="surface-k">Assets root</p>
+              <p className="surface-v">{SURFACE_ASSET_BASE}/</p>
+            </div>
+            <div>
+              <p className="surface-k">Polling</p>
+              <p className="surface-v">{polling ? "active" : "idle"}</p>
+            </div>
+          </div>
+        </section>
+
+        <section className="surface-card">
+          <div className="surface-card-head">
+            <div>
+              <p className="surface-eyebrow">Preview</p>
+              <h2>Hero render</h2>
+            </div>
+            {!heroUrl && <span className="surface-chip surface-chip-ghost">Waiting</span>}
+          </div>
+
+          {heroUrl ? (
+            <div className="surface-preview">
+              <img
+                src={heroUrl}
+                alt="Surface hero preview"
+                onError={() => setArtifactWarning((prev) => prev || "Preview image missing")}
+              />
+            </div>
+          ) : (
+            <div className="surface-placeholder">
+              <ImageIcon size={22} />
+              <p>Preview will appear once the job finishes.</p>
+              {missingOutputs && <p className="surface-inline-error">Manifest missing preview output.</p>}
+            </div>
+          )}
+
+          {artifactWarning && (
+            <div className="surface-alert surface-alert-warn" style={{ marginTop: "0.75rem" }}>
+              <AlertTriangle size={18} />
+              <div>
+                <p className="surface-alert-title">Artifact warning</p>
+                <p className="surface-alert-body">{artifactWarning}</p>
+              </div>
+              <button className="surface-link" type="button" onClick={recheckOutputs}>
+                Re-check outputs
+              </button>
+            </div>
+          )}
+        </section>
+
+        <section className="surface-card">
+          <div className="surface-card-head">
+            <div>
+              <p className="surface-eyebrow">Outputs</p>
+              <h2>Downloads</h2>
+            </div>
+            <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+              {adminChecking && (
+                <span className="surface-chip surface-chip-ghost">Checking admin…</span>
+              )}
+              {isComplete && <span className="surface-chip surface-chip-success">Complete</span>}
+              {isComplete && (
+                <button type="button" className="surface-button surface-button-ghost" onClick={recheckOutputs}>
+                  <RefreshCw size={14} /> Re-check outputs
+                </button>
+              )}
+            </div>
+          </div>
+
+          {missingOutputs && (
+            <div className="surface-alert surface-alert-warn" style={{ marginBottom: "0.75rem" }}>
+              <AlertTriangle size={18} />
+              <div>
+                <p className="surface-alert-title">Outputs missing</p>
+                <p className="surface-alert-body">Job completed but manifest outputs are missing or empty.</p>
+              </div>
+            </div>
+          )}
+
+          <div className="surface-downloads">
+            {target === "pi4b_case" ? (
+              <>
                 <button
+                  className="surface-download"
                   type="button"
-                  className="surface-button surface-button-ghost"
-                  onClick={() => refreshLatestSurfaces()}
-                  disabled={latestLoading}
+                  onClick={() => caseBaseUrl && window.open(caseBaseUrl, "_blank")}
+                  disabled={!caseBaseUrl}
                 >
-                  {latestLoading ? (
-                    <>
-                      <RefreshCw className="spin" size={14} /> Refreshing
-                    </>
-                  ) : (
-                    <>
-                      <RefreshCw size={14} /> Refresh
-                    </>
-                  )}
+                  <FileDown size={18} />
+                  <div>
+                    <p>Pi4B Base STL</p>
+                    <span>{caseBaseUrl ? "Download" : missingOutputs ? "Missing from manifest" : "Unavailable"}</span>
+                  </div>
+                  <Download size={16} />
                 </button>
-              )}
-            >
-              <div className="recentGrid">
-                <div className="recentGalleryCol surface-recent-list">
-                  {latestError && (
-                    <div className="surface-alert surface-alert-error" style={{ marginBottom: "0.75rem" }}>
-                      <AlertTriangle size={18} />
-                      <div>
-                        <p className="surface-alert-title">Latest outputs unavailable</p>
-                        <p className="surface-alert-body">{latestError}</p>
-                      </div>
-                    </div>
-                  )}
 
-                  {latestLoading && <p className="surface-muted">Loading recent surface jobs…</p>}
-
-                  {!latestLoading && latestSurfaces.length === 0 && !latestError && (
-                    <div className="surface-placeholder">
-                      <ImageIcon size={20} />
-                      <p>No recent surface jobs found.</p>
-                    </div>
-                  )}
-
-                  <div className="surface-recent-grid">
-                    {latestSurfaces.map((item) => {
-                      const badge = item.subfolder ? `${item.subfolder}/${item.job_id}` : item.job_id || item.job_name || "job";
-                      const manifestHref = item.manifest_url ? resolveSurfaceUrl(item.manifest_url) : item.public_root ? resolveSurfaceUrl(`${item.public_root}/job_manifest.json`) : null;
-                      const heroSrc = item.hero_url ? resolveSurfaceUrl(item.hero_url) : null;
-                      const stlSrc = item.stl_url ? resolveSurfaceUrl(item.stl_url) : null;
-                      const itemKey = `${item.subfolder || "root"}-${item.job_id || item.job_name || manifestHref || badge}`;
-
-                      return (
-                        <div key={itemKey} className="surface-recent-card">
-                          <div className="surface-recent-thumb">
-                            {heroSrc ? (
-                              <>
-                                <img
-                                  src={heroSrc}
-                                  alt="Latest surface preview"
-                                  onError={(e) => {
-                                    e.currentTarget.style.display = "none";
-                                    const fallback = e.currentTarget.nextElementSibling;
-                                    if (fallback) fallback.style.display = "flex";
-                                    setLatestError((prev) => prev || "Preview failed to load (image)");
-                                  }}
-                                />
-                                <div className="surface-placeholder surface-thumb-fallback" style={{ display: "none", height: "100%", width: "100%", border: "none" }}>
-                                  <ImageIcon size={18} />
-                                  <span style={{ fontSize: "0.8rem", opacity: 0.8 }}>Preview unavailable</span>
-                                </div>
-                              </>
-                            ) : (
-                              <div className="surface-placeholder" style={{ height: "100%", width: "100%", border: "none" }}>
-                                <ImageIcon size={18} />
-                              </div>
-                            )}
-                          </div>
-
-                          <div className="surface-recent-body">
-                            <div className="surface-recent-head">
-                              <p className="surface-k" style={{ margin: 0, fontWeight: 700 }}>
-                                {item.job_name || item.job_id || "Surface job"}
-                              </p>
-                              <span className="surface-chip surface-chip-ghost">{badge}</span>
-                            </div>
-                            <p className="surface-muted" style={{ margin: 0 }}>Created {formatTs(item.created_at)}</p>
-                            {item.target && (
-                              <p className="surface-muted" style={{ margin: 0 }}>Target: {item.target}</p>
-                            )}
-
-                            <div className="surface-recent-actions">
-                              <button
-                                type="button"
-                                className="surface-button surface-button-ghost"
-                                onClick={() => manifestHref && window.open(manifestHref, "_blank")}
-                                disabled={!manifestHref}
-                              >
-                                <FileDown size={14} /> Manifest
-                              </button>
-                              <button
-                                type="button"
-                                className="surface-button surface-button-ghost"
-                                onClick={() => heroSrc && window.open(heroSrc, "_blank")}
-                                disabled={!heroSrc}
-                              >
-                                <ImageIcon size={14} /> Preview
-                              </button>
-                              <button
-                                type="button"
-                                className="surface-button surface-button-ghost"
-                                onClick={() => stlSrc && window.open(stlSrc, "_blank")}
-                                disabled={!stlSrc}
-                              >
-                                <Download size={14} /> STL
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
+                <button
+                  className="surface-download"
+                  type="button"
+                  onClick={() => caseLidUrl && window.open(caseLidUrl, "_blank")}
+                  disabled={!caseLidUrl}
+                >
+                  <FileDown size={18} />
+                  <div>
+                    <p>Pi4B Lid STL</p>
+                    <span>{caseLidUrl ? "Download" : missingOutputs ? "Missing from manifest" : "Unavailable"}</span>
                   </div>
+                  <Download size={16} />
+                </button>
+
+                {(embossMode === "panel" || embossMode === "both") && (
+                  <button
+                    className="surface-download"
+                    type="button"
+                    onClick={() => casePanelUrl && window.open(casePanelUrl, "_blank")}
+                    disabled={!casePanelUrl}
+                  >
+                    <FileDown size={18} />
+                    <div>
+                      <p>Pi4B Panel STL</p>
+                      <span>{casePanelUrl ? "Download" : missingOutputs ? "Missing from manifest" : "Unavailable"}</span>
+                    </div>
+                    <Download size={16} />
+                  </button>
+                )}
+              </>
+            ) : (
+              <button
+                className="surface-download"
+                type="button"
+                onClick={() => stlUrl && window.open(stlUrl, "_blank")}
+                disabled={!stlUrl}
+              >
+                <FileDown size={18} />
+                <div>
+                  <p>Enclosure STL</p>
+                  <span>{stlUrl ? "Download" : missingOutputs ? "Missing from manifest" : "Unavailable"}</span>
                 </div>
+                <Download size={16} />
+              </button>
+            )}
 
-                <div className="recentMetaCol surface-meta-column">
-                  <div className="surface-meta-card">
-                    <div className="surface-pane-subhead">
-                      <p className="surface-k" style={{ margin: 0 }}>Metadata</p>
-                      <p className="surface-muted" style={{ margin: 0 }}>Source + service</p>
-                    </div>
-                    {metadata.length > 0 ? (
-                      <div className="surface-meta-grid">
-                        {metadata.map((row) => (
-                          <div key={row.label} className="surface-meta-row">
-                            <span className="surface-k">{row.label}</span>
-                            <span className="surface-v">{row.value || ""}</span>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="surface-muted">Manifest will appear once the job completes.</p>
-                    )}
+            <button
+              className="surface-download"
+              type="button"
+              onClick={() => textureUrl && window.open(textureUrl, "_blank")}
+              disabled={!textureUrl}
+            >
+              <FileDown size={18} />
+              <div>
+                <p>Texture PNG</p>
+                <span>{textureUrl ? "Download" : missingOutputs ? "Missing from manifest" : "Unavailable"}</span>
+              </div>
+              <Download size={16} />
+            </button>
+
+            <button
+              className="surface-download"
+              type="button"
+              onClick={() => heightmapUrl && window.open(heightmapUrl, "_blank")}
+              disabled={!heightmapUrl}
+            >
+              <FileDown size={18} />
+              <div>
+                <p>Heightmap PNG</p>
+                <span>{heightmapUrl ? "Download" : missingOutputs ? "Missing from manifest" : "Unavailable"}</span>
+              </div>
+              <Download size={16} />
+            </button>
+          </div>
+        </section>
+
+        {isAdmin && (
+          <section className="surface-card" style={{ minWidth: "260px" }}>
+            <div className="surface-card-head">
+              <div>
+                <p className="surface-eyebrow">Admin</p>
+                <h2>Admin Tools</h2>
+              </div>
+              <span className="surface-chip surface-chip-ghost">Admin</span>
+            </div>
+
+            <p className="surface-muted" style={{ marginTop: "0.25rem" }}>
+              Draft a store product from this surface job.
+            </p>
+
+            <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginTop: "0.5rem" }}>
+              <button
+                type="button"
+                className="surface-button"
+                disabled={!promoteState.ready}
+                onClick={() => {
+                  setPromoteError("");
+                  setPromoteOpen(true);
+                  refreshAdmin();
+                }}
+              >
+                Promote to Product
+              </button>
+
+              {!promoteState.ready && promoteState.reason && (
+                <span className="surface-inline-error">Promote blocked: {promoteState.reason}</span>
+              )}
+            </div>
+          </section>
+        )}
+
+        <section className="surface-card">
+          <div className="surface-card-head">
+            <div>
+              <p className="surface-eyebrow">Manifest</p>
+              <h2>Metadata</h2>
+            </div>
+            {manifestUrl && (
+              <button
+                type="button"
+                className="surface-button surface-button-ghost"
+                onClick={() => window.open(resolveSurfaceUrl(manifestUrl), "_blank")}
+              >
+                <FileDown size={14} /> Open Manifest
+              </button>
+            )}
+          </div>
+
+          <details className="surface-details" open>
+            <summary>Created + service version</summary>
+            {metadata.length > 0 ? (
+              <div className="surface-meta-grid">
+                {metadata.map((row) => (
+                  <div key={row.label} className="surface-meta-row">
+                    <span className="surface-k">{row.label}</span>
+                    <span className="surface-v">{row.value || ""}</span>
                   </div>
+                ))}
+              </div>
+            ) : (
+              <p className="surface-muted">Manifest will appear once the job completes.</p>
+            )}
+          </details>
 
-                  <details className="surface-details" open>
-                    <summary>Manifest JSON</summary>
-                    {manifest ? (
-                      <pre>{JSON.stringify(manifest, null, 2)}</pre>
-                    ) : (
-                      <p className="surface-muted">Manifest will appear once the job completes.</p>
-                    )}
-                  </details>
+          {manifest && (
+            <details className="surface-details">
+              <summary>Raw manifest</summary>
+              <pre>{JSON.stringify(manifest, null, 2)}</pre>
+            </details>
+          )}
 
-                  <details className="surface-details">
-                    <summary>Job JSON</summary>
-                    {jobStatus ? (
-                      <pre>{JSON.stringify(jobStatus, null, 2)}</pre>
-                    ) : lastCreatePayload ? (
-                      <pre>{JSON.stringify(lastCreatePayload, null, 2)}</pre>
-                    ) : (
-                      <p className="surface-muted">Job not started yet.</p>
-                    )}
-                  </details>
-
-                  {IS_DEV && (
-                    <details className="surface-details">
-                      <summary>Debug (dev-only)</summary>
-                      <div className="surface-meta-grid">
-                        <div className="surface-meta-row">
-                          <span className="surface-k">Job ID</span>
-                          <span className="surface-v">{jobId || ""}</span>
-                        </div>
-                        <div className="surface-meta-row">
-                          <span className="surface-k">Manifest URL</span>
-                          <span className="surface-v">{resolvedManifestUrl || manifestUrl || ""}</span>
-                        </div>
-                        <div className="surface-meta-row">
-                          <span className="surface-k">Payload heightmap_url</span>
-                          <span className="surface-v">{lastCreatePayload?.source_heightmap_url || selectedHeightmap?.heightmapUrl || ""}</span>
-                        </div>
-                        <div className="surface-meta-row">
-                          <span className="surface-k">Payload heightmap_job_id</span>
-                          <span className="surface-v">{lastCreatePayload?.source_heightmap_job_id || selectedHeightmap?.id || ""}</span>
-                        </div>
-                      </div>
-
-                      {lastCreatePayload && (
-                        <details className="surface-details" open>
-                          <summary>Create payload</summary>
-                          <pre>{JSON.stringify(lastCreatePayload, null, 2)}</pre>
-                        </details>
-                      )}
-
-                      {outputs.list.length > 0 ? (
-                        <div className="surface-meta-grid">
-                          {outputs.list.map((o, idx) => (
-                            <div key={`${o.type || "out"}-${idx}`} className="surface-meta-row">
-                              <span className="surface-k">{o.type || o.name || `output-${idx}`}</span>
-                              <span className="surface-v">{o.url || "(no url)"}</span>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="surface-muted">No manifest outputs yet.</p>
-                      )}
-                    </details>
-                  )}
+          {IS_DEV && (
+            <details className="surface-details">
+              <summary>Debug (dev-only)</summary>
+              <div className="surface-meta-grid">
+                <div className="surface-meta-row">
+                  <span className="surface-k">Job ID</span>
+                  <span className="surface-v">{jobId || ""}</span>
+                </div>
+                <div className="surface-meta-row">
+                  <span className="surface-k">Manifest URL</span>
+                  <span className="surface-v">{manifestUrl || ""}</span>
+                </div>
+                <div className="surface-meta-row">
+                  <span className="surface-k">Payload heightmap_url</span>
+                  <span className="surface-v">{lastCreatePayload?.source_heightmap_url || selectedHeightmap?.heightmapUrl || ""}</span>
+                </div>
+                <div className="surface-meta-row">
+                  <span className="surface-k">Payload heightmap_job_id</span>
+                  <span className="surface-v">{lastCreatePayload?.source_heightmap_job_id || selectedHeightmap?.id || ""}</span>
                 </div>
               </div>
-            </Panel>
-          </div>
-        </main>
+
+              {lastCreatePayload && (
+                <details className="surface-details" open>
+                  <summary>Create payload</summary>
+                  <pre>{JSON.stringify(lastCreatePayload, null, 2)}</pre>
+                </details>
+              )}
+
+              {outputs.list.length > 0 ? (
+                <div className="surface-meta-grid">
+                  {outputs.list.map((o, idx) => (
+                    <div key={`${o.type || "out"}-${idx}`} className="surface-meta-row">
+                      <span className="surface-k">{o.type || o.name || `output-${idx}`}</span>
+                      <span className="surface-v">{o.url || "(no url)"}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="surface-muted">No manifest outputs yet.</p>
+              )}
+            </details>
+          )}
+        </section>
       </div>
 
       {promoteOpen && (
@@ -1741,46 +1595,6 @@ export default function SurfacePage() {
                 Close
               </button>
             </div>
-
-            <div className="surface-meta-grid" style={{ marginBottom: "10px" }}>
-              <div className="surface-meta-row">
-                <span className="surface-k">Job</span>
-                <span className="surface-v">{effectiveJobId || "n/a"}</span>
-              </div>
-              <div className="surface-meta-row">
-                <span className="surface-k">Status</span>
-                <span className="surface-v">{statusLabel}</span>
-              </div>
-              <div className="surface-meta-row">
-                <span className="surface-k">Assets</span>
-                <span className="surface-v">{manifest?.assetsRoot || manifest?.public_root || ""}</span>
-              </div>
-              <div className="surface-meta-row">
-                <span className="surface-k">Manifest</span>
-                <span className="surface-v">{manifestUrl || ""}</span>
-              </div>
-            </div>
-
-            {promoteBlockedReason && (
-              <div className="surface-alert surface-alert-warn" style={{ marginBottom: "10px" }}>
-                <AlertTriangle size={16} />
-                <div>
-                  <p className="surface-alert-title">Promotion blocked</p>
-                  <p className="surface-alert-body">{promoteBlockedReason}</p>
-                </div>
-              </div>
-            )}
-
-            {missingOutputs && (
-              <div className="surface-alert surface-alert-warn" style={{ marginBottom: "10px" }}>
-                <AlertTriangle size={16} />
-                <div>
-                  <p className="surface-alert-title">Outputs missing</p>
-                  <p className="surface-alert-body">Re-check the manifest before promoting.</p>
-                </div>
-                <button className="surface-link" type="button" onClick={recheckOutputs}>Re-check</button>
-              </div>
-            )}
 
             <form onSubmit={handlePromoteSubmit} className="surface-form" style={{ gap: "12px" }}>
               <label className="surface-label">

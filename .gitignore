@@ -86,19 +86,6 @@ Desktop.ini
 *.dll
 *.exe
 
-# Local artifacts and sensitive files
-scripts/admin.cookie
-admin.cookie
-0
-=
-[assistant*
-[heightmapengine*
-[media_api*
-[ollama*
-[surface-engine*
-transferring/
-resolve/
-
 # Lock files (keep package-lock.json, but exclude others if needed)
 # Uncomment if you want to ignore lock files:
 # package-lock.json

@@ -15,12 +15,6 @@ body {
   position: relative;
 }
 
-.app-container--wide {
-  max-width: none;
-  width: 100%;
-  padding: 0;
-}
-
 /* Store Title */
 .store-title {
   text-align: center;

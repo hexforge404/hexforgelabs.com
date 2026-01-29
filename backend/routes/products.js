@@ -11,7 +11,6 @@ const { requireAdmin } = require('../middleware/requireAdmin');
 const SURFACE_PUBLIC_PREFIX = (process.env.SURFACE_PUBLIC_PREFIX || '/assets/surface').replace(/\/+$/, '');
 const SURFACE_OUTPUT_DIR = process.env.SURFACE_OUTPUT_DIR || '/var/www/hexforge3d/surface';
 const INTERNAL_BASE_URL = process.env.INTERNAL_BASE_URL || process.env.SURFACE_INTERNAL_BASE_URL || 'http://localhost:8000';
-const PUBLIC_FALLBACK_BASE = process.env.SURFACE_PUBLIC_URL_FALLBACK || process.env.PUBLIC_BASE_URL || 'https://localhost';
 const STATUS_VALUES = ['draft', 'active', 'archived'];
 const REQUEST_TIMEOUT_MS = 8000;
 
@@ -114,19 +113,6 @@ async function loadManifest(manifestPaths) {
   }
 
   try {
-    const fallbackUrl = new URL(manifestPaths.publicPath, PUBLIC_FALLBACK_BASE).toString();
-    if (fallbackUrl !== manifestPaths.httpUrl) {
-      const resp = await fetchWithTimeout(fallbackUrl, REQUEST_TIMEOUT_MS);
-      if (resp.ok) {
-        return { manifest: await resp.json(), source: 'public-fallback', manifestUrl: manifestPaths.publicPath };
-      }
-      errors.push(`fallback ${resp.status}`);
-    }
-  } catch (err) {
-    errors.push(`fallback ${err.message}`);
-  }
-
-  try {
     const raw = await fs.readFile(manifestPaths.fsPath, 'utf8');
     return { manifest: JSON.parse(raw), source: 'fs', manifestUrl: manifestPaths.publicPath };
   } catch (err) {
@@ -177,18 +163,11 @@ function deriveAssets(manifest, jobId, subfolder) {
   const previewCandidates = [
     manifest.public?.previews?.hero,
     manifest.public?.blender_previews_urls?.hero,
-  ].filter(Boolean);
+  ];
 
-  const previewOutput = findFirst(outputs, (o) => {
-    const name = String(o.name || o.label || o.url || '').toLowerCase();
-    const type = String(o.type || '').toLowerCase();
-    return name.includes('preview') || name.includes('hero') || type.includes('preview') || type.includes('hero');
-  });
-
-  const heroCandidate = previewCandidates[0] || previewOutput?.url || null;
-  const heroPresent = !!heroCandidate || !!manifest.public_root || !!manifest.public?.public_root;
-
-  let heroUrl = heroCandidate ? resolveAssetUrl(heroCandidate, publicRoot, basePath) : null;
+  let heroUrl = previewCandidates
+    .map((c) => resolveAssetUrl(c, publicRoot, basePath))
+    .find(Boolean);
 
   if (!heroUrl && publicRoot) heroUrl = `${publicRoot}/previews/hero.png`;
   if (!heroUrl) heroUrl = `${basePath}/previews/hero.png`;
@@ -200,8 +179,6 @@ function deriveAssets(manifest, jobId, subfolder) {
       const type = String(o.type || '').toLowerCase();
       return name.endsWith('.stl') || type.includes('stl');
     })?.url;
-
-  const stlPresent = !!(stlCandidate || manifest.public?.enclosure?.stl);
 
   let stlUrl = resolveAssetUrl(stlCandidate, publicRoot, basePath);
   if (!stlUrl && publicRoot) stlUrl = `${publicRoot}/enclosure/enclosure.stl`;
@@ -244,8 +221,6 @@ function deriveAssets(manifest, jobId, subfolder) {
     outputs,
     publicRoot,
     subfolder: effectiveSubfolder || null,
-    heroPresent,
-    stlPresent,
   };
 }
 
@@ -253,12 +228,6 @@ function toProductResponse(doc) {
   const obj = doc.toObject({ virtuals: true });
   obj.name = obj.name || obj.title;
   obj.image = obj.image || obj.hero_image_url;
-  obj.category = obj.category || (Array.isArray(obj.categories) ? obj.categories[0] : undefined) || 'uncategorized';
-  obj.categories = Array.isArray(obj.categories)
-    ? obj.categories
-    : obj.category
-      ? [obj.category]
-      : [];
   obj.priceFormatted = obj.priceFormatted || (typeof obj.price === 'number' ? `$${obj.price.toFixed(2)}` : '$0.00');
   return obj;
 }
@@ -292,75 +261,33 @@ function buildProductPayload(body) {
 
 router.get('/', productLimiter, async (req, res) => {
   try {
-    const { page = 1, limit = 20, featured, category, search, raw, status, inStock } = req.query;
-    const baseFilter = {};
-    const andClauses = [];
-    const isAdmin = !!req.session?.admin?.loggedIn;
+    const { page = 1, limit = 20, featured, category, search, raw, status } = req.query;
+    const filter = {};
 
-    const parseTri = (val) => {
-      const v = String(val || '').toLowerCase();
-      if (v === 'true' || v === 'false' || v === 'all') return v;
-      return null;
-    };
+    if (featured === 'true') filter.isFeatured = true;
+    if (category) filter.category = category;
 
-    const statusParam = String(status || 'active').toLowerCase();
-    const statusMode = (() => {
-      if (statusParam === 'all') return isAdmin ? 'all' : 'active';
-      if (STATUS_VALUES.includes(statusParam)) return statusParam;
-      return 'active';
-    })();
-
-    if (statusMode === 'active') {
-      andClauses.push({
-        $or: [
-          { status: 'active' },
-          { status: { $exists: false } },
-          { status: null },
-          { status: '' },
-        ],
-      });
-    } else if (statusMode !== 'all') {
-      baseFilter.status = statusMode;
+    if (status && status !== 'all') {
+      filter.status = STATUS_VALUES.includes(String(status).toLowerCase())
+        ? String(status).toLowerCase()
+        : 'active';
+    } else if (!(req.session?.admin?.loggedIn && status === 'all')) {
+      filter.status = 'active';
     }
-
-    const featuredMode = parseTri(featured) || 'all';
-    if (featuredMode === 'true') {
-      baseFilter.isFeatured = true;
-    } else if (featuredMode === 'false') {
-      baseFilter.isFeatured = { $ne: true };
-    }
-
-    const inStockMode = parseTri(inStock) || 'all';
-    if (inStockMode === 'true') {
-      baseFilter.stock = { $gt: 0 };
-    } else if (inStockMode === 'false') {
-      baseFilter.stock = { $lte: 0 };
-    }
-
-    if (category) baseFilter.category = category;
 
     if (search) {
-      andClauses.push({
-        $or: [
-          { title: { $regex: search, $options: 'i' } },
-          { description: { $regex: search, $options: 'i' } },
-        ],
-      });
+      filter.$or = [
+        { title: { $regex: search, $options: 'i' } },
+        { description: { $regex: search, $options: 'i' } },
+      ];
     }
-
-    if (andClauses.length) {
-      baseFilter.$and = andClauses;
-    }
-
-    const pageNum = Number(page);
-    const limitNum = Number(limit);
 
     const [products, total] = await Promise.all([
-      Product.find(baseFilter)
+      Product.find(filter)
         .sort({ created_at: -1 })
-        .skip((pageNum - 1) * limitNum)
-        .limit(limitNum),
-      Product.countDocuments(baseFilter),
+        .skip((page - 1) * limit)
+        .limit(Number(limit)),
+      Product.countDocuments(filter),
     ]);
 
     const response = products.map(toProductResponse);
@@ -370,13 +297,12 @@ router.get('/', productLimiter, async (req, res) => {
     }
 
     res.json({
-      products: response, // legacy-friendly alias
       data: response,
       meta: {
         total,
-        page: pageNum,
-        pages: Math.ceil(total / limitNum),
-        limit: limitNum,
+        page: Number(page),
+        pages: Math.ceil(total / limit),
+        limit: Number(limit),
       },
     });
   } catch (error) {
@@ -504,24 +430,16 @@ router.post('/from-surface-job', productLimiter, requireAdmin, promoteValidation
 
     const manifestPaths = buildManifestPaths(jobId, subfolder);
     const { manifest, manifestUrl } = await loadManifest(manifestPaths);
-    const state = normalizeState(
-      manifest.status ||
-      manifest.state ||
-      manifest.result?.status ||
-      manifest.result?.state ||
-      manifest.meta?.status ||
-      manifest.meta?.state
-    );
+    const state = normalizeState(manifest.status || manifest.state || manifest.result?.status);
 
-    const derived = deriveAssets(manifest, jobId, subfolder);
-    const artifactsPresent = derived.heroPresent && derived.stlPresent;
-
-    if (state !== 'complete' && !(state === 'unknown' && artifactsPresent)) {
+    if (state !== 'complete') {
       return res.status(400).json({
         error: 'Surface job is not complete',
         status: state,
       });
     }
+
+    const derived = deriveAssets(manifest, jobId, subfolder);
 
     if (!derived.heroUrl) {
       return res.status(400).json({ error: 'Hero preview missing in manifest outputs' });
@@ -536,31 +454,28 @@ router.post('/from-surface-job', productLimiter, requireAdmin, promoteValidation
     }
 
     const requestedStatus = String(req.body.status || '').toLowerCase();
-    const statusValue = STATUS_VALUES.includes(requestedStatus) ? requestedStatus : 'active';
-    const resolvedSku = sku || `surf-${jobId}`;
+    const statusValue = STATUS_VALUES.includes(requestedStatus) ? requestedStatus : 'draft';
 
-      const product = await Product.create({
-        // ensure unique name index is populated; align with title to avoid null duplicates
-        name: title,
-        title,
-        description,
-        price,
-        status: statusValue,
-        category,
-        hero_image_url: derived.heroUrl,
-        tags,
-        sku: resolvedSku,
-        freeze_assets: !!freezeAssets,
-        source_job: {
-          job_id: jobId,
-          subfolder: derived.subfolder,
-          manifest_url: manifestUrl || derived.manifestUrl,
-          public_root: derived.publicRoot || null,
-        },
-        brand: 'HexForge',
-        stock: 0,
-        isFeatured: false,
-      });
+    const product = await Product.create({
+      title,
+      description,
+      price,
+      status: statusValue,
+      category,
+      hero_image_url: derived.heroUrl,
+      tags,
+      sku: sku || undefined,
+      freeze_assets: !!freezeAssets,
+      source_job: {
+        job_id: jobId,
+        subfolder: derived.subfolder,
+        manifest_url: manifestUrl || derived.manifestUrl,
+        public_root: derived.publicRoot || null,
+      },
+      brand: 'HexForge',
+      stock: 0,
+      isFeatured: false,
+    });
 
     const baseMeta = {
       job_id: jobId,

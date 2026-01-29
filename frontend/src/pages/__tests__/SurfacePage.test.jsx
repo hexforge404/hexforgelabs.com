@@ -11,10 +11,6 @@ jest.mock("lucide-react", () => ({
   Image: () => null,
   RefreshCw: () => null,
   Sparkles: () => null,
-  ExternalLink: () => null,
-  Camera: () => null,
-  Layers: () => null,
-  Loader2: () => null,
 }));
 
 jest.mock("../../services/surfaceApi", () => {
@@ -22,7 +18,6 @@ jest.mock("../../services/surfaceApi", () => {
     createSurfaceJob: jest.fn(),
     getSurfaceJobStatus: jest.fn(),
     getSurfaceManifest: jest.fn(),
-    getHeightmapLatest: jest.fn(),
     SurfaceApiError: class SurfaceApiError extends Error {},
   };
 });
@@ -31,20 +26,14 @@ import {
   createSurfaceJob,
   getSurfaceJobStatus,
   getSurfaceManifest,
-  getHeightmapLatest,
 } from "../../services/surfaceApi";
 
 function mockFetchResponse(body, ok = true, status = 200) {
-  const items = (body?.jobs?.items || body?.items || []).map((item) => ({
-    ...item,
-    heightmap_url: item.heightmap_url || item?.result?.public?.heightmap_url,
-    preview_url:
-      item.preview_url || item.previewUrl || item?.result?.public?.blender_previews_urls?.hero || item?.result?.public?.hero,
-    job_id: item.job_id || item.id,
-    job_name: item.job_name || item.name,
-  }));
-
-  getHeightmapLatest.mockResolvedValueOnce({ items });
+  global.fetch.mockResolvedValueOnce({
+    ok,
+    status,
+    json: async () => body,
+  });
 }
 
 const localStore = {};
@@ -71,6 +60,7 @@ describe("SurfacePage heightmap integration", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     installLocalStorage();
+    jest.useFakeTimers();
 
       global.fetch = jest.fn((url, opts = {}) => {
         if (opts.method === "HEAD") {
@@ -85,7 +75,10 @@ describe("SurfacePage heightmap integration", () => {
     createSurfaceJob.mockResolvedValue({ job_id: "surface-job-1" });
     getSurfaceJobStatus.mockResolvedValue({ status: "complete", progress: 100, manifest_url: "/assets/surface/demo/job_manifest.json" });
     getSurfaceManifest.mockResolvedValue({ public: {}, outputs: [] });
-    getHeightmapLatest.mockResolvedValue({ items: [] });
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
   });
 
   test("shows error when no completed heightmap is available", async () => {
@@ -94,12 +87,12 @@ describe("SurfacePage heightmap integration", () => {
     const user = userEvent;
     render(<SurfacePage />);
 
-    await waitFor(() => expect(getHeightmapLatest).toHaveBeenCalled());
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
     await act(async () => {
       await user.click(screen.getByRole("button", { name: /generate relief/i }));
     });
 
-    expect(screen.getAllByText(/select a completed heightmap first/i)[0]).toBeInTheDocument();
+    expect(screen.getByText(/select a completed heightmap first/i)).toBeInTheDocument();
     expect(createSurfaceJob).not.toHaveBeenCalled();
   });
 
@@ -301,6 +294,6 @@ describe("SurfacePage heightmap integration", () => {
       await user.click(screen.getByRole("button", { name: /generate relief/i }));
     });
 
-    await waitFor(() => expect(screen.getAllByText(/manifest is missing/i)[0]).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/manifest is missing/i)).toBeInTheDocument());
   });
 });
