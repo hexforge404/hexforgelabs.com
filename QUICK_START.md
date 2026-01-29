@@ -78,7 +78,6 @@ curl -sk ${SURF_AUTH} "https://localhost/api/surface/jobs/${JOB_ID}?subfolder=${
 - Swagger available at `/api/surface/docs` through nginx.
 
 Compatibility: prefer manifest-provided URLs; deterministic fallbacks (e.g., `/product.stl`) may vary.
-
 If any step fails, fix before proceeding; do not force-push or rewrite history.
 
 ## 8) UI smoke (admin/store parity)
