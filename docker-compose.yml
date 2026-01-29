@@ -80,6 +80,8 @@ services:
       - ./backend:/app
       # Shared surface assets (read-only) for manifest/debug inspection
       - /mnt/hdd-storage/ai-tools/engines/hexforge3d/surface:/var/www/hexforge3d/surface:ro
+      # Shared heightmap assets (read-only) for latest adapter
+      - /mnt/hdd-storage/ai-tools/engines/hexforge3d/output:/var/www/hexforge3d/output:ro
       - /mnt/hdd-storage:/mnt/hdd-storage
       - ./uploads:/app/uploads
     environment:
@@ -88,6 +90,7 @@ services:
       SURFACE_API_KEY: ${SURFACE_API_KEY:-}
       SURFACE_DEFAULT_SUBFOLDER: ${SURFACE_DEFAULT_SUBFOLDER:-}
       SURFACE_OUTPUT_DIR: /var/www/hexforge3d/surface
+      HEIGHTMAP_INTERNAL_BASE: http://nginx
 
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -192,6 +195,8 @@ services:
       SURFACE_OUTPUT_DIR: /var/www/hexforge3d/surface
       SURFACE_PUBLIC_PREFIX: /assets/surface
       ROOT_PATH: /api/surface
+      HEIGHTMAP_INTERNAL_BASE: http://nginx
+      HSE_BOARD_DEFS_ROOT: /app/schemas/boards
 
     # If your Dockerfile already uses USER appuser, you can omit this.
     # Keeping it explicit is nice for future-you.
@@ -252,6 +257,8 @@ services:
       SURFACE_PUBLIC_PREFIX: /assets/surface
       ROOT_PATH: /api/surface
       HSE_WORKER_POLL_INTERVAL: "2"
+      HEIGHTMAP_INTERNAL_BASE: http://nginx
+      HSE_BOARD_DEFS_ROOT: /app/schemas/boards
 
     user: "10001:10001"
 
