@@ -84,6 +84,12 @@ function mapProduct(product) {
   const obj = product.toObject({ virtuals: true });
   obj.name = obj.name || obj.title;
   obj.image = obj.image || obj.hero_image_url;
+  obj.category = obj.category || (Array.isArray(obj.categories) ? obj.categories[0] : undefined) || 'uncategorized';
+  obj.categories = Array.isArray(obj.categories)
+    ? obj.categories
+    : obj.category
+      ? [obj.category]
+      : [];
   obj.priceFormatted = obj.priceFormatted || (typeof obj.price === 'number' ? `$${obj.price.toFixed(2)}` : '$0.00');
   return obj;
 }
