@@ -71,9 +71,13 @@ curl -sk ${SURF_AUTH} "https://localhost/api/surface/jobs/${JOB_ID}?subfolder=${
 
 ## 7) Asset contract verification
 - Assets resolve at `/assets/surface/<subfolder>/<job_id>/` via nginx alias to `/var/www/hexforge3d/surface`.
-- Manifest available at `/assets/surface/<subfolder>/<job_id>/job_manifest.json`.
+- Manifest file is `/assets/surface/<subfolder>/<job_id>/job_manifest.json` (previews are referenced in the manifest; no `previews.json` is emitted).
+- Hero preview typically lives at `/assets/surface/<subfolder>/<job_id>/previews/hero.png` (see manifest `outputs`).
+- STL present at `/assets/surface/<subfolder>/<job_id>/enclosure/enclosure.stl` (scripts may mention `/product.stl` as a legacy fallback, but the emitted file is `enclosure/enclosure.stl`).
 - `GET /api/surface/latest` lists recent jobs with hero, STL, manifest URLs.
 - Swagger available at `/api/surface/docs` through nginx.
+
+Compatibility: prefer manifest-provided URLs; deterministic fallbacks (e.g., `/product.stl`) may vary.
 
 If any step fails, fix before proceeding; do not force-push or rewrite history.
 
