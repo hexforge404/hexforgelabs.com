@@ -10,6 +10,7 @@ const router = express.Router();
 
 const ENGINE_BASE_URL = process.env.HEIGHTMAPENGINE_URL || "http://heightmapengine:8093";
 const SERVICE_NAME = process.env.HEIGHTMAP_SERVICE_NAME || "heightmapengine";
+const ASSISTANT_INTERNAL_URL = process.env.ASSISTANT_INTERNAL_URL || "http://hexforge-assistant:11435";
 
 async function proxyJson(path, init = {}) {
   const url = `${ENGINE_BASE_URL}${path}`;
@@ -65,6 +66,23 @@ router.post("/jobs", async (req, res) => {
     return res.status(status).json(validated);
   } catch (err) {
     return handleError(res, err, req.body?.job_id);
+  }
+});
+
+router.get("/v1/jobs", async (req, res) => {
+  try {
+    const url = `${ASSISTANT_INTERNAL_URL}/api/heightmap/v1/jobs?limit=${Number(req.query.limit || 25)}&offset=${Number(req.query.offset || 0)}`;
+    const upstream = await fetch(url, { headers: { Accept: "application/json" } });
+    const text = await upstream.text();
+    res.status(upstream.status);
+    try {
+      return res.json(JSON.parse(text));
+    } catch (err) {
+      console.error("heightmap list parse error", err);
+      return res.send(text);
+    }
+  } catch (err) {
+    return handleError(res, err);
   }
 });
 
