@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import PropTypes from 'prop-types';
 import { Link, useLocation } from 'react-router-dom';
 import './GlobalNav.css';
+import { useAdmin } from 'context/AdminContext';
 
 const routes = [
   { path: '/', label: 'Home' },
@@ -18,11 +19,13 @@ const routes = [
 const GlobalNav = ({ onLogout, member, onMemberLogout }) => {
   const [open, setOpen] = useState(false);
   const location = useLocation();
+  const { adminStatus, isAdmin } = useAdmin();
 
   const toggle = () => setOpen(v => !v);
   const close = () => setOpen(false);
 
   const isAdminRoute = location.pathname.startsWith('/admin');
+  const adminChecking = adminStatus === 'checking' || adminStatus === 'unknown';
 
   return (
     <div className="hf-global-nav">
@@ -106,18 +109,45 @@ const GlobalNav = ({ onLogout, member, onMemberLogout }) => {
               </Link>
             )}
 
-            {/* Admin logout only on /admin */}
-            {isAdminRoute && onLogout && (
-              <button
-                type="button"
-                onClick={() => {
-                  onLogout();
-                  close();
-                }}
-                className="hf-nav-link hf-nav-link--danger"
+            {/* Admin controls (global) */}
+            {isAdmin ? (
+              <>
+                <Link
+                  to="/admin"
+                  onClick={close}
+                  className={
+                    'hf-nav-link' +
+                    (isAdminRoute ? ' hf-nav-link--active' : '')
+                  }
+                >
+                  Admin
+                </Link>
+                {onLogout && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onLogout();
+                      close();
+                    }}
+                    className="hf-nav-link hf-nav-link--danger"
+                  >
+                    🧱 Admin Log Out
+                  </button>
+                )}
+              </>
+            ) : (
+              <Link
+                to="/admin-login"
+                onClick={close}
+                className={
+                  'hf-nav-link' +
+                  (location.pathname === '/admin-login'
+                    ? ' hf-nav-link--active'
+                    : '')
+                }
               >
-                🧱 Admin Log Out
-              </button>
+                {adminChecking ? 'Admin (checking...)' : 'Admin Sign In'}
+              </Link>
             )}
           </div>
         </div>
