@@ -10,6 +10,13 @@ const productSchema = new mongoose.Schema(
       trim: true,
       maxlength: [200, 'Title cannot exceed 200 characters'],
     },
+    slug: {
+      type: String,
+      trim: true,
+      lowercase: true,
+      maxlength: [200, 'Slug cannot exceed 200 characters'],
+      index: true,
+    },
     description: {
       type: String,
       trim: true,
@@ -94,8 +101,6 @@ const productSchema = new mongoose.Schema(
 
 productSchema.index({ title: 'text', description: 'text' });
 productSchema.index({ price: 1 });
-productSchema.index({ category: 1 });
-productSchema.index({ tags: 1 });
 productSchema.index({ status: 1, created_at: -1 });
 
 productSchema.virtual('priceFormatted').get(function priceFormatted() {
