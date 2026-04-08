@@ -45,6 +45,14 @@ const productSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    imageGallery: {
+      type: [String],
+      default: [],
+      set: (vals = []) =>
+        (Array.isArray(vals) ? vals : [vals])
+          .map((value) => String(value || '').trim())
+          .filter(Boolean),
+    },
     source_job: {
       job_id: { type: String, trim: true, index: true },
       subfolder: { type: String, trim: true },

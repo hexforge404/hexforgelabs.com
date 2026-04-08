@@ -19,6 +19,7 @@ import GlobalNav from 'components/GlobalNav';
 import OrdersPage from 'pages/OrdersPage';
 import AdminPage from 'pages/AdminPage';
 import SuccessPage from 'pages/SuccessPage';
+import CustomOrderSuccessPage from 'pages/CustomOrderSuccessPage';
 import LoginPage from 'pages/LoginPage';          // admin login
 import BlogPage from 'pages/BlogPage';
 import HomePage from 'pages/HomePage';
@@ -36,6 +37,8 @@ import AccountPage from 'pages/AccountPage';      // ✅ member account
 import { ToastContainer } from 'react-toastify';
 import { errorToast, successToast } from './utils/toastUtils';
 import HeightmapPage from "./pages/HeightmapPage";
+import ProductDetailPage from 'pages/ProductDetailPage';
+import OrderStatusPage from 'pages/OrderStatusPage';
 
 import './App.css';
 
@@ -242,6 +245,9 @@ const MainApp = () => {
               }
             />
 
+            <Route path="/store/:slug" element={<ProductDetailPage />} />
+            <Route path="/order/:orderId" element={<OrderStatusPage />} />
+
             {/* Admin side */}
             <Route
               path="/orders"
@@ -263,6 +269,7 @@ const MainApp = () => {
 
             {/* Public site */}
             <Route path="/success" element={<SuccessPage />} />
+            <Route path="/custom-order-success" element={<CustomOrderSuccessPage />} />
             <Route path="/blog" element={<BlogPage />} />
             <Route path="/blog/slug/:slug" element={<BlogPost />} />
             <Route path="/chat" element={<ChatPage />} />
@@ -306,7 +313,7 @@ const MainApp = () => {
 };
 
 const App = () => (
-  <Router>
+  <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
     <MainApp />
   </Router>
 );

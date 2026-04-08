@@ -19,6 +19,15 @@ const validateLogin = [
   body('password').notEmpty().withMessage('Password is required')
 ];
 
+const parseAdminRoles = () => {
+  const raw = process.env.ADMIN_ROLES;
+  if (!raw) return ['admin', 'promotions'];
+  return raw
+    .split(',')
+    .map((role) => role.trim())
+    .filter(Boolean);
+};
+
 router.post('/login', authLimiter, validateLogin, async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -33,6 +42,7 @@ router.post('/login', authLimiter, validateLogin, async (req, res) => {
         req.session.admin = {
           loggedIn: true,
           username: username,
+          roles: parseAdminRoles(),
           ip: req.ip,
           userAgent: req.get('User-Agent'),
           createdAt: new Date()
@@ -47,6 +57,7 @@ router.post('/login', authLimiter, validateLogin, async (req, res) => {
         req.session.admin = {
           loggedIn: true,
           username: username,
+          roles: parseAdminRoles(),
           ip: req.ip,
           userAgent: req.get('User-Agent'),
           createdAt: new Date()
@@ -85,7 +96,8 @@ router.get('/check', (req, res) => {
       loggedIn: true,
       user: {
         username: req.session.admin.username,
-        sessionStart: req.session.admin.createdAt
+        sessionStart: req.session.admin.createdAt,
+        roles: req.session.admin.roles || [],
       }
     });
   }

@@ -4,6 +4,9 @@ const { body, validationResult } = require('express-validator');
 const rateLimit = require('express-rate-limit');
 const Product = require('../models/Product');
 const Order = require('../models/Order');
+const CustomOrder = require('../models/CustomOrder');
+const PromoCode = require('../models/PromoCode');
+const PromoAuditLog = require('../models/PromoAuditLog');
 const multer = require('multer');
 const path = require('path');
 
@@ -54,13 +57,36 @@ router.get('/session', (req, res) => {
   res.status(200).json({
     loggedIn: !!req.session.admin?.loggedIn,
     isAdmin: !!req.session.admin?.loggedIn,
-    user: req.session.admin?.username || null
+    user: req.session.admin?.username || null,
+    admin: req.session.admin?.loggedIn
+      ? {
+          username: req.session.admin?.username || null,
+          roles: req.session.admin?.roles || [],
+        }
+      : null,
   });
 });
 
 // ⛔ Everything below this line requires admin session
 router.use(requireAdmin);
 router.use(adminLimiter);
+
+const hasAnyRole = (admin, allowedRoles) => {
+  if (!admin?.loggedIn) return false;
+  if (!Array.isArray(admin.roles) || admin.roles.length === 0) return true;
+  return admin.roles.some((role) => allowedRoles.includes(role));
+};
+
+const requirePromoAdmin = (req, res, next) => {
+  const allowedRoles = ['promotions', 'admin', 'superadmin'];
+  if (hasAnyRole(req.session?.admin, allowedRoles)) {
+    return next();
+  }
+  return res.status(403).json({
+    error: 'Forbidden',
+    message: 'Promo code management requires promotions role',
+  });
+};
 
 // ⛔ Image upload is now admin-only
 router.post('/upload-image', upload.single('image'), (req, res) => {
@@ -76,8 +102,113 @@ const validateProduct = [
   body('price').isFloat({ min: 0.01 }).withMessage('Valid price required'),
   body('description').optional().trim().escape(),
   body('stock').optional().isInt({ min: 0 }),
-  body('images').optional().isArray()
+  body('images').optional().isArray(),
+  body('imageGallery').optional().isArray(),
 ];
+
+const validatePromoCreate = [
+  body('code').trim().notEmpty().withMessage('Promo code is required'),
+  body('discountType').isIn(['percentage', 'fixed']).withMessage('Invalid discount type'),
+  body('discountValue').isFloat({ min: 0 }).withMessage('Discount value must be 0 or greater'),
+  body('description').optional().isString(),
+  body('isActive').optional().isBoolean(),
+  body('usageLimit').optional().isInt({ min: 1 }),
+  body('minimumOrderAmount').optional().isFloat({ min: 0 }),
+  body('allowedCategories').optional(),
+  body('allowedProducts').optional(),
+  body('expiresAt').optional(),
+];
+
+const validatePromoUpdate = [
+  body('code').optional().trim().notEmpty(),
+  body('discountType').optional().isIn(['percentage', 'fixed']),
+  body('discountValue').optional().isFloat({ min: 0 }),
+  body('description').optional().isString(),
+  body('isActive').optional().isBoolean(),
+  body('usageLimit').optional().isInt({ min: 1 }),
+  body('minimumOrderAmount').optional().isFloat({ min: 0 }),
+  body('allowedCategories').optional(),
+  body('allowedProducts').optional(),
+  body('expiresAt').optional(),
+];
+
+const normalizePromoList = (value) => {
+  if (Array.isArray(value)) return value.map((item) => String(item).trim()).filter(Boolean);
+  if (typeof value === 'string') {
+    return value
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+  return [];
+};
+
+const buildPromoPayload = (body, adminUser) => {
+  const payload = {};
+
+  if (body.code !== undefined) payload.code = String(body.code).trim().toUpperCase();
+  if (body.description !== undefined) payload.description = String(body.description).trim();
+  if (body.discountType !== undefined) payload.discountType = body.discountType;
+  if (body.discountValue !== undefined) payload.discountValue = Number(body.discountValue);
+  if (body.isActive !== undefined) payload.isActive = !!body.isActive;
+  if (body.usageCount !== undefined && body.usageCount !== '') payload.usageCount = Number(body.usageCount);
+  if (body.usageLimit !== undefined && body.usageLimit !== '') payload.usageLimit = Number(body.usageLimit);
+  if (body.minimumOrderAmount !== undefined && body.minimumOrderAmount !== '') {
+    payload.minimumOrderAmount = Number(body.minimumOrderAmount);
+  }
+  if (body.allowedCategories !== undefined) payload.allowedCategories = normalizePromoList(body.allowedCategories);
+  if (body.allowedProducts !== undefined) payload.allowedProducts = normalizePromoList(body.allowedProducts);
+  if (body.expiresAt !== undefined) {
+    payload.expiresAt = body.expiresAt ? new Date(body.expiresAt) : null;
+  }
+  if (adminUser) payload.updatedBy = adminUser;
+
+  return payload;
+};
+
+const buildPromoSnapshot = (promo) => {
+  if (!promo) return null;
+  const obj = promo.toObject ? promo.toObject() : promo;
+  return {
+    code: obj.code,
+    description: obj.description,
+    discountType: obj.discountType,
+    discountValue: obj.discountValue,
+    isActive: obj.isActive,
+    usageLimit: obj.usageLimit,
+    usageCount: obj.usageCount,
+    minimumOrderAmount: obj.minimumOrderAmount,
+    allowedCategories: obj.allowedCategories,
+    allowedProducts: obj.allowedProducts,
+    expiresAt: obj.expiresAt,
+  };
+};
+
+const getAuditActor = (req) => {
+  const roles = req.session?.admin?.roles || [];
+  return {
+    username: req.session?.admin?.username || 'unknown',
+    role: roles[0] || 'admin',
+  };
+};
+
+const safeAuditLog = async ({ req, action, promoCode, before, after, metadata }) => {
+  try {
+    await PromoAuditLog.create({
+      action,
+      promoCode,
+      actor: getAuditActor(req),
+      before,
+      after,
+      metadata: {
+        ...metadata,
+        sourceIp: req.ip,
+      },
+    });
+  } catch (err) {
+    console.warn('⚠️ Failed to write promo audit log:', err.message || err);
+  }
+};
 
 // GET all products
 function mapProduct(product) {
@@ -251,6 +382,392 @@ router.get('/orders', async (req, res) => {
     res.status(500).json({
       error: 'Failed to fetch orders',
       details: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
+  }
+});
+
+// GET all custom lamp orders with filtering
+router.get('/custom-orders', async (req, res) => {
+  try {
+    const { status, panels, limit = 100, offset = 0 } = req.query;
+    const filter = {};
+    
+    if (status) filter.status = status;
+    if (panels) filter.panels = panels;
+
+    const customOrders = await CustomOrder.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(Number(offset))
+      .limit(Number(limit));
+
+    const total = await CustomOrder.countDocuments(filter);
+
+    res.json({
+      data: customOrders,
+      pagination: {
+        total,
+        limit: Number(limit),
+        offset: Number(offset),
+        hasMore: Number(offset) + Number(limit) < total
+      }
+    });
+  } catch (err) {
+    console.error('❌ Failed to fetch custom orders:', err);
+    res.status(500).json({
+      error: 'Failed to fetch custom orders',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
+  }
+});
+
+// GET single custom order by ID
+router.get('/custom-orders/:orderId', async (req, res) => {
+  try {
+    const customOrder = await CustomOrder.findOne({ orderId: req.params.orderId });
+    
+    if (!customOrder) {
+      return res.status(404).json({ error: 'Custom order not found' });
+    }
+
+    res.json(customOrder);
+  } catch (err) {
+    console.error('❌ Failed to fetch custom order:', err);
+    res.status(500).json({
+      error: 'Failed to fetch custom order',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
+  }
+});
+
+// UPDATE custom order status
+router.patch('/custom-orders/:orderId', async (req, res) => {
+  try {
+    const { status, adminNotes, paymentStatus, trackingCarrier, trackingNumber, trackingUrl } = req.body;
+    const validStatuses = ['submitted', 'awaiting_deposit', 'deposit_paid', 'reviewing_assets', 'in_production', 'ready_to_ship', 'shipped', 'completed', 'cancelled'];
+    const validPaymentStatuses = ['pending', 'deposit_paid', 'paid_in_full', 'failed', 'refunded'];
+
+    if (status && !validStatuses.includes(status)) {
+      return res.status(400).json({
+        error: `Invalid status. Valid values: ${validStatuses.join(', ')}`
+      });
+    }
+
+    if (paymentStatus && !validPaymentStatuses.includes(paymentStatus)) {
+      return res.status(400).json({
+        error: `Invalid paymentStatus. Valid values: ${validPaymentStatuses.join(', ')}`
+      });
+    }
+
+    const update = {};
+    if (status) update.status = status;
+    if (adminNotes !== undefined) update.adminNotes = adminNotes;
+    if (paymentStatus) update.paymentStatus = paymentStatus;
+    if (trackingCarrier !== undefined) update.trackingCarrier = trackingCarrier;
+    if (trackingNumber !== undefined) update.trackingNumber = trackingNumber;
+    if (trackingUrl !== undefined) update.trackingUrl = trackingUrl;
+
+    const customOrder = await CustomOrder.findOneAndUpdate(
+      { orderId: req.params.orderId },
+      update,
+      { new: true, runValidators: true }
+    );
+
+    if (!customOrder) {
+      return res.status(404).json({ error: 'Custom order not found' });
+    }
+
+    console.log(`✅ Custom order ${req.params.orderId} updated to status: ${status}`);
+    res.json(customOrder);
+  } catch (err) {
+    console.error('❌ Failed to update custom order:', err);
+    res.status(500).json({
+      error: 'Failed to update custom order',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
+  }
+});
+
+// ---- PROMO AUDIT ----
+router.get('/promo-audit', requirePromoAdmin, async (req, res) => {
+  try {
+    const { promoCode, action, actor, limit = 50, offset = 0 } = req.query;
+    const safeLimit = Math.min(Number(limit) || 50, 200);
+    const safeOffset = Number(offset) || 0;
+    const filter = {};
+
+    if (promoCode) filter.promoCode = String(promoCode).toUpperCase();
+    if (action) filter.action = String(action).toLowerCase();
+    if (actor) filter['actor.username'] = String(actor);
+
+    const [data, total] = await Promise.all([
+      PromoAuditLog.find(filter)
+        .sort({ createdAt: -1 })
+        .skip(safeOffset)
+        .limit(safeLimit),
+      PromoAuditLog.countDocuments(filter),
+    ]);
+
+    res.json({
+      data,
+      pagination: {
+        total,
+        limit: safeLimit,
+        offset: safeOffset,
+        hasMore: safeOffset + safeLimit < total,
+      },
+    });
+  } catch (err) {
+    console.error('❌ Failed to fetch promo audit logs:', err);
+    res.status(500).json({
+      error: 'Failed to fetch promo audit logs',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined,
+    });
+  }
+});
+
+// ---- PROMO CODES ----
+const escapeCsvValue = (value) => {
+  if (value === null || value === undefined) return '';
+  const text = String(value).replace(/"/g, '""');
+  if (/[",\n]/.test(text)) {
+    return `"${text}"`;
+  }
+  return text;
+};
+
+const promoToCsv = (promo) => {
+  return [
+    promo.code,
+    promo.description || '',
+    promo.discountType,
+    promo.discountValue,
+    promo.isActive,
+    promo.usageLimit ?? '',
+    promo.usageCount ?? 0,
+    promo.minimumOrderAmount ?? 0,
+    Array.isArray(promo.allowedCategories) ? promo.allowedCategories.join('|') : '',
+    Array.isArray(promo.allowedProducts) ? promo.allowedProducts.join('|') : '',
+    promo.expiresAt ? new Date(promo.expiresAt).toISOString() : '',
+  ].map(escapeCsvValue).join(',');
+};
+
+router.get('/promo-codes', requirePromoAdmin, async (req, res) => {
+  try {
+    const { active } = req.query;
+    const filter = {};
+    if (active === 'true') filter.isActive = true;
+    if (active === 'false') filter.isActive = false;
+
+    const codes = await PromoCode.find(filter).sort({ createdAt: -1 });
+    res.json(codes);
+  } catch (err) {
+    console.error('❌ Failed to fetch promo codes:', err);
+    res.status(500).json({
+      error: 'Failed to fetch promo codes',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined,
+    });
+  }
+});
+
+router.get('/promo-codes/export', requirePromoAdmin, async (req, res) => {
+  try {
+    const { format = 'json' } = req.query;
+    const codes = await PromoCode.find().sort({ createdAt: -1 });
+
+    await safeAuditLog({
+      req,
+      action: 'export',
+      promoCode: null,
+      metadata: { exportFormat: String(format).toLowerCase() },
+    });
+
+    if (String(format).toLowerCase() === 'csv') {
+      const header = [
+        'code',
+        'description',
+        'discountType',
+        'discountValue',
+        'isActive',
+        'usageLimit',
+        'usageCount',
+        'minimumOrderAmount',
+        'allowedCategories',
+        'allowedProducts',
+        'expiresAt',
+      ].join(',');
+
+      const rows = codes.map(promoToCsv);
+      const csv = [header, ...rows].join('\n');
+
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', 'attachment; filename="promo-codes.csv"');
+      return res.send(csv);
+    }
+
+    res.json(codes);
+  } catch (err) {
+    console.error('❌ Failed to export promo codes:', err);
+    res.status(500).json({
+      error: 'Failed to export promo codes',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined,
+    });
+  }
+});
+
+router.post('/promo-codes/import', requirePromoAdmin, async (req, res) => {
+  try {
+    const { items, mode = 'upsert' } = req.body || {};
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'Import requires a non-empty items array' });
+    }
+
+    const operations = [];
+    const errors = [];
+
+    items.forEach((raw, index) => {
+      if (!raw || !raw.code || !raw.discountType || raw.discountValue === undefined) {
+        errors.push({ index, error: 'Missing code, discountType, or discountValue' });
+        return;
+      }
+
+      const payload = buildPromoPayload(raw, req.session.admin?.username);
+      payload.createdBy = raw.createdBy || req.session.admin?.username;
+
+      operations.push({
+        updateOne: {
+          filter: { code: payload.code },
+          update: { $set: payload, $setOnInsert: { createdAt: new Date() } },
+          upsert: mode !== 'insert',
+        },
+      });
+    });
+
+    if (operations.length === 0) {
+      return res.status(400).json({ error: 'No valid promo codes to import', errors });
+    }
+
+    const result = await PromoCode.bulkWrite(operations, { ordered: false });
+
+    await safeAuditLog({
+      req,
+      action: 'import',
+      promoCode: null,
+      metadata: { importCount: operations.length },
+    });
+
+    res.json({
+      imported: operations.length,
+      matched: result.matchedCount,
+      modified: result.modifiedCount,
+      upserted: result.upsertedCount,
+      errors,
+    });
+  } catch (err) {
+    console.error('❌ Failed to import promo codes:', err);
+    res.status(500).json({
+      error: 'Failed to import promo codes',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined,
+    });
+  }
+});
+
+router.post('/promo-codes', requirePromoAdmin, validatePromoCreate, async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const payload = buildPromoPayload(req.body, req.session.admin?.username);
+    payload.createdBy = req.session.admin?.username;
+
+    const promo = new PromoCode(payload);
+    await promo.save();
+
+    await safeAuditLog({
+      req,
+      action: 'create',
+      promoCode: promo.code,
+      after: buildPromoSnapshot(promo),
+    });
+
+    res.status(201).json(promo);
+  } catch (err) {
+    console.error('❌ Failed to create promo code:', err);
+    res.status(400).json({
+      error: 'Failed to create promo code',
+      details: err.message,
+    });
+  }
+});
+
+router.patch('/promo-codes/:id', requirePromoAdmin, validatePromoUpdate, async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const existingPromo = await PromoCode.findById(req.params.id);
+    if (!existingPromo) {
+      return res.status(404).json({ error: 'Promo code not found' });
+    }
+
+    const payload = buildPromoPayload(req.body, req.session.admin?.username);
+    payload.updatedAt = new Date();
+
+    const promo = await PromoCode.findByIdAndUpdate(req.params.id, payload, {
+      new: true,
+      runValidators: true,
+    });
+
+    const beforeSnapshot = buildPromoSnapshot(existingPromo);
+    const afterSnapshot = buildPromoSnapshot(promo);
+    let action = 'update';
+    if (typeof payload.isActive === 'boolean' && existingPromo.isActive !== promo.isActive) {
+      action = promo.isActive ? 'enable' : 'disable';
+    }
+
+    await safeAuditLog({
+      req,
+      action,
+      promoCode: promo.code,
+      before: beforeSnapshot,
+      after: afterSnapshot,
+    });
+
+    res.json(promo);
+  } catch (err) {
+    console.error('❌ Failed to update promo code:', err);
+    res.status(400).json({
+      error: 'Failed to update promo code',
+      details: err.message,
+    });
+  }
+});
+
+router.delete('/promo-codes/:id', requirePromoAdmin, async (req, res) => {
+  try {
+    const promo = await PromoCode.findById(req.params.id);
+    if (!promo) {
+      return res.status(404).json({ error: 'Promo code not found' });
+    }
+
+    await PromoCode.findByIdAndDelete(req.params.id);
+
+    await safeAuditLog({
+      req,
+      action: 'delete',
+      promoCode: promo.code,
+      before: buildPromoSnapshot(promo),
+    });
+
+    res.json({ message: 'Promo code deleted successfully', deletedPromo: promo._id });
+  } catch (err) {
+    console.error('❌ Failed to delete promo code:', err);
+    res.status(500).json({
+      error: 'Failed to delete promo code',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined,
     });
   }
 });
