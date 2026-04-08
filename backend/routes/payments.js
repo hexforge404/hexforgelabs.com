@@ -5,7 +5,10 @@ const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const rateLimit = require('express-rate-limit');
 const { body, validationResult } = require('express-validator');
 const { v4: uuidv4 } = require('uuid');
+const mongoose = require('mongoose');
 const Order = require('../models/Order'); // existing Mongoose model
+const Product = require('../models/Product');
+const { calculateSubtotal, calculateTax, roundMoney } = require('../utils/pricing');
 
 // Rate limiting
 const paymentLimiter = rateLimit({
@@ -36,13 +39,50 @@ const validateCheckoutItems = [
   body('items')
     .isArray({ min: 1 })
     .withMessage('At least one item is required'),
-  body('items.*.name')
-    .notEmpty()
-    .withMessage('Item name is required'),
-  body('items.*.price')
-    .isFloat({ min: 0.01 })
-    .withMessage('Price must be at least $0.01'),
+  body('items.*').custom((item) => {
+    if (!item) return false;
+    return Boolean(item.productId || item._id || item.slug);
+  }).withMessage('Each item must include productId, _id, or slug'),
+  body('items.*.quantity')
+    .optional()
+    .isInt({ min: 1 })
+    .withMessage('Quantity must be at least 1'),
 ];
+
+const resolveCheckoutItems = async (items = []) => {
+  const resolved = [];
+
+  for (const item of items) {
+    const rawId = item.productId || item._id;
+    const slug = item.slug;
+    let product = null;
+
+    if (rawId && mongoose.Types.ObjectId.isValid(rawId)) {
+      product = await Product.findById(rawId);
+    }
+
+    if (!product && slug) {
+      product = await Product.findOne({ slug: String(slug).toLowerCase().trim() });
+    }
+
+    if (!product) {
+      throw new Error('Product not found for one or more items.');
+    }
+
+    const quantity = Number(item.quantity) > 0 ? Number(item.quantity) : 1;
+
+    resolved.push({
+      productId: product._id,
+      name: product.title || product.name || 'Product',
+      unitPrice: Number(product.price || 0),
+      quantity,
+      image: product.hero_image_url || product.image || null,
+      sku: product.sku || undefined,
+    });
+  }
+
+  return resolved;
+};
 
 // Create Stripe Checkout Session + create Order with orderId
 router.post(
@@ -70,33 +110,19 @@ router.post(
       // Our own public-facing orderId
       const orderId = uuidv4();
 
-      // Build Stripe line items + compute totals
-      const lineItems = items.map((item) => {
-        const price = Number(item.price);
-        if (Number.isNaN(price)) {
-          throw new Error(`Invalid price for item "${item.name}"`);
-        }
-        const quantity =
-          typeof item.quantity === 'number' && item.quantity > 0
-            ? item.quantity
-            : 1;
+      const resolvedItems = await resolveCheckoutItems(items);
+      const subtotal = calculateSubtotal(resolvedItems);
+      const tax = calculateTax(subtotal);
+      const total = roundMoney(subtotal + tax);
 
-        return {
-          price_data: {
-            currency: 'usd',
-            product_data: { name: item.name },
-            unit_amount: Math.round(price * 100),
-          },
-          quantity,
-        };
-      });
-
-      const totalCents = lineItems.reduce(
-        (sum, li) => sum + li.price_data.unit_amount * li.quantity,
-        0
-      );
-      const subtotal = totalCents / 100; // no tax/ship yet
-      const total = subtotal; // keep separate for future tax/shipping
+      const lineItems = resolvedItems.map((item) => ({
+        price_data: {
+          currency: 'usd',
+          product_data: { name: item.name },
+          unit_amount: Math.round(item.unitPrice * 100),
+        },
+        quantity: item.quantity,
+      }));
 
       const baseUrl = getBaseUrl();
       console.log('➡️ Using Stripe redirect base URL:', baseUrl);
@@ -137,11 +163,11 @@ router.post(
           orderId,
 
           // Items – ensure quantity default = 1
-          items: items.map((item) => ({
-            productId: item._id || undefined, // keep if you pass productId from frontend
+          items: resolvedItems.map((item) => ({
+            productId: item.productId,
             name: item.name,
-            price: Number(item.price),
-            quantity: item.quantity || 1,
+            price: item.unitPrice,
+            quantity: item.quantity,
             image: item.image,
             sku: item.sku,
           })),

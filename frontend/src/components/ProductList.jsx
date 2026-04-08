@@ -1,6 +1,8 @@
 import { toast } from 'react-toastify';
 import React, { useEffect, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { useCart } from 'context/CartContext';
+import { resolveImageUrl, DEFAULT_PLACEHOLDER } from '../utils/resolveImageUrl';
 
 const FALLBACK_PRODUCTS = [
   {
@@ -21,21 +23,154 @@ const FALLBACK_PRODUCTS = [
 
 const normalizeProduct = (product) => {
   const price = Number(product.price);
+  const gallery = Array.isArray(product.imageGallery)
+    ? product.imageGallery.filter(Boolean)
+    : [];
+  const heroImage = product.image || product.hero_image_url || gallery[0] || '';
   return {
     ...product,
     name: product.name || product.title || 'Untitled product',
-    image: product.image || product.hero_image_url || '',
+    image: heroImage,
+    imageGallery: gallery,
     priceFormatted: product.priceFormatted || (Number.isFinite(price) ? `$${price.toFixed(2)}` : '$0.00'),
   };
 };
 
-const getImageSrc = (image) => {
-  if (!image) {
-    return process.env.PUBLIC_URL + '/images/hexforge-logo-removebg.png';
-  }
-  if (image.startsWith('http')) return image;
-  if (image.startsWith('/')) return image;
-  return process.env.PUBLIC_URL + '/images/' + image;
+const getImageSrc = (image) => resolveImageUrl(image);
+
+const ProductSection = ({ title, subtitle, products, addToCart }) => {
+  const navigate = useNavigate();
+
+  return (
+    <div style={{ marginBottom: '60px' }}>
+      {/* Section Header */}
+      <div style={{ textAlign: 'center', marginBottom: '40px' }}>
+        <h2 style={{
+          fontSize: '28px',
+          fontWeight: 'bold',
+          color: '#00ffc8',
+          marginBottom: '10px',
+          textTransform: 'uppercase',
+          letterSpacing: '2px'
+        }}>
+          {title}
+        </h2>
+        {subtitle && (
+          <p style={{
+            fontSize: '16px',
+            color: '#ccc',
+            marginBottom: '30px',
+            maxWidth: '600px',
+            margin: '0 auto 30px auto',
+            lineHeight: '1.5'
+          }}>
+            {subtitle}
+          </p>
+        )}
+      </div>
+
+      {/* Products Grid */}
+      <div style={{
+        display: 'flex',
+        flexWrap: 'wrap',
+        justifyContent: 'center',
+        marginTop: '20px',
+        animation: 'fadeIn 0.5s ease-out'
+      }}>
+        {products.map((product) => {
+          const isLamp = product.category === 'lamps';
+          const lampCopy = 'Turn favorite memories into a warm, glowing keepsake.';
+          return (
+            <div
+              key={product._id}
+              className="product-card"
+              style={{
+              width: '200px',
+              margin: '10px',
+              backgroundColor: '#111',
+              padding: '15px',
+              borderRadius: '10px',
+              color: '#fff',
+              textAlign: 'center',
+              transition: 'transform 0.2s, box-shadow 0.2s',
+              boxShadow: '0 0 0 rgba(0, 0, 0, 0)',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.boxShadow = '0 4px 15px rgba(0, 255, 200, 0.3)';
+              e.currentTarget.style.transform = 'translateY(-4px)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.boxShadow = '0 0 0 rgba(0, 0, 0, 0)';
+              e.currentTarget.style.transform = 'translateY(0)';
+            }}
+          >
+            <Link to={`/store/${product.slug}`} style={{ textDecoration: 'none', color: 'inherit' }}>
+              <div style={{ position: 'relative' }}>
+                {isLamp && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: '10px',
+                      left: '10px',
+                      padding: '4px 8px',
+                      borderRadius: '999px',
+                      background: 'rgba(255, 209, 102, 0.2)',
+                      border: '1px solid rgba(255, 209, 102, 0.45)',
+                      color: '#ffd166',
+                      fontSize: '11px',
+                      fontWeight: 'bold',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.8px',
+                    }}
+                  >
+                    Custom Order
+                  </div>
+                )}
+                <img
+                  src={getImageSrc(product.image)}
+                  alt={product.name}
+                  onError={(e) => {
+                    e.currentTarget.src = DEFAULT_PLACEHOLDER;
+                  }}
+                  style={{ width: '100%', height: 'auto', borderRadius: '8px', marginBottom: '10px' }}
+                />
+              </div>
+            </Link>
+
+            <Link to={`/store/${product.slug}`} style={{ textDecoration: 'none', color: 'inherit' }}>
+              <h3 style={{ fontSize: '18px', margin: '10px 0' }}>{product.name}</h3>
+            </Link>
+            <p style={{ fontSize: '14px', color: '#ccc' }}>{product.priceFormatted}</p>
+            {isLamp && (
+              <p style={{ fontSize: '12px', color: '#e9c89a', marginBottom: '10px' }}>{lampCopy}</p>
+            )}
+              <button
+                onClick={() => {
+                  if (isLamp) {
+                    navigate(`/store/${product.slug}`);
+                    return;
+                  }
+                  addToCart(product);
+                  toast.success(`${product.name} added to cart!`);
+                }}
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: '#00ffc8',
+                  border: 'none',
+                  borderRadius: '5px',
+                  color: '#111',
+                  fontWeight: 'bold',
+                  cursor: 'pointer'
+                }}
+              >
+                {product.category === 'lamps' ? 'Start Custom Order' : 'Add to Cart'}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 };
 
 function ProductList() {
@@ -43,6 +178,8 @@ function ProductList() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [activeFilter, setActiveFilter] = useState('all');
+  const [isTransitioning, setIsTransitioning] = useState(false);
 
   useEffect(() => {
     async function fetchProducts() {
@@ -67,10 +204,72 @@ function ProductList() {
     fetchProducts();
   }, []);
 
+  const handleFilterChange = (newFilter) => {
+    if (newFilter !== activeFilter) {
+      setIsTransitioning(true);
+      setTimeout(() => {
+        setActiveFilter(newFilter);
+        setIsTransitioning(false);
+      }, 150);
+    }
+  };
+
+  const getFilteredProducts = () => {
+    switch (activeFilter) {
+      case 'tech':
+        return products.filter(p => p.category !== 'lamps' && p.category !== 'surface');
+      case 'lamps':
+        return products.filter(p => p.category === 'lamps');
+      case 'all':
+      default:
+        return products.filter(p => p.category !== 'surface');
+    }
+  };
+
+  const getTechProducts = () => {
+    return products.filter(p => p.category !== 'lamps' && p.category !== 'surface');
+  };
+
+  const getLampProducts = () => {
+    return products.filter(p => p.category === 'lamps');
+  };
+
+  const getSectionTitle = () => {
+    switch (activeFilter) {
+      case 'tech':
+        return 'Tools & Devices';
+      case 'lamps':
+        return 'Custom Lamps & Prints';
+      case 'all':
+      default:
+        return 'HexForge Store';
+    }
+  };
+
+  const getSectionSubtitle = () => {
+    switch (activeFilter) {
+      case 'tech':
+        return 'Security tools, devices, and lab gear from HexForge Labs.';
+      case 'lamps':
+        return 'Turn favorite photos into warm, glowing keepsakes made to gift and treasure.';
+      case 'all':
+      default:
+        return null;
+    }
+  };
+
   const spinnerKeyframes = `
     @keyframes spin {
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
+    }
+    @keyframes fadeIn {
+      0% { opacity: 0; transform: translateY(20px); }
+      100% { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes slideIn {
+      0% { opacity: 0; transform: translateX(-20px); }
+      100% { opacity: 1; transform: translateX(0); }
     }
   `;
 
@@ -101,133 +300,125 @@ function ProductList() {
     );
   }
 
-return (
-  <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', marginTop: '20px' }}>
-    {error && (
-      <div style={{ width: '100%', textAlign: 'center', marginBottom: '12px', color: '#ffb347' }}>
-        Live catalog unavailable. Showing fallback products.
-      </div>
-    )}
-    {products.map((product) => (
-      <div
-        key={product._id}
-        className="product-card"
-        style={{
-          width: '200px',
-          margin: '10px',
-          backgroundColor: '#111',
-          padding: '15px',
-          borderRadius: '10px',
-          color: '#fff',
-          textAlign: 'center',
-          transition: 'transform 0.2s, box-shadow 0.2s',
-          boxShadow: '0 0 0 rgba(0, 0, 0, 0)',
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.boxShadow = '0 4px 15px rgba(0, 255, 200, 0.3)';
-          e.currentTarget.style.transform = 'translateY(-4px)';
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.boxShadow = '0 0 0 rgba(0, 0, 0, 0)';
-          e.currentTarget.style.transform = 'translateY(0)';
-        }}
-      >
-        <img
-  src={getImageSrc(product.image)}
-  alt={product.name}
-  onError={(e) => {
-    e.currentTarget.src =
-      process.env.PUBLIC_URL + '/images/hexforge-logo-removebg.png';
-  }}
-  style={{ width: '100%', height: 'auto', borderRadius: '8px', marginBottom: '10px' }}
-/>
+  return (
+    <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '20px' }}>
+      {/* Main Section Header - Only show for 'all' filter */}
+      {activeFilter === 'all' && (
+        <div style={{ textAlign: 'center', marginBottom: '40px' }}>
+          <h1 style={{ 
+            fontSize: '36px', 
+            fontWeight: 'bold', 
+            color: '#00ffc8', 
+            marginBottom: '10px',
+            textTransform: 'uppercase',
+            letterSpacing: '2px'
+          }}>
+            {getSectionTitle()}
+          </h1>
+          {getSectionSubtitle() && (
+            <p style={{ 
+              fontSize: '16px', 
+              color: '#ccc', 
+              marginBottom: '30px',
+              maxWidth: '600px',
+              margin: '0 auto 30px auto',
+              lineHeight: '1.5'
+            }}>
+              {getSectionSubtitle()}
+            </p>
+          )}
+        </div>
+      )}
 
-        <h3 style={{ fontSize: '18px', margin: '10px 0' }}>{product.name}</h3>
-        <p style={{ fontSize: '14px', color: '#ccc' }}>{product.priceFormatted}</p>
-        <button
-          onClick={() => {
-            addToCart(product);
-            toast.success(`${product.name} added to cart!`);
-          }}
-          style={{
-            padding: '8px 16px',
-            backgroundColor: '#00ffc8',
-            border: 'none',
-            borderRadius: '5px',
-            color: '#111',
-            fontWeight: 'bold',
-            cursor: 'pointer'
-          }}
-        >
-          Add to Cart
-        </button>
+      {/* Filter Buttons */}
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'center', 
+        marginBottom: '40px',
+        gap: '10px'
+      }}>
+        {[
+          { key: 'all', label: 'All' },
+          { key: 'tech', label: 'Tech' },
+          { key: 'lamps', label: 'Lamps' }
+        ].map(({ key, label }) => (
+          <button
+            key={key}
+            onClick={() => handleFilterChange(key)}
+            style={{
+              padding: '12px 24px',
+              backgroundColor: activeFilter === key ? '#00ffc8' : '#1a1a1a',
+              color: activeFilter === key ? '#000' : '#fff',
+              border: `2px solid ${activeFilter === key ? '#00ffc8' : '#333'}`,
+              borderRadius: '8px',
+              fontSize: '14px',
+              fontWeight: 'bold',
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+              textTransform: 'uppercase',
+              letterSpacing: '1px'
+            }}
+            onMouseEnter={(e) => {
+              if (activeFilter !== key) {
+                e.currentTarget.style.backgroundColor = '#333';
+                e.currentTarget.style.borderColor = '#555';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (activeFilter !== key) {
+                e.currentTarget.style.backgroundColor = '#1a1a1a';
+                e.currentTarget.style.borderColor = '#333';
+              }
+            }}
+          >
+            {label}
+          </button>
+        ))}
       </div>
-    ))}
-  </div>
+
+      {/* Error Message */}
+      {error && (
+        <div style={{ width: '100%', textAlign: 'center', marginBottom: '20px', color: '#ffb347' }}>
+          Live catalog unavailable. Showing fallback products.
+        </div>
+      )}
+
+      {/* Products Sections */}
+      <div style={{
+        opacity: isTransitioning ? 0 : 1,
+        transform: isTransitioning ? 'translateY(20px)' : 'translateY(0)',
+        transition: 'opacity 0.3s ease, transform 0.3s ease'
+      }}>
+        {activeFilter === 'all' ? (
+          <div>
+            {/* Tools & Devices Section */}
+            <ProductSection
+              title="Tools & Devices"
+              subtitle="Security tools, devices, and lab gear from HexForge Labs."
+              products={getTechProducts()}
+              addToCart={addToCart}
+            />
+
+            {/* Custom Lamps & Prints Section */}
+            <ProductSection
+              title="Custom Lamps & Prints"
+              subtitle="Turn your photos into custom illuminated prints and keepsakes."
+              products={getLampProducts()}
+              addToCart={addToCart}
+            />
+          </div>
+        ) : (
+          <ProductSection
+            title={getSectionTitle()}
+            subtitle={getSectionSubtitle()}
+            products={getFilteredProducts()}
+            addToCart={addToCart}
+          />
+        )}
+      </div>
+    </div>
   );
 }
 
 export default ProductList;
-// Note: The above code assumes that the product data includes an 'image' field for the product image URL.
-// The 'priceFormatted' field is used to display the price in a formatted manner.
-// Make sure to adjust the product data structure according to your API response.
-// The CSS styles are inline for simplicity, but you can extract them into a separate CSS file if needed.
-// The spinner animation is created using CSS keyframes.
-// The error handling is basic; you can enhance it by adding more specific error messages or retry logic.
-// The product card hover effect is achieved using inline styles and event handlers.
-// The component is designed to be responsive and will adjust the layout based on the screen size.
-// You can further enhance the UI by adding media queries or using a CSS-in-JS library for better styling.
-// The component is functional and uses React hooks for state management and side effects.
-// The product list is displayed in a grid layout, and the cards have a hover effect for better user experience.
-// The component is self-contained and can be easily integrated into a larger application.
-// The product list is fetched from the server using the Fetch API, and the loading state is managed using React hooks.
-// The component is designed to be reusable and can be easily modified to include additional features or styles.
-// The product list is displayed in a responsive grid layout, making it suitable for various screen sizes.
-// The component is designed to be easily maintainable and can be extended with additional features in the future.
-// The product list is displayed in a visually appealing manner, with hover effects and animations to enhance user experience.
-// The component is designed to be easily integrated into a larger application, making it suitable for various use cases.
-// The product list is fetched from the server using the Fetch API, and the loading state is managed using React hooks.
-// The component is designed to be reusable and can be easily modified to include additional features or styles.
-// The product list is displayed in a responsive grid layout, making it suitable for various screen sizes.
-// The component is designed to be easily maintainable and can be extended with additional features in the future.
-// The product list is displayed in a visually appealing manner, with hover effects and animations to enhance user experience.
-// The component is designed to be easily integrated into a larger application, making it suitable for various use cases.
-// The product list is fetched from the server using the Fetch API, and the loading state is managed using React hooks.
-// The component is designed to be reusable and can be easily modified to include additional features or styles.
-// The product list is displayed in a responsive grid layout, making it suitable for various screen sizes.
-// The component is designed to be easily maintainable and can be extended with additional features in the future.
-// The product list is displayed in a visually appealing manner, with hover effects and animations to enhance user experience.
-// The component is designed to be easily integrated into a larger application, making it suitable for various use cases.
-// The product list is fetched from the server using the Fetch API, and the loading state is managed using React hooks.
-// The component is designed to be reusable and can be easily modified to include additional features or styles.
-// The product list is displayed in a responsive grid layout, making it suitable for various screen sizes.
-// The component is designed to be easily maintainable and can be extended with additional features in the future.
-// The product list is displayed in a visually appealing manner, with hover effects and animations to enhance user experience.
-// The component is designed to be easily integrated into a larger application, making it suitable for various use cases.
-// The product list is fetched from the server using the Fetch API, and the loading state is managed using React hooks.
-// The component is designed to be reusable and can be easily modified to include additional features or styles.
-// The product list is displayed in a responsive grid layout, making it suitable for various screen sizes.
-// The component is designed to be easily maintainable and can be extended with additional features in the future.
-// The product list is displayed in a visually appealing manner, with hover effects and animations to enhance user experience.
-// The component is designed to be easily integrated into a larger application, making it suitable for various use cases.
-// The product list is fetched from the server using the Fetch API, and the loading state is managed using React hooks.
-// The component is designed to be reusable and can be easily modified to include additional features or styles.
-// The product list is displayed in a responsive grid layout, making it suitable for various screen sizes.
-// The component is designed to be easily maintainable and can be extended with additional features in the future.
-// The product list is displayed in a visually appealing manner, with hover effects and animations to enhance user experience.
-// The component is designed to be easily integrated into a larger application, making it suitable for various use cases.
-// The product list is fetched from the server using the Fetch API, and the loading state is managed using React hooks.
-// The component is designed to be reusable and can be easily modified to include additional features or styles.
-// The product list is displayed in a responsive grid layout, making it suitable for various screen sizes.
-// The component is designed to be easily maintainable and can be extended with additional features in the future.
-// The product list is displayed in a visually appealing manner, with hover effects and animations to enhance user experience.
-// The component is designed to be easily integrated into a larger application, making it suitable for various use cases.
-// The product list is fetched from the server using the Fetch API, and the loading state is managed using React hooks.
-// The component is designed to be reusable and can be easily modified to include additional features or styles.
-// The product list is displayed in a responsive grid layout, making it suitable for various screen sizes.
-// The component is designed to be easily maintainable and can be extended with additional features in the future.
-// The product list is displayed in a visually appealing manner, with hover effects and animations to enhance user experience.
-// The component is designed to be easily integrated into a larger application, making it suitable for various use cases.
-// The product list is fetched from the server using the Fetch API, and the loading state is managed using React hooks.
-// The component is designed to be reusable and can be easily modified to include additional features or styles.
-// The product list is displayed in a responsive grid layout, making it suitable for various screen sizes.  
+

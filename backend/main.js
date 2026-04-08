@@ -34,8 +34,8 @@ app.use(express.static('frontend/build'));
 const IMAGES_DIR = process.env.IMAGES_DIR || path.join(__dirname, '..', 'uploads');
 
 
-// Serve uploaded images at /images/filename.ext
-app.use('/images', express.static(IMAGES_DIR));
+// Serve uploaded images at /uploads/filename.ext
+app.use('/uploads', express.static(IMAGES_DIR));
 
 // (Optional) ALSO serve any pre-bundled images from frontend/public/images
 app.use('/images', express.static(path.join(__dirname, '../frontend/public/images')));

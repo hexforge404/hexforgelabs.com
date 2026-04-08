@@ -4,15 +4,43 @@ const { body, validationResult } = require('express-validator');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
 const fs = require('fs/promises');
+const multer = require('multer');
 const Product = require('../models/Product');
 const ProductAsset = require('../models/ProductAsset');
+const CustomOrder = require('../models/CustomOrder');
+const PromoCode = require('../models/PromoCode');
 const { requireAdmin } = require('../middleware/requireAdmin');
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const { roundMoney, calculateDeposit, applyPromo } = require('../utils/pricing');
+const formData = require('form-data');
+const Mailgun = require('mailgun.js');
+const mailgun = new Mailgun(formData);
+const mg = mailgun.client({
+  username: 'api',
+  key: process.env.MAILGUN_API_KEY,
+  url: 'https://api.mailgun.net'
+});
 
 const SURFACE_PUBLIC_PREFIX = (process.env.SURFACE_PUBLIC_PREFIX || '/assets/surface').replace(/\/+$/, '');
 const SURFACE_OUTPUT_DIR = process.env.SURFACE_OUTPUT_DIR || '/var/www/hexforge3d/surface';
 const INTERNAL_BASE_URL = process.env.INTERNAL_BASE_URL || process.env.SURFACE_INTERNAL_BASE_URL || 'http://localhost:8000';
 const STATUS_VALUES = ['draft', 'active', 'archived'];
 const REQUEST_TIMEOUT_MS = 8000;
+
+// Configure multer for custom order photo uploads
+const customOrderUpload = multer({
+  dest: path.join(__dirname, '../uploads/custom-orders'),
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files are allowed'));
+    }
+  }
+});
 
 const productLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -28,6 +56,7 @@ const baseProductValidation = [
   body('category').optional().isString(),
   body('hero_image_url').optional().isString(),
   body('image').optional().isString(),
+  body('imageGallery').optional().isArray(),
   body('status').optional().isIn(STATUS_VALUES),
   body('tags').optional().isArray(),
   body('sku').optional().isString(),
@@ -82,6 +111,197 @@ function buildManifestPaths(jobId, subfolder) {
     httpUrl,
   };
 }
+
+const getBaseUrl = () => {
+  let url = process.env.BASE_URL || 'https://hexforgelabs.com';
+  if (!/^https?:\/\//i.test(url)) {
+    url = `https://${url.replace(/^\/+/, '')}`;
+  }
+  return url.replace(/\/+$/, '');
+};
+
+const formatMoney = (value) => `$${Number(value || 0).toFixed(2)}`;
+
+const getOrderStatusUrl = (orderId) => {
+  const baseUrl = getBaseUrl();
+  return `${baseUrl}/order/${encodeURIComponent(orderId)}`;
+};
+
+const getAddressLine = (order) => {
+  const address = order.customer?.shippingAddress || {};
+  return `${address.street || ''}${address.city ? `, ${address.city}` : ''}${address.state ? `, ${address.state}` : ''}${address.zipCode ? ` ${address.zipCode}` : ''}${address.country ? `, ${address.country}` : ''}`.trim();
+};
+
+const getDiscountSummary = (order) => {
+  if (!order.discountAmount || order.discountAmount <= 0) return null;
+  const typeLabel = order.discountType === 'percentage'
+    ? `${order.discountValue}% off`
+    : `${formatMoney(order.discountValue)} off`;
+  return {
+    originalPrice: formatMoney(order.originalPrice || order.totalPrice),
+    discountAmount: formatMoney(order.discountAmount),
+    discountTypeLabel: typeLabel,
+    promoCode: order.promoCode || 'N/A',
+    discountedTotal: formatMoney(order.discountedTotal || order.totalPrice),
+  };
+};
+
+const buildCustomOrderConfirmationEmail = (order) => {
+  const addressLine = getAddressLine(order);
+  const discount = getDiscountSummary(order);
+  const statusUrl = getOrderStatusUrl(order.orderId);
+  const imageCount = order.images?.length || 0;
+
+  const text = `Thank you for your custom lamp order!\n\nOrder ID: ${order.orderId}\nCustomer: ${order.customer.name}\nProduct: ${order.productName}\nSize: ${order.size}\nPanels: ${order.panels}\nLight Type: ${order.lightType}\nUploaded Images: ${imageCount}\n\nPricing\nTotal Price: ${formatMoney(order.totalPrice)}${discount ? `\nOriginal Price: ${discount.originalPrice}\nDiscount: ${discount.discountAmount} (${discount.discountTypeLabel})\nPromo Code: ${discount.promoCode}\nDiscounted Total: ${discount.discountedTotal}` : ''}\nDeposit Due: ${formatMoney(order.depositAmount)}\nRemaining Balance: ${formatMoney(order.remainingBalance)}\nStatus: ${order.status}\n\nShipping Address: ${addressLine}\n\nNext steps:\n- Complete your deposit payment if you have not already\n- We will review your images and begin production\n- You can check status any time at ${statusUrl}`;
+
+  const html = `<p>Thank you for your custom lamp order!</p>
+    <p><strong>Order ID:</strong> ${order.orderId}</p>
+    <p><strong>Customer:</strong> ${order.customer.name}</p>
+    <p><strong>Product:</strong> ${order.productName}</p>
+    <p><strong>Size:</strong> ${order.size}</p>
+    <p><strong>Panels:</strong> ${order.panels}</p>
+    <p><strong>Light Type:</strong> ${order.lightType}</p>
+    <p><strong>Uploaded Images:</strong> ${imageCount}</p>
+    <h4>Pricing</h4>
+    <p><strong>Total Price:</strong> ${formatMoney(order.totalPrice)}</p>${discount ? `
+    <p><strong>Original Price:</strong> ${discount.originalPrice}</p>
+    <p><strong>Discount:</strong> ${discount.discountAmount} (${discount.discountTypeLabel})</p>
+    <p><strong>Promo Code:</strong> ${discount.promoCode}</p>
+    <p><strong>Discounted Total:</strong> ${discount.discountedTotal}</p>` : ''}
+    <p><strong>Deposit Due:</strong> ${formatMoney(order.depositAmount)}</p>
+    <p><strong>Remaining Balance:</strong> ${formatMoney(order.remainingBalance)}</p>
+    <p><strong>Status:</strong> ${order.status}</p>
+    <h4>Shipping</h4>
+    <p>${addressLine}</p>
+    <h4>Next steps</h4>
+    <ul>
+      <li>Complete your deposit payment if you have not already.</li>
+      <li>We will review your images and begin production.</li>
+      <li>Check status any time: <a href="${statusUrl}">${statusUrl}</a></li>
+    </ul>`;
+
+  return { text, html };
+};
+
+const buildCustomOrderAdminEmail = (order) => {
+  const addressLine = getAddressLine(order);
+  const discount = getDiscountSummary(order);
+  const statusUrl = getOrderStatusUrl(order.orderId);
+  const imageCount = order.images?.length || 0;
+
+  const text = `New custom lamp order received.\n\nOrder ID: ${order.orderId}\nCustomer: ${order.customer.name}\nEmail: ${order.customer.email}\nPhone: ${order.customer.phone}\nProduct: ${order.productName}\nSize: ${order.size}\nPanels: ${order.panels}\nLight Type: ${order.lightType}\nUploaded Images: ${imageCount}\n\nPricing\nTotal Price: ${formatMoney(order.totalPrice)}${discount ? `\nOriginal Price: ${discount.originalPrice}\nDiscount: ${discount.discountAmount} (${discount.discountTypeLabel})\nPromo Code: ${discount.promoCode}\nDiscounted Total: ${discount.discountedTotal}` : ''}\nDeposit Due: ${formatMoney(order.depositAmount)}\nRemaining Balance: ${formatMoney(order.remainingBalance)}\nStatus: ${order.status}\n\nShipping Address: ${addressLine}\n\nStatus URL: ${statusUrl}`;
+
+  const html = `<p><strong>New custom lamp order received.</strong></p>
+    <p><strong>Order ID:</strong> ${order.orderId}</p>
+    <p><strong>Customer:</strong> ${order.customer.name}</p>
+    <p><strong>Email:</strong> ${order.customer.email}</p>
+    <p><strong>Phone:</strong> ${order.customer.phone}</p>
+    <p><strong>Product:</strong> ${order.productName}</p>
+    <p><strong>Size:</strong> ${order.size}</p>
+    <p><strong>Panels:</strong> ${order.panels}</p>
+    <p><strong>Light Type:</strong> ${order.lightType}</p>
+    <p><strong>Uploaded Images:</strong> ${imageCount}</p>
+    <h4>Pricing</h4>
+    <p><strong>Total Price:</strong> ${formatMoney(order.totalPrice)}</p>${discount ? `
+    <p><strong>Original Price:</strong> ${discount.originalPrice}</p>
+    <p><strong>Discount:</strong> ${discount.discountAmount} (${discount.discountTypeLabel})</p>
+    <p><strong>Promo Code:</strong> ${discount.promoCode}</p>
+    <p><strong>Discounted Total:</strong> ${discount.discountedTotal}</p>` : ''}
+    <p><strong>Deposit Due:</strong> ${formatMoney(order.depositAmount)}</p>
+    <p><strong>Remaining Balance:</strong> ${formatMoney(order.remainingBalance)}</p>
+    <p><strong>Status:</strong> ${order.status}</p>
+    <h4>Shipping</h4>
+    <p>${addressLine}</p>
+    <p>Status URL: <a href="${statusUrl}">${statusUrl}</a></p>`;
+
+  return { text, html };
+};
+
+const buildCustomOrderDepositEmail = (order) => {
+  const statusUrl = getOrderStatusUrl(order.orderId);
+
+  const text = `Deposit received for your custom lamp order.\n\nOrder ID: ${order.orderId}\nDeposit Paid: ${formatMoney(order.depositAmount)}\nRemaining Balance: ${formatMoney(order.remainingBalance)}\nStatus: ${order.status}\n\nTrack status: ${statusUrl}`;
+
+  const html = `<p><strong>Deposit received for your custom lamp order.</strong></p>
+    <p><strong>Order ID:</strong> ${order.orderId}</p>
+    <p><strong>Deposit Paid:</strong> ${formatMoney(order.depositAmount)}</p>
+    <p><strong>Remaining Balance:</strong> ${formatMoney(order.remainingBalance)}</p>
+    <p><strong>Status:</strong> ${order.status}</p>
+    <p>Track status: <a href="${statusUrl}">${statusUrl}</a></p>`;
+
+  return { text, html };
+};
+
+const sendCustomOrderNotification = async (order) => {
+  if (!process.env.MAILGUN_API_KEY || !process.env.MAILGUN_DOMAIN || !process.env.MAILGUN_FROM_EMAIL) {
+    console.warn('⚠️ Mailgun credentials missing. Skipping custom order email.');
+    return;
+  }
+
+  const customerEmail = order.customer?.email;
+
+  if (customerEmail && !order.confirmationSent) {
+    const { text, html } = buildCustomOrderConfirmationEmail(order);
+    try {
+      await mg.messages.create(process.env.MAILGUN_DOMAIN, {
+        from: `HexForge Labs <${process.env.MAILGUN_FROM_EMAIL}>`,
+        to: [customerEmail],
+        subject: `Custom Lamp Order Confirmation: ${order.orderId}`,
+        text,
+        html,
+      });
+      order.confirmationSent = true;
+      order.lastEmailSentAt = new Date();
+      console.log(`📧 Customer confirmation email sent for ${order.orderId}`);
+    } catch (emailErr) {
+      console.warn(`⚠️ Failed to send customer confirmation email for ${order.orderId}:`, emailErr.message || emailErr);
+    }
+  }
+
+  const adminRecipients = [process.env.TO_EMAIL, process.env.BCC_EMAIL].filter(Boolean);
+  if (adminRecipients.length && !order.adminNotificationSent) {
+    const { text, html } = buildCustomOrderAdminEmail(order);
+    try {
+      await mg.messages.create(process.env.MAILGUN_DOMAIN, {
+        from: `HexForge Labs <${process.env.MAILGUN_FROM_EMAIL}>`,
+        to: adminRecipients,
+        subject: `New Custom Lamp Order: ${order.orderId}`,
+        text,
+        html,
+      });
+      order.adminNotificationSent = true;
+      order.lastEmailSentAt = new Date();
+      console.log(`📧 Admin notification email sent for ${order.orderId}`);
+    } catch (emailErr) {
+      console.warn(`⚠️ Failed to send admin notification email for ${order.orderId}:`, emailErr.message || emailErr);
+    }
+  }
+};
+
+const sendCustomOrderDepositConfirmation = async (order) => {
+  if (!process.env.MAILGUN_API_KEY || !process.env.MAILGUN_DOMAIN || !process.env.MAILGUN_FROM_EMAIL) {
+    console.warn('⚠️ Mailgun credentials missing. Skipping deposit confirmation email.');
+    return;
+  }
+
+  if (!order.customer?.email || order.depositConfirmationSent) return;
+
+  const { text, html } = buildCustomOrderDepositEmail(order);
+  try {
+    await mg.messages.create(process.env.MAILGUN_DOMAIN, {
+      from: `HexForge Labs <${process.env.MAILGUN_FROM_EMAIL}>`,
+      to: [order.customer.email],
+      subject: `Deposit Received: ${order.orderId}`,
+      text,
+      html,
+    });
+    order.depositConfirmationSent = true;
+    order.lastEmailSentAt = new Date();
+    console.log(`📧 Deposit confirmation email sent for ${order.orderId}`);
+  } catch (emailErr) {
+    console.warn(`⚠️ Failed to send deposit confirmation email for ${order.orderId}:`, emailErr.message || emailErr);
+  }
+};
 
 async function fetchWithTimeout(url, timeoutMs) {
   const controller = new AbortController();
@@ -224,11 +444,28 @@ function deriveAssets(manifest, jobId, subfolder) {
   };
 }
 
+function makeSlug(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 100);
+}
+
 function toProductResponse(doc) {
   const obj = doc.toObject({ virtuals: true });
+  obj.title = obj.title || obj.name || 'Untitled product';
   obj.name = obj.name || obj.title;
-  obj.image = obj.image || obj.hero_image_url;
-  obj.priceFormatted = obj.priceFormatted || (typeof obj.price === 'number' ? `$${obj.price.toFixed(2)}` : '$0.00');
+  obj.hero_image_url = obj.hero_image_url || obj.image || null;
+  obj.image = obj.image || obj.hero_image_url || null;
+  obj.imageGallery = Array.isArray(obj.imageGallery)
+    ? obj.imageGallery.filter(Boolean)
+    : [];
+  obj.price = typeof obj.price === 'number' ? obj.price : Number(obj.price) || 0;
+  obj.priceFormatted = obj.priceFormatted || `$${obj.price.toFixed(2)}`;
+  obj.slug = obj.slug || makeSlug(obj.title);
+  obj.status = obj.status || 'active';
   return obj;
 }
 
@@ -236,6 +473,13 @@ function buildProductPayload(body) {
   const title = (body.title || body.name || '').trim();
   const heroImage = (body.hero_image_url || body.image || '').trim();
   const category = (body.category || body.categories || '').toString().trim();
+  const imageGallery = Array.isArray(body.imageGallery)
+    ? body.imageGallery
+    : (body.imageGallery || '')
+        .toString()
+        .split(/[\n,]+/)
+        .map((value) => value.trim())
+        .filter(Boolean);
   const tags = Array.isArray(body.tags)
     ? body.tags
     : (body.tags || '')
@@ -251,6 +495,7 @@ function buildProductPayload(body) {
     status: STATUS_VALUES.includes(body.status) ? body.status : undefined,
     category: category || 'uncategorized',
     hero_image_url: heroImage || undefined,
+    imageGallery: imageGallery.length ? imageGallery : undefined,
     tags,
     sku: body.sku || undefined,
     brand: body.brand || 'HexForge',
@@ -262,25 +507,38 @@ function buildProductPayload(body) {
 router.get('/', productLimiter, async (req, res) => {
   try {
     const { page = 1, limit = 20, featured, category, search, raw, status } = req.query;
-    const filter = {};
+    const conditions = [];
 
-    if (featured === 'true') filter.isFeatured = true;
-    if (category) filter.category = category;
-
-    if (status && status !== 'all') {
-      filter.status = STATUS_VALUES.includes(String(status).toLowerCase())
-        ? String(status).toLowerCase()
-        : 'active';
-    } else if (!(req.session?.admin?.loggedIn && status === 'all')) {
-      filter.status = 'active';
-    }
+    if (featured === 'true') conditions.push({ isFeatured: true });
+    if (category) conditions.push({ category });
 
     if (search) {
-      filter.$or = [
-        { title: { $regex: search, $options: 'i' } },
-        { description: { $regex: search, $options: 'i' } },
-      ];
+      const regex = { $regex: search, $options: 'i' };
+      conditions.push({
+        $or: [
+          { title: regex },
+          { description: regex },
+          { name: regex },
+        ],
+      });
     }
+
+    if (status && status !== 'all') {
+      conditions.push({
+        status: STATUS_VALUES.includes(String(status).toLowerCase())
+          ? String(status).toLowerCase()
+          : 'active',
+      });
+    } else if (!(req.session?.admin?.loggedIn && status === 'all')) {
+      conditions.push({
+        $or: [
+          { status: 'active' },
+          { status: { $exists: false } },
+        ],
+      });
+    }
+
+    const filter = conditions.length ? { $and: conditions } : {};
 
     const [products, total] = await Promise.all([
       Product.find(filter)
@@ -311,6 +569,25 @@ router.get('/', productLimiter, async (req, res) => {
       error: 'Internal server error',
       details: process.env.NODE_ENV === 'development' ? error.message : undefined,
     });
+  }
+});
+
+router.get('/slug/:slug', async (req, res) => {
+  try {
+    const slug = String(req.params.slug || '').toLowerCase().trim();
+    if (!slug) return res.status(404).json({ error: 'Product not found' });
+    const product = await Product.findOne({ slug });
+    if (!product) return res.status(404).json({ error: 'Product not found' });
+
+    const isAdmin = !!req.session?.admin?.loggedIn;
+    if (!isAdmin && product.status && product.status !== 'active') {
+      return res.status(404).json({ error: 'Product not available' });
+    }
+
+    res.json(toProductResponse(product));
+  } catch (error) {
+    console.error('Error fetching product by slug:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -510,6 +787,527 @@ router.post('/from-surface-job', productLimiter, requireAdmin, promoteValidation
     res.status(500).json({
       error: 'Failed to promote surface job',
       details: process.env.NODE_ENV === 'development' ? error.message : undefined,
+    });
+  }
+});
+
+const PANEL_COUNT_MAP = {
+  single: 1,
+  double: 2,
+  triple: 3,
+  quad: 4,
+};
+
+const getRequiredPanelCount = (panels) => {
+  if (!panels || typeof panels !== 'string') return null;
+  return PANEL_COUNT_MAP[panels] ?? null;
+};
+
+// Validate promo code for custom lamp orders
+router.post('/custom-orders/validate-promo', express.json(), async (req, res) => {
+  try {
+    const { productId, promoCode } = req.body;
+
+    if (!promoCode || !promoCode.trim()) {
+      return res.status(400).json({ error: 'Promo code is required' });
+    }
+
+    if (!productId) {
+      return res.status(400).json({ error: 'Product ID is required' });
+    }
+
+    // Find the promo code
+    const promo = await PromoCode.findOne({
+      code: promoCode.trim().toUpperCase(),
+      isActive: true
+    });
+
+    if (!promo) {
+      return res.status(400).json({
+        valid: false,
+        error: 'Invalid or inactive promo code'
+      });
+    }
+
+    // Check expiration
+    if (promo.expiresAt && new Date() > promo.expiresAt) {
+      return res.status(400).json({
+        valid: false,
+        error: 'Promo code has expired'
+      });
+    }
+
+    // Check usage limit
+    if (promo.usageLimit && promo.usageCount >= promo.usageLimit) {
+      return res.status(400).json({
+        valid: false,
+        error: 'Promo code usage limit exceeded'
+      });
+    }
+
+    // Get product to check restrictions
+    const product = await Product.findById(productId);
+    if (!product) {
+      return res.status(400).json({ error: 'Product not found' });
+    }
+
+    // Check category restrictions
+    if (promo.allowedCategories && promo.allowedCategories.length > 0) {
+      const hasAllowedCategory = promo.allowedCategories.some(cat =>
+        product.category === cat || (product.categories && product.categories.includes(cat))
+      );
+      if (!hasAllowedCategory) {
+        return res.status(400).json({
+          valid: false,
+          error: 'Promo code not valid for this product category'
+        });
+      }
+    }
+
+    // Check product restrictions
+    if (promo.allowedProducts && promo.allowedProducts.length > 0) {
+      if (!promo.allowedProducts.includes(productId)) {
+        return res.status(400).json({
+          valid: false,
+          error: 'Promo code not valid for this product'
+        });
+      }
+    }
+
+    // Calculate discount preview (assuming standard pricing)
+    const originalPrice = Number(product.price || 0);
+    let discountAmount = 0;
+
+    if (promo.discountType === 'percentage') {
+      discountAmount = Number((originalPrice * (promo.discountValue / 100)).toFixed(2));
+    } else if (promo.discountType === 'fixed') {
+      discountAmount = Math.min(promo.discountValue, originalPrice);
+    }
+
+    const discountedTotal = Math.max(0, originalPrice - discountAmount);
+    const depositAmount = Number((discountedTotal * 0.5).toFixed(2));
+    const remainingBalance = Number((discountedTotal - depositAmount).toFixed(2));
+
+    res.json({
+      valid: true,
+      promoCode: promo.code,
+      discountType: promo.discountType,
+      discountValue: promo.discountValue,
+      discountAmount,
+      originalPrice,
+      discountedTotal,
+      depositAmount,
+      remainingBalance,
+      description: promo.description
+    });
+
+  } catch (err) {
+    console.error('Promo validation error:', err);
+    res.status(500).json({
+      error: 'Failed to validate promo code',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
+  }
+});
+
+// Middleware to handle multer errors gracefully
+const handleMulterErrors = (err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    const message = err.code === 'LIMIT_UNEXPECTED_FILE'
+      ? 'Too many image files uploaded. Maximum 4 files are allowed.'
+      : err.code === 'LIMIT_FILE_SIZE'
+      ? 'One or more image files exceed the 10MB size limit.'
+      : err.message || 'Image upload failed.';
+    return res.status(400).json({ error: message });
+  }
+  if (err) {
+    return res.status(400).json({ error: err.message || 'Image upload failed.' });
+  }
+  next();
+};
+
+router.post(
+  '/custom-orders',
+  customOrderUpload.array('images[]', 4),
+  handleMulterErrors,
+  async (req, res) => {
+    try {
+      const {
+        productId,
+        size,
+        panels = 'single',
+        lightType,
+        notes,
+        promoCode,
+        customerName,
+        customerEmail,
+        customerPhone,
+        shippingStreet,
+        shippingCity,
+        shippingState,
+        shippingZip,
+        shippingCountry,
+      } = req.body;
+
+      const requiredPanels = getRequiredPanelCount(panels);
+      if (requiredPanels === null) {
+        return res.status(400).json({
+          error: 'Invalid panels value. Valid values are: single, double, triple, quad.',
+        });
+      }
+
+      if (!productId) {
+        return res.status(400).json({ error: 'Product ID is required for custom orders.' });
+      }
+
+      if (!customerName || !customerEmail || !customerPhone) {
+        return res.status(400).json({
+          error: 'Customer name, email, and phone are required for custom lamp orders.',
+        });
+      }
+
+      if (!shippingStreet || !shippingCity || !shippingState || !shippingZip || !shippingCountry) {
+        return res.status(400).json({
+          error: 'Full shipping address is required for custom orders.',
+        });
+      }
+
+      const uploadedFiles = Array.isArray(req.files) ? req.files : [];
+      if (uploadedFiles.length === 0) {
+        return res.status(400).json({
+          error: `No image files uploaded. ${requiredPanels} image file${requiredPanels === 1 ? '' : 's'} required for ${panels} panel(s).`,
+        });
+      }
+      if (uploadedFiles.length < requiredPanels) {
+        return res.status(400).json({
+          error: `Too few images uploaded. Expected ${requiredPanels} image file${requiredPanels === 1 ? '' : 's'} for ${panels} panel(s), but received ${uploadedFiles.length}.`,
+        });
+      }
+      if (uploadedFiles.length > requiredPanels) {
+        return res.status(400).json({
+          error: `Too many images uploaded. Expected ${requiredPanels} image file${requiredPanels === 1 ? '' : 's'} for ${panels} panel(s), but received ${uploadedFiles.length}.`,
+        });
+      }
+
+      const product = await Product.findById(productId);
+      if (!product) {
+        return res.status(400).json({ error: 'Custom order product not found.' });
+      }
+
+      // Handle promo code validation and discount calculation
+      let promoData = null;
+      const originalPrice = roundMoney(Number(product.price || 0) * requiredPanels);
+      let discountedTotal = originalPrice;
+      let discountAmount = 0;
+      let discountType = null;
+      let discountValue = null;
+
+      if (promoCode && promoCode.trim()) {
+        try {
+          // Validate promo code
+          const promo = await PromoCode.findOne({
+            code: promoCode.trim().toUpperCase(),
+            isActive: true
+          });
+
+          if (!promo) {
+            return res.status(400).json({
+              error: 'Invalid or inactive promo code'
+            });
+          }
+
+          // Check expiration
+          if (promo.expiresAt && new Date() > promo.expiresAt) {
+            return res.status(400).json({
+              error: 'Promo code has expired'
+            });
+          }
+
+          // Check usage limit
+          if (promo.usageLimit && promo.usageCount >= promo.usageLimit) {
+            return res.status(400).json({
+              error: 'Promo code usage limit exceeded'
+            });
+          }
+
+          // Check category restrictions
+          if (promo.allowedCategories && promo.allowedCategories.length > 0) {
+            const hasAllowedCategory = promo.allowedCategories.some(cat =>
+              product.category === cat || (product.categories && product.categories.includes(cat))
+            );
+            if (!hasAllowedCategory) {
+              return res.status(400).json({
+                error: 'Promo code not valid for this product category'
+              });
+            }
+          }
+
+          // Check product restrictions
+          if (promo.allowedProducts && promo.allowedProducts.length > 0) {
+            if (!promo.allowedProducts.includes(productId)) {
+              return res.status(400).json({
+                error: 'Promo code not valid for this product'
+              });
+            }
+          }
+
+          // Check minimum order amount
+          if (promo.minimumOrderAmount && originalPrice < promo.minimumOrderAmount) {
+            return res.status(400).json({
+              error: `Promo code requires minimum order of $${promo.minimumOrderAmount.toFixed(2)}`
+            });
+          }
+
+          const promoResult = applyPromo(promo, originalPrice);
+          discountAmount = promoResult.discountAmount;
+          discountedTotal = promoResult.discountedTotal;
+
+          // Store promo data
+          promoData = {
+            promoCode: promo.code,
+            discountType: promo.discountType,
+            discountValue: promo.discountValue,
+            discountAmount,
+            originalPrice,
+            discountedTotal
+          };
+
+          discountType = promo.discountType;
+          discountValue = promo.discountValue;
+
+          // Increment usage count
+          promo.usageCount += 1;
+          await promo.save();
+
+        } catch (promoErr) {
+          console.error('Promo validation error:', promoErr);
+          return res.status(400).json({
+            error: 'Failed to validate promo code',
+            details: process.env.NODE_ENV === 'development' ? promoErr.message : undefined
+          });
+        }
+      }
+
+      const depositAmount = calculateDeposit(discountedTotal);
+      const remainingBalance = roundMoney(discountedTotal - depositAmount);
+
+      const imageOrderMap = {};
+      Object.keys(req.body).forEach((key) => {
+        const match = key.match(/^imageOrder\[(\d+)\]$/);
+        if (match) {
+          const orderIndex = Number(match[1]);
+          const panelNum = Number(req.body[key]);
+          imageOrderMap[orderIndex] = panelNum;
+        }
+      });
+
+      const images = uploadedFiles.map((file, index) => ({
+        path: file.path,
+        originalName: file.originalname,
+        mimeType: file.mimetype,
+        size: file.size,
+        panel: imageOrderMap[index] !== undefined ? imageOrderMap[index] : index + 1,
+      })).sort((a, b) => a.panel - b.panel);
+
+      const panelNumbers = images.map((img) => img.panel);
+      const expectedPanels = Array.from({ length: requiredPanels }, (_, idx) => idx + 1);
+      if (JSON.stringify(panelNumbers) !== JSON.stringify(expectedPanels)) {
+        return res.status(400).json({
+          error: `Panel image order is invalid. Expected panels [${expectedPanels.join(', ')}] but got [${panelNumbers.join(', ')}].`,
+        });
+      }
+
+      const customOrderDoc = new CustomOrder({
+        productId,
+        productName: product.title,
+        size: size || 'medium',
+        panels,
+        lightType: lightType || 'led',
+        notes: notes || '',
+        images,
+        originalPrice,
+        discountedTotal,
+        discountAmount,
+        discountType,
+        discountValue,
+        promoCode: promoData?.promoCode || null,
+        totalPrice: discountedTotal,
+        depositAmount,
+        remainingBalance,
+        paymentMethod: 'stripe',
+        paymentStatus: 'pending',
+        status: 'awaiting_deposit',
+        customer: {
+          name: customerName,
+          email: customerEmail,
+          phone: customerPhone,
+          shippingAddress: {
+            street: shippingStreet,
+            city: shippingCity,
+            state: shippingState,
+            zipCode: shippingZip,
+            country: shippingCountry,
+          },
+        },
+      });
+
+      const savedOrder = await customOrderDoc.save();
+
+      let checkoutUrl = null;
+      let sessionId = null;
+
+      if (process.env.STRIPE_SECRET_KEY) {
+        try {
+          const baseUrl = getBaseUrl();
+          const session = await stripe.checkout.sessions.create({
+            payment_method_types: ['card'],
+            mode: 'payment',
+            customer_email: customerEmail,
+            line_items: [
+              {
+                price_data: {
+                  currency: 'usd',
+                  product_data: {
+                    name: `Deposit for ${product.title}${promoData ? ` (${promoData.promoCode})` : ''}`,
+                    description: `50% deposit for custom lamp order ${savedOrder.orderId}${promoData ? ` - ${promoData.discountType === 'percentage' ? `${promoData.discountValue}% off` : `$${promoData.discountAmount} off`}` : ''}`,
+                  },
+                  unit_amount: Math.round(depositAmount * 100),
+                },
+                quantity: 1,
+              },
+            ],
+            success_url: `${baseUrl}/custom-order-success?orderId=${encodeURIComponent(savedOrder.orderId)}&sessionId={CHECKOUT_SESSION_ID}`,
+            cancel_url: `${baseUrl}/store/${encodeURIComponent(product.slug)}`,
+            metadata: {
+              orderId: savedOrder.orderId,
+              type: 'custom-order-deposit',
+              promoCode: promoData?.promoCode || '',
+              discountAmount: promoData?.discountAmount?.toString() || '0',
+            },
+          });
+          checkoutUrl = session.url;
+          sessionId = session.id;
+          savedOrder.stripeSessionId = session.id;
+          await savedOrder.save();
+        } catch (stripeErr) {
+          console.warn('⚠️ Stripe session creation failed:', stripeErr.message || stripeErr);
+        }
+      }
+
+      await sendCustomOrderNotification(savedOrder).catch((emailErr) => {
+        console.warn('⚠️ Custom order notification failed:', emailErr.message || emailErr);
+      });
+      await savedOrder.save();
+
+      const responsePayload = {
+        success: true,
+        message: 'Custom order created successfully',
+        orderId: savedOrder.orderId,
+        originalPrice,
+        discountedTotal,
+        discountAmount,
+        promoCode: promoData?.promoCode || null,
+        totalPrice: discountedTotal,
+        depositAmount,
+        remainingBalance,
+        checkoutUrl,
+        sessionId,
+        status: savedOrder.status,
+      };
+
+      return res.json(responsePayload);
+    } catch (error) {
+      console.error('Error processing custom order:', error.stack || error.message);
+      return res.status(500).json({
+        error: 'Failed to process custom order',
+        details: process.env.NODE_ENV !== 'production' ? error.stack || error.message : undefined,
+      });
+    }
+  }
+);
+
+// Public endpoint to lookup a custom lamp order by orderId
+router.get('/custom-orders/:orderId', async (req, res) => {
+  try {
+    const customOrder = await CustomOrder.findOne({ orderId: req.params.orderId });
+    if (!customOrder) {
+      return res.status(404).json({ error: 'Custom order not found' });
+    }
+    const safeOrder = {
+      orderId: customOrder.orderId,
+      productId: customOrder.productId,
+      productName: customOrder.productName,
+      size: customOrder.size,
+      panels: customOrder.panels,
+      lightType: customOrder.lightType,
+      imagesCount: customOrder.images?.length || 0,
+      totalPrice: customOrder.totalPrice,
+      originalPrice: customOrder.originalPrice,
+      discountedTotal: customOrder.discountedTotal,
+      promoCode: customOrder.promoCode,
+      discountType: customOrder.discountType,
+      discountValue: customOrder.discountValue,
+      discountAmount: customOrder.discountAmount,
+      depositAmount: customOrder.depositAmount,
+      remainingBalance: customOrder.remainingBalance,
+      paymentStatus: customOrder.paymentStatus,
+      status: customOrder.status,
+      trackingCarrier: customOrder.trackingCarrier,
+      trackingNumber: customOrder.trackingNumber,
+      trackingUrl: customOrder.trackingUrl,
+      customer: {
+        name: customOrder.customer?.name || '',
+      },
+      createdAt: customOrder.createdAt,
+      updatedAt: customOrder.updatedAt,
+    };
+
+    res.json(safeOrder);
+  } catch (err) {
+    console.error('❌ Failed to fetch custom order:', err);
+    res.status(500).json({
+      error: 'Failed to fetch custom order',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined,
+    });
+  }
+});
+
+router.post('/custom-orders/:orderId/confirm-deposit', express.json(), async (req, res) => {
+  try {
+    if (!process.env.STRIPE_SECRET_KEY) {
+      return res.status(400).json({ error: 'Stripe is not configured for deposit confirmation.' });
+    }
+
+    const { sessionId } = req.body;
+    const { orderId } = req.params;
+    if (!sessionId) {
+      return res.status(400).json({ error: 'Stripe sessionId is required.' });
+    }
+
+    const customOrder = await CustomOrder.findOne({ orderId });
+    if (!customOrder) {
+      return res.status(404).json({ error: 'Custom order not found.' });
+    }
+
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+    if (!session || session.payment_status !== 'paid') {
+      return res.status(400).json({ error: 'Payment is not complete yet.' });
+    }
+
+    customOrder.paymentStatus = 'deposit_paid';
+    customOrder.status = 'deposit_paid';
+    customOrder.depositPaidAt = new Date();
+    await customOrder.save();
+
+    await sendCustomOrderDepositConfirmation(customOrder);
+    await customOrder.save();
+
+    res.json({ success: true, customOrder });
+  } catch (err) {
+    console.error('❌ Failed to confirm deposit:', err);
+    res.status(500).json({
+      error: 'Failed to confirm deposit',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined,
     });
   }
 });

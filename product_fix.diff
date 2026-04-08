@@ -1,0 +1,84 @@
+diff --git a/backend/routes/products.js b/backend/routes/products.js
+index ecbfa0a..d9a544a 100644
+--- a/backend/routes/products.js
++++ b/backend/routes/products.js
+@@ -224,11 +224,25 @@ function deriveAssets(manifest, jobId, subfolder) {
+   };
+ }
+ 
++function makeSlug(value) {
++  return String(value || '')
++    .trim()
++    .toLowerCase()
++    .replace(/[^a-z0-9]+/g, '-')
++    .replace(/^-+|-+$/g, '')
++    .slice(0, 100);
++}
++
+ function toProductResponse(doc) {
+   const obj = doc.toObject({ virtuals: true });
++  obj.title = obj.title || obj.name || 'Untitled product';
+   obj.name = obj.name || obj.title;
+-  obj.image = obj.image || obj.hero_image_url;
+-  obj.priceFormatted = obj.priceFormatted || (typeof obj.price === 'number' ? `$${obj.price.toFixed(2)}` : '$0.00');
++  obj.hero_image_url = obj.hero_image_url || obj.image || null;
++  obj.image = obj.image || obj.hero_image_url || null;
++  obj.price = typeof obj.price === 'number' ? obj.price : Number(obj.price) || 0;
++  obj.priceFormatted = obj.priceFormatted || `$${obj.price.toFixed(2)}`;
++  obj.slug = obj.slug || makeSlug(obj.title);
++  obj.status = obj.status || 'active';
+   return obj;
+ }
+ 
+@@ -262,25 +276,38 @@ function buildProductPayload(body) {
+ router.get('/', productLimiter, async (req, res) => {
+   try {
+     const { page = 1, limit = 20, featured, category, search, raw, status } = req.query;
+-    const filter = {};
++    const conditions = [];
++
++    if (featured === 'true') conditions.push({ isFeatured: true });
++    if (category) conditions.push({ category });
+ 
+-    if (featured === 'true') filter.isFeatured = true;
+-    if (category) filter.category = category;
++    if (search) {
++      const regex = { $regex: search, $options: 'i' };
++      conditions.push({
++        $or: [
++          { title: regex },
++          { description: regex },
++          { name: regex },
++        ],
++      });
++    }
+ 
+     if (status && status !== 'all') {
+-      filter.status = STATUS_VALUES.includes(String(status).toLowerCase())
+-        ? String(status).toLowerCase()
+-        : 'active';
++      conditions.push({
++        status: STATUS_VALUES.includes(String(status).toLowerCase())
++          ? String(status).toLowerCase()
++          : 'active',
++      });
+     } else if (!(req.session?.admin?.loggedIn && status === 'all')) {
+-      filter.status = 'active';
++      conditions.push({
++        $or: [
++          { status: 'active' },
++          { status: { $exists: false } },
++        ],
++      });
+     }
+ 
+-    if (search) {
+-      filter.$or = [
+-        { title: { $regex: search, $options: 'i' } },
+-        { description: { $regex: search, $options: 'i' } },
+-      ];
+-    }
++    const filter = conditions.length ? { $and: conditions } : {};
+ 
+     const [products, total] = await Promise.all([
+       Product.find(filter)

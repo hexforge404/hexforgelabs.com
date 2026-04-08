@@ -51,8 +51,8 @@ router.post('/image', upload.single('image'), (req, res) => {
   const filename = req.file.filename;
 
   // This URL is what the frontend will store in product.image
-  // Nginx will serve /images/* from the shared volume.
-  const url = `/images/${filename}`;
+  // Nginx will serve /uploads/* from the shared volume.
+  const url = `/uploads/${filename}`;
 
   return res.json({ filename, url });
 });
