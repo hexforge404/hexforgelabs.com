@@ -3,6 +3,8 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const path = require('path');
+const rateLimit = require('express-rate-limit');
+const { requireAdmin } = require('../middleware/requireAdmin');
 
 // Folder inside the backend container where images are written.
 // This will be shared with Nginx via a Docker volume.
@@ -42,8 +44,14 @@ const upload = multer({
   limits: { fileSize: 5 * 1024 * 1024 },
 });
 
-// POST /api/uploads/image
-router.post('/image', upload.single('image'), (req, res) => {
+const uploadLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 50,
+  message: 'Too many uploads, please try again later',
+});
+
+// POST /api/uploads/image (admin only)
+router.post('/image', requireAdmin, uploadLimiter, upload.single('image'), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ message: 'No file uploaded' });
   }

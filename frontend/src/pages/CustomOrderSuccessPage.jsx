@@ -3,6 +3,14 @@ import { Link, useLocation } from 'react-router-dom';
 import { successToast, errorToast } from '../utils/toastUtils';
 import './CustomOrderSuccessPage.css';
 
+const formatLightTypeForDisplay = (lightType, { internal = false } = {}) => {
+  if (lightType === 'rgb') {
+    return internal ? 'Legacy RGB option' : 'LED';
+  }
+  if (!lightType) return '—';
+  return lightType;
+};
+
 const CustomOrderSuccessPage = () => {
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -177,7 +185,7 @@ const CustomOrderSuccessPage = () => {
             <div><strong>Product:</strong> {order.productName}</div>
             <div><strong>Size:</strong> {order.size}</div>
             <div><strong>Panels:</strong> {order.panels}</div>
-            <div><strong>Light Type:</strong> {order.lightType}</div>
+            <div><strong>Light Type:</strong> {formatLightTypeForDisplay(order.lightType)}</div>
             <div><strong>Uploaded Images:</strong> {order.images?.length || 0}</div>
           </div>
 

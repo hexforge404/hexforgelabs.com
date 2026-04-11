@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useCart } from 'context/CartContext';
 import { resolveImageUrl, DEFAULT_PLACEHOLDER } from '../utils/resolveImageUrl';
+import { calculatePrice } from '../utils/pricing';
 
 const FALLBACK_PRODUCTS = [
   {
@@ -21,8 +22,23 @@ const FALLBACK_PRODUCTS = [
   },
 ];
 
+const getLampBasePrice = (product) => {
+  const sku = String(product.sku || '').toUpperCase();
+  if (sku === 'LITHCYL01') {
+    return calculatePrice({ productType: 'cylinder', panelCount: 2 });
+  }
+  if (sku === 'LITHMUL02') {
+    return calculatePrice({ productType: 'panel', panelCount: 2 });
+  }
+  if (sku === 'LITHBOX03') {
+    return calculatePrice({ productType: 'fixedBox4' });
+  }
+  return null;
+};
+
 const normalizeProduct = (product) => {
-  const price = Number(product.price);
+  const baseLampPrice = product.category === 'lamps' ? getLampBasePrice(product) : null;
+  const price = Number(baseLampPrice ?? product.price);
   const gallery = Array.isArray(product.imageGallery)
     ? product.imageGallery.filter(Boolean)
     : [];
@@ -140,7 +156,9 @@ const ProductSection = ({ title, subtitle, products, addToCart }) => {
             <Link to={`/store/${product.slug}`} style={{ textDecoration: 'none', color: 'inherit' }}>
               <h3 style={{ fontSize: '18px', margin: '10px 0' }}>{product.name}</h3>
             </Link>
-            <p style={{ fontSize: '14px', color: '#ccc' }}>{product.priceFormatted}</p>
+            <p style={{ fontSize: '14px', color: '#ccc' }}>
+              {product.category === 'lamps' ? `Starting at ${product.priceFormatted}` : product.priceFormatted}
+            </p>
             {isLamp && (
               <p style={{ fontSize: '12px', color: '#e9c89a', marginBottom: '10px' }}>{lampCopy}</p>
             )}

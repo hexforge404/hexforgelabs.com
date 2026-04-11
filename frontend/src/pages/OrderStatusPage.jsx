@@ -16,6 +16,14 @@ const STATUS_STEPS = [
 
 const formatMoney = (value) => `$${Number(value || 0).toFixed(2)}`;
 
+const formatLightTypeForDisplay = (lightType, { internal = false } = {}) => {
+  if (lightType === 'rgb') {
+    return internal ? 'Legacy RGB option' : 'LED';
+  }
+  if (!lightType) return '—';
+  return lightType;
+};
+
 const getSafeName = (name) => {
   if (!name) return 'Customer';
   const parts = String(name).trim().split(/\s+/);
@@ -89,7 +97,7 @@ const OrderStatusPage = () => {
           <div><strong>Product:</strong> {order.productName}</div>
           <div><strong>Size:</strong> {order.size}</div>
           <div><strong>Panels:</strong> {order.panels}</div>
-          <div><strong>Light Type:</strong> {order.lightType}</div>
+          <div><strong>Light Type:</strong> {formatLightTypeForDisplay(order.lightType)}</div>
           <div><strong>Uploaded Images:</strong> {order.imagesCount || 0}</div>
           <div><strong>Status:</strong> {order.status}</div>
           <div><strong>Payment Status:</strong> {order.paymentStatus}</div>

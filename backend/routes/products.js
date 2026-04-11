@@ -796,17 +796,91 @@ const PANEL_COUNT_MAP = {
   double: 2,
   triple: 3,
   quad: 4,
+  five: 5,
 };
 
-const getRequiredPanelCount = (panels) => {
-  if (!panels || typeof panels !== 'string') return null;
-  return PANEL_COUNT_MAP[panels] ?? null;
+const PANEL_LABEL_MAP = {
+  1: 'single',
+  2: 'double',
+  3: 'triple',
+  4: 'quad',
+  5: 'five',
+};
+
+const normalizeProductType = (value) => {
+  const key = String(value || '').trim();
+  const map = {
+    multiPanelLampshade: 'panel',
+    box: 'fixedBox4',
+    boxModular: 'swappableBox5',
+  };
+  return map[key] || key || 'panel';
+};
+
+const clampPanelCount = (value, fallback, min = 1, max = 5) => {
+  const numeric = Number(value);
+  if (Number.isFinite(numeric)) {
+    return Math.min(Math.max(numeric, min), max);
+  }
+  if (Number.isFinite(fallback)) {
+    return Math.min(Math.max(fallback, min), max);
+  }
+  return null;
+};
+
+const getPanelsLabel = (count) => PANEL_LABEL_MAP[count] || 'single';
+
+const getRequiredPanelCount = ({ productType, panels, panelCount }) => {
+  if (productType === 'fixedBox4') return 4;
+  if (productType === 'swappableBox5') return 5;
+
+  const labelCount = PANEL_COUNT_MAP[String(panels || '').toLowerCase()] ?? null;
+  const minPanels = productType === 'panel' || productType === 'cylinder' ? 2 : 1;
+  return clampPanelCount(panelCount, labelCount, minPanels, 5);
+};
+
+const calculateCustomOrderPrice = ({ productType, panelCount, addons = {} }) => {
+  let basePrice = 0;
+  if (productType === 'panel' || productType === 'cylinder') {
+    const count = Math.max(2, Number(panelCount) || 2);
+    basePrice = 50 + Math.max(0, count - 2) * 10;
+  } else if (productType === 'fixedBox4') {
+    basePrice = 60;
+  } else if (productType === 'swappableBox5') {
+    basePrice = 75;
+  }
+
+  let total = basePrice;
+  if (addons.nightlight) total += 5;
+  if (addons.globe) total += 10;
+  return roundMoney(total);
+};
+
+const parseAddonsPayload = (value) => {
+  if (!value) return {};
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      if (parsed && typeof parsed === 'object') return parsed;
+    } catch (err) {
+      return {};
+    }
+  }
+  if (typeof value === 'object') return value;
+  return {};
 };
 
 // Validate promo code for custom lamp orders
 router.post('/custom-orders/validate-promo', express.json(), async (req, res) => {
   try {
-    const { productId, promoCode } = req.body;
+    const {
+      productId,
+      promoCode,
+      productType,
+      panels,
+      panelCount,
+      addons,
+    } = req.body;
 
     if (!promoCode || !promoCode.trim()) {
       return res.status(400).json({ error: 'Promo code is required' });
@@ -874,8 +948,20 @@ router.post('/custom-orders/validate-promo', express.json(), async (req, res) =>
       }
     }
 
-    // Calculate discount preview (assuming standard pricing)
-    const originalPrice = Number(product.price || 0);
+    const resolvedProductType = normalizeProductType(productType);
+    const requiredPanels = getRequiredPanelCount({
+      productType: resolvedProductType,
+      panels,
+      panelCount,
+    }) || 2;
+    const resolvedAddons = parseAddonsPayload(addons);
+
+    // Calculate discount preview with current custom order selections
+    const originalPrice = calculateCustomOrderPrice({
+      productType: resolvedProductType,
+      panelCount: requiredPanels,
+      addons: resolvedAddons,
+    });
     let discountAmount = 0;
 
     if (promo.discountType === 'percentage') {
@@ -914,7 +1000,7 @@ router.post('/custom-orders/validate-promo', express.json(), async (req, res) =>
 const handleMulterErrors = (err, req, res, next) => {
   if (err instanceof multer.MulterError) {
     const message = err.code === 'LIMIT_UNEXPECTED_FILE'
-      ? 'Too many image files uploaded. Maximum 4 files are allowed.'
+      ? 'Too many image files uploaded. Maximum 5 files are allowed.'
       : err.code === 'LIMIT_FILE_SIZE'
       ? 'One or more image files exceed the 10MB size limit.'
       : err.message || 'Image upload failed.';
@@ -928,15 +1014,25 @@ const handleMulterErrors = (err, req, res, next) => {
 
 router.post(
   '/custom-orders',
-  customOrderUpload.array('images[]', 4),
+  customOrderUpload.array('images[]', 5),
   handleMulterErrors,
   async (req, res) => {
     try {
       const {
         productId,
+        productType,
         size,
         panels = 'single',
+        panelCount,
         lightType,
+        extras,
+        addons,
+        imageStyle,
+        lidType,
+        topImageIncluded,
+        lightingIncluded,
+        panelImages,
+        extraPanelSet,
         notes,
         promoCode,
         customerName,
@@ -949,12 +1045,82 @@ router.post(
         shippingCountry,
       } = req.body;
 
-      const requiredPanels = getRequiredPanelCount(panels);
+      const parseExtras = (value) => {
+        if (!value) return [];
+        if (Array.isArray(value)) return value.filter(Boolean);
+        if (typeof value === 'string') {
+          try {
+            const parsed = JSON.parse(value);
+            if (Array.isArray(parsed)) return parsed.filter(Boolean);
+          } catch (err) {
+            return value
+              .split(',')
+              .map((item) => item.trim())
+              .filter(Boolean);
+          }
+        }
+        return [];
+      };
+
+      const parseBoolean = (value) => {
+        if (typeof value === 'boolean') return value;
+        if (typeof value === 'string') {
+          return value.toLowerCase() === 'true';
+        }
+        return false;
+      };
+
+      const parseStringArray = (value) => {
+        if (!value) return [];
+        if (Array.isArray(value)) return value.filter(Boolean);
+        if (typeof value === 'string') {
+          try {
+            const parsed = JSON.parse(value);
+            if (Array.isArray(parsed)) return parsed.filter(Boolean);
+          } catch (err) {
+            return value
+              .split(',')
+              .map((item) => item.trim())
+              .filter(Boolean);
+          }
+        }
+        return [];
+      };
+
+      const extrasPayload = extras ?? req.body['extras[]'];
+      const addonsPayload = addons ?? req.body['addons'];
+      const panelImagesPayload = panelImages ?? req.body['panelImages[]'];
+
+      const resolvedProductType = normalizeProductType(productType);
+      const requiredPanels = getRequiredPanelCount({
+        productType: resolvedProductType,
+        panels,
+        panelCount,
+      });
       if (requiredPanels === null) {
         return res.status(400).json({
-          error: 'Invalid panels value. Valid values are: single, double, triple, quad.',
+          error: 'Invalid panel count. Valid values are 2 to 5 for lampshades.',
         });
       }
+
+      const resolvedPanelCount = clampPanelCount(panelCount, requiredPanels, 1, 5);
+      const resolvedPanelsLabel = getPanelsLabel(requiredPanels);
+      const resolvedLightType = lightType || 'led';
+      const resolvedAddons = parseAddonsPayload(addonsPayload);
+      const addonExtras = [
+        resolvedAddons.nightlight ? 'nightlight' : null,
+        resolvedAddons.globe ? 'globe' : null,
+      ].filter(Boolean);
+      const allowedExtras = new Set(['nightlight', 'globe']);
+      const legacyExtras = parseExtras(extrasPayload).filter((item) => allowedExtras.has(item));
+      const resolvedExtras = Array.from(new Set([
+        ...legacyExtras,
+        ...addonExtras,
+      ]));
+      const resolvedTopImageIncluded = parseBoolean(topImageIncluded);
+      const resolvedLightingIncluded = parseBoolean(lightingIncluded);
+      const resolvedExtraPanelSet = parseBoolean(extraPanelSet);
+      const resolvedPanelImages = parseStringArray(panelImagesPayload);
 
       if (!productId) {
         return res.status(400).json({ error: 'Product ID is required for custom orders.' });
@@ -975,17 +1141,17 @@ router.post(
       const uploadedFiles = Array.isArray(req.files) ? req.files : [];
       if (uploadedFiles.length === 0) {
         return res.status(400).json({
-          error: `No image files uploaded. ${requiredPanels} image file${requiredPanels === 1 ? '' : 's'} required for ${panels} panel(s).`,
+          error: `No image files uploaded. ${requiredPanels} image file${requiredPanels === 1 ? '' : 's'} required for ${resolvedPanelsLabel} panel(s).`,
         });
       }
       if (uploadedFiles.length < requiredPanels) {
         return res.status(400).json({
-          error: `Too few images uploaded. Expected ${requiredPanels} image file${requiredPanels === 1 ? '' : 's'} for ${panels} panel(s), but received ${uploadedFiles.length}.`,
+          error: `Too few images uploaded. Expected ${requiredPanels} image file${requiredPanels === 1 ? '' : 's'} for ${resolvedPanelsLabel} panel(s), but received ${uploadedFiles.length}.`,
         });
       }
       if (uploadedFiles.length > requiredPanels) {
         return res.status(400).json({
-          error: `Too many images uploaded. Expected ${requiredPanels} image file${requiredPanels === 1 ? '' : 's'} for ${panels} panel(s), but received ${uploadedFiles.length}.`,
+          error: `Too many images uploaded. Expected ${requiredPanels} image file${requiredPanels === 1 ? '' : 's'} for ${resolvedPanelsLabel} panel(s), but received ${uploadedFiles.length}.`,
         });
       }
 
@@ -996,7 +1162,11 @@ router.post(
 
       // Handle promo code validation and discount calculation
       let promoData = null;
-      const originalPrice = roundMoney(Number(product.price || 0) * requiredPanels);
+      const originalPrice = calculateCustomOrderPrice({
+        productType: resolvedProductType,
+        panelCount: requiredPanels,
+        addons: resolvedAddons,
+      });
       let discountedTotal = originalPrice;
       let discountAmount = 0;
       let discountType = null;
@@ -1120,10 +1290,39 @@ router.post(
       const customOrderDoc = new CustomOrder({
         productId,
         productName: product.title,
+        productType: resolvedProductType,
         size: size || 'medium',
-        panels,
-        lightType: lightType || 'led',
+        panels: resolvedPanelsLabel,
+        panelCount: requiredPanels,
+        lightType: resolvedLightType,
+        extras: resolvedExtras,
         notes: notes || '',
+        boxOptions: resolvedProductType === 'fixedBox4'
+          ? {
+            lidType: lidType || 'standard',
+            topImageIncluded: resolvedTopImageIncluded,
+            lightingIncluded: resolvedLightingIncluded,
+            notes: notes || '',
+          }
+          : undefined,
+        boxModularOptions: resolvedProductType === 'swappableBox5'
+          ? {
+            panelCount: requiredPanels,
+            panelImages: resolvedPanelImages,
+            extraPanelSet: resolvedExtraPanelSet,
+            lightingIncluded: resolvedLightingIncluded,
+            notes: notes || '',
+          }
+          : undefined,
+        cylinderOptions: resolvedProductType === 'cylinder'
+          ? {
+            size: size || 'medium',
+            imageStyle: imageStyle || 'wrap',
+            lightType: resolvedLightType,
+            extras: resolvedExtras,
+            notes: notes || '',
+          }
+          : undefined,
         images,
         originalPrice,
         discountedTotal,
@@ -1203,6 +1402,17 @@ router.post(
         success: true,
         message: 'Custom order created successfully',
         orderId: savedOrder.orderId,
+        productType: savedOrder.productType || 'panel',
+        panelCount: savedOrder.panelCount,
+        lightType: savedOrder.lightType,
+        extras: savedOrder.extras,
+        addons: {
+          nightlight: savedOrder.extras?.includes('nightlight') || false,
+          globe: savedOrder.extras?.includes('globe') || false,
+        },
+        boxOptions: savedOrder.boxOptions,
+        boxModularOptions: savedOrder.boxModularOptions,
+        cylinderOptions: savedOrder.cylinderOptions,
         originalPrice,
         discountedTotal,
         discountAmount,
@@ -1237,9 +1447,19 @@ router.get('/custom-orders/:orderId', async (req, res) => {
       orderId: customOrder.orderId,
       productId: customOrder.productId,
       productName: customOrder.productName,
+      productType: customOrder.productType || 'panel',
       size: customOrder.size,
       panels: customOrder.panels,
+      panelCount: customOrder.panelCount,
       lightType: customOrder.lightType,
+      extras: customOrder.extras,
+      addons: {
+        nightlight: customOrder.extras?.includes('nightlight') || false,
+        globe: customOrder.extras?.includes('globe') || false,
+      },
+      boxOptions: customOrder.boxOptions,
+      boxModularOptions: customOrder.boxModularOptions,
+      cylinderOptions: customOrder.cylinderOptions,
       imagesCount: customOrder.images?.length || 0,
       totalPrice: customOrder.totalPrice,
       originalPrice: customOrder.originalPrice,
