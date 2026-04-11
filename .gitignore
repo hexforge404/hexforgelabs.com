@@ -86,6 +86,11 @@ Desktop.ini
 *.dll
 *.exe
 
+
+frontend/public/images/fb\ photos/
+frontend/public/images/fb\ \ videos/
+frontend/public/images/project_file's/
+
 # Lock files (keep package-lock.json, but exclude others if needed)
 # Uncomment if you want to ignore lock files:
 # package-lock.json

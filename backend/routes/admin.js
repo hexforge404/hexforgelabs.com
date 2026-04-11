@@ -9,18 +9,80 @@ const PromoCode = require('../models/PromoCode');
 const PromoAuditLog = require('../models/PromoAuditLog');
 const multer = require('multer');
 const path = require('path');
+const fs = require('fs');
 
 const STATUS_VALUES = ['draft', 'active', 'archived'];
 
-const uploadDir = path.join(__dirname, '../../frontend/public/images');
-const storage = multer.diskStorage({
-  destination: uploadDir,
+const uploadsRoot = process.env.IMAGES_DIR || path.join(__dirname, '..', 'uploads');
+const allowedImageTypes = /jpeg|jpg|png|webp|gif/;
+const maxGalleryFiles = 30;
+const adminUploadDir = path.join(uploadsRoot, 'admin');
+
+const ensureDir = (dirPath) => {
+  if (!fs.existsSync(dirPath)) {
+    fs.mkdirSync(dirPath, { recursive: true });
+  }
+};
+
+ensureDir(adminUploadDir);
+
+const uploadStorage = multer.diskStorage({
+  destination: adminUploadDir,
   filename: (req, file, cb) => {
-    const safeName = file.originalname.toLowerCase().replace(/\s+/g, '_');
-    cb(null, safeName);
+    const ext = path.extname(file.originalname).toLowerCase();
+    const base = path.basename(file.originalname, ext).replace(/[^a-z0-9-_]+/gi, '-');
+    const safeBase = base.replace(/(^-|-$)/g, '') || 'image';
+    cb(null, `${safeBase}-${Date.now()}${ext}`);
   }
 });
-const upload = multer({ storage });
+
+const upload = multer({
+  storage: uploadStorage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const extOk = allowedImageTypes.test(path.extname(file.originalname).toLowerCase());
+    const mimeOk = allowedImageTypes.test(file.mimetype);
+    if (extOk && mimeOk) return cb(null, true);
+    cb(new Error('Only image files (jpg, png, webp, gif) are allowed.'));
+  },
+});
+
+const sanitizeSlug = (value) =>
+  String(value || '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '')
+    .slice(0, 120);
+
+const sanitizeBaseName = (value) =>
+  String(value || '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9-_]+/g, '-')
+    .replace(/(^-|-$)/g, '')
+    .slice(0, 120);
+
+const normalizeNamesField = (value) => {
+  if (Array.isArray(value)) return value.map((item) => String(item || '').trim());
+  if (typeof value === 'string') {
+    return value
+      .split(',')
+      .map((item) => item.trim());
+  }
+  return [];
+};
+
+const galleryUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 8 * 1024 * 1024, files: maxGalleryFiles },
+  fileFilter: (req, file, cb) => {
+    const extOk = allowedImageTypes.test(path.extname(file.originalname).toLowerCase());
+    const mimeOk = allowedImageTypes.test(file.mimetype);
+    if (extOk && mimeOk) return cb(null, true);
+    cb(new Error('Only image files (jpg, png, webp, gif) are allowed.'));
+  },
+});
 
 // --- helper: require admin session ---
 function requireAdmin(req, res, next) {
@@ -93,7 +155,148 @@ router.post('/upload-image', upload.single('image'), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded' });
   }
-  res.json({ path: `/images/${req.file.filename}` });
+  res.json({ path: `/uploads/admin/${req.file.filename}` });
+});
+
+// ---- GALLERY MANAGER ----
+router.get('/products/:id/gallery', async (req, res) => {
+  try {
+    const product = await Product.findById(req.params.id);
+    if (!product) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    return res.json({
+      id: product._id,
+      slug: product.slug,
+      title: product.title,
+      hero_image_url: product.hero_image_url || '',
+      imageGallery: Array.isArray(product.imageGallery) ? product.imageGallery : [],
+    });
+  } catch (err) {
+    console.error('❌ Failed to load product gallery:', err);
+    res.status(400).json({
+      error: 'Failed to load product gallery',
+      details: err.message,
+    });
+  }
+});
+
+router.get('/products/slug/:slug/gallery', async (req, res) => {
+  try {
+    const product = await Product.findOne({ slug: req.params.slug });
+    if (!product) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    return res.json({
+      id: product._id,
+      slug: product.slug,
+      title: product.title,
+      hero_image_url: product.hero_image_url || '',
+      imageGallery: Array.isArray(product.imageGallery) ? product.imageGallery : [],
+    });
+  } catch (err) {
+    console.error('❌ Failed to load product gallery:', err);
+    res.status(400).json({
+      error: 'Failed to load product gallery',
+      details: err.message,
+    });
+  }
+});
+
+router.post('/products/:id/gallery/upload', galleryUpload.array('images', maxGalleryFiles), async (req, res) => {
+  try {
+    const product = await Product.findById(req.params.id);
+    if (!product) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    const slug = sanitizeSlug(product.slug || product.title || product.name);
+    if (!slug) {
+      return res.status(400).json({ error: 'Product slug is required for uploads' });
+    }
+
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: 'No files uploaded' });
+    }
+
+    const names = normalizeNamesField(req.body.names);
+    const productDir = path.join(uploadsRoot, 'products', slug);
+    fs.mkdirSync(productDir, { recursive: true });
+
+    const files = req.files.map((file, index) => {
+      const ext = path.extname(file.originalname).toLowerCase() || '.jpg';
+      const desired = sanitizeBaseName(names[index] || path.basename(file.originalname, ext));
+      const base = desired || `image-${Date.now()}-${index}`;
+      let filename = `${base}${ext}`;
+      let targetPath = path.join(productDir, filename);
+
+      if (fs.existsSync(targetPath)) {
+        filename = `${base}-${Date.now()}-${index}${ext}`;
+        targetPath = path.join(productDir, filename);
+      }
+
+      fs.writeFileSync(targetPath, file.buffer);
+
+      return {
+        filename,
+        url: `/uploads/products/${slug}/${filename}`,
+        originalName: file.originalname,
+      };
+    });
+
+    return res.json({
+      productId: product._id,
+      slug,
+      files,
+    });
+  } catch (err) {
+    console.error('❌ Failed to upload gallery images:', err);
+    res.status(400).json({
+      error: 'Failed to upload gallery images',
+      details: err.message,
+    });
+  }
+});
+
+router.put('/products/:id/gallery', async (req, res) => {
+  try {
+    const product = await Product.findById(req.params.id);
+    if (!product) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    const gallery = Array.isArray(req.body.imageGallery)
+      ? req.body.imageGallery.map((value) => String(value || '').trim()).filter(Boolean)
+      : [];
+    let hero = String(req.body.hero_image_url || '').trim();
+
+    if (gallery.length === 0) {
+      hero = '';
+    } else if (!hero || !gallery.includes(hero)) {
+      hero = gallery[0] || '';
+    }
+
+    product.hero_image_url = hero;
+    product.imageGallery = gallery;
+
+    await product.save();
+
+    return res.json({
+      id: product._id,
+      slug: product.slug,
+      title: product.title,
+      hero_image_url: product.hero_image_url || '',
+      imageGallery: Array.isArray(product.imageGallery) ? product.imageGallery : [],
+    });
+  } catch (err) {
+    console.error('❌ Failed to update product gallery:', err);
+    res.status(400).json({
+      error: 'Failed to update product gallery',
+      details: err.message,
+    });
+  }
 });
 
 // Product validation rules

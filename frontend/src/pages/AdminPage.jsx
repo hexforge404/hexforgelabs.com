@@ -44,6 +44,14 @@ const EMPTY_PROMO = {
   expiresAt: '',
 };
 
+const formatLightTypeForDisplay = (lightType, { internal = false } = {}) => {
+  if (lightType === 'rgb') {
+    return internal ? 'Legacy RGB option' : 'LED';
+  }
+  if (!lightType) return '—';
+  return lightType;
+};
+
 export default function AdminPage() {
   const { admin } = useAdmin();
   const [activeTab, setActiveTab] = useState('products');
@@ -76,6 +84,15 @@ export default function AdminPage() {
   const [promoAuditTotal, setPromoAuditTotal] = useState(0);
   const [isLoadingPromoAudit, setIsLoadingPromoAudit] = useState(false);
   const [promoAuditQueryToken, setPromoAuditQueryToken] = useState(0);
+
+  // Gallery Manager
+  const [galleryProductId, setGalleryProductId] = useState('');
+  const [galleryItems, setGalleryItems] = useState([]);
+  const [galleryHeroId, setGalleryHeroId] = useState('');
+  const [galleryLoading, setGalleryLoading] = useState(false);
+  const [gallerySaving, setGallerySaving] = useState(false);
+  const [galleryError, setGalleryError] = useState(null);
+  const [galleryReplacingId, setGalleryReplacingId] = useState('');
 
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
@@ -206,6 +223,18 @@ export default function AdminPage() {
   // ---------- HELPERS ----------
   const normalizeName = (name) => name.replace(/\s+/g, '').toLowerCase();
 
+  const normalizeGalleryName = (value) =>
+    String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9-_]+/g, '-')
+      .replace(/(^-|-$)/g, '');
+
+  const makeSafeDomId = (value) =>
+    String(value || '')
+      .trim()
+      .replace(/[^a-z0-9-_]+/gi, '_');
+
   const formatPromoAuditMeta = (entry) => {
     const parts = [];
     if (entry?.metadata?.importCount) parts.push(`importCount=${entry.metadata.importCount}`);
@@ -262,6 +291,212 @@ export default function AdminPage() {
       ...prev,
       [name]: type === 'checkbox' ? checked : value,
     }));
+  };
+
+  const setGalleryFromProduct = (payload) => {
+    const list = Array.isArray(payload.imageGallery)
+      ? payload.imageGallery.filter(Boolean)
+      : [];
+    const items = list.map((url, index) => ({
+      id: `existing-${index}-${url}`,
+      url,
+      type: 'existing',
+      name: '',
+    }));
+    setGalleryItems(items);
+
+    const heroUrl = payload.hero_image_url || (items[0] ? items[0].url : '');
+    const heroItem = items.find((item) => item.url === heroUrl) || items[0];
+    setGalleryHeroId(heroItem ? heroItem.id : '');
+  };
+
+  const loadGalleryForProduct = async (productId) => {
+    if (!productId) return;
+    setGalleryLoading(true);
+    setGalleryError(null);
+    try {
+      const response = await axios.get(`${API_BASE_URL}/admin/products/${productId}/gallery`, {
+        withCredentials: true,
+      });
+      setGalleryFromProduct(response.data || {});
+    } catch (err) {
+      console.error('Failed to load gallery:', err);
+      setGalleryError(err.response?.data?.error || err.message || 'Failed to load gallery');
+    } finally {
+      setGalleryLoading(false);
+    }
+  };
+
+  const handleGalleryProductChange = (e) => {
+    const nextId = e.target.value;
+    setGalleryProductId(nextId);
+    setGalleryItems([]);
+    setGalleryHeroId('');
+    if (nextId) {
+      loadGalleryForProduct(nextId);
+    }
+  };
+
+  const addGalleryFiles = (files) => {
+    if (!files?.length) return;
+    const next = Array.from(files).map((file) => {
+      const baseName = file.name.replace(/\.[^/.]+$/, '');
+      return {
+        id: `pending-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        url: URL.createObjectURL(file),
+        file,
+        type: 'pending',
+        name: normalizeGalleryName(baseName),
+      };
+    });
+    setGalleryItems((prev) => [...prev, ...next]);
+  };
+
+  const handleGalleryDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    addGalleryFiles(e.dataTransfer?.files);
+  };
+
+  const handleGalleryInputChange = (e) => {
+    addGalleryFiles(e.target.files);
+    e.target.value = '';
+  };
+
+  const updateGalleryItem = (id, updates) => {
+    setGalleryItems((prev) => prev.map((item) => (item.id === id ? { ...item, ...updates } : item)));
+  };
+
+  const removeGalleryItem = (id) => {
+    setGalleryItems((prev) => prev.filter((item) => item.id !== id));
+    setGalleryHeroId((prev) => (prev === id ? '' : prev));
+  };
+
+  const setGalleryHero = (id) => {
+    setGalleryHeroId(id);
+  };
+
+  const moveGalleryItem = (fromIndex, toIndex) => {
+    setGalleryItems((prev) => {
+      if (toIndex < 0 || toIndex >= prev.length) return prev;
+      const next = [...prev];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      return next;
+    });
+  };
+
+  const handleGalleryDragStart = (index) => (e) => {
+    e.dataTransfer.setData('text/plain', String(index));
+  };
+
+  const handleGalleryDropOn = (index) => (e) => {
+    e.preventDefault();
+    const fromIndex = Number(e.dataTransfer.getData('text/plain'));
+    if (!Number.isNaN(fromIndex)) {
+      moveGalleryItem(fromIndex, index);
+    }
+  };
+
+  const handleGalleryDragOver = (e) => {
+    e.preventDefault();
+  };
+
+  const uploadPendingGalleryItems = async (pendingItems) => {
+    if (!pendingItems.length) return [];
+
+    const formData = new FormData();
+    pendingItems.forEach((item) => {
+      formData.append('images', item.file);
+      formData.append('names', item.name || '');
+    });
+
+    const response = await axios.post(
+      `${API_BASE_URL}/admin/products/${galleryProductId}/gallery/upload`,
+      formData,
+      { withCredentials: true }
+    );
+
+    return response.data?.files || [];
+  };
+
+  const handleReplaceFile = async (itemId, file) => {
+    if (!galleryProductId || !file) return;
+
+    setGalleryReplacingId(itemId);
+    setGalleryError(null);
+
+    try {
+      const baseName = file.name.replace(/\.[^/.]+$/, '');
+      const sanitizedName = normalizeGalleryName(baseName);
+      const formData = new FormData();
+      formData.append('images', file);
+      formData.append('names', sanitizedName || '');
+
+      const response = await axios.post(
+        `${API_BASE_URL}/admin/products/${galleryProductId}/gallery/upload`,
+        formData,
+        { withCredentials: true }
+      );
+
+      const uploaded = response.data?.files?.[0];
+      if (!uploaded?.url) {
+        throw new Error('Upload succeeded but no URL was returned.');
+      }
+
+      updateGalleryItem(itemId, { url: uploaded.url, type: 'existing', name: '' });
+      successToast('Image replaced. Save gallery to persist changes.');
+    } catch (err) {
+      console.error('Failed to replace image:', err);
+      const msg = err.response?.data?.error || err.message || 'Failed to replace image';
+      setGalleryError(msg);
+      errorToast(msg);
+    } finally {
+      setGalleryReplacingId('');
+    }
+  };
+
+  const handleSaveGallery = async () => {
+    if (!galleryProductId) return;
+    setGallerySaving(true);
+    setGalleryError(null);
+
+    try {
+      const pendingItems = galleryItems.filter((item) => item.type === 'pending');
+      const uploadResults = await uploadPendingGalleryItems(pendingItems);
+
+      let pendingIndex = 0;
+      const mergedItems = galleryItems.map((item) => {
+        if (item.type !== 'pending') return item;
+        const uploaded = uploadResults[pendingIndex];
+        pendingIndex += 1;
+        return {
+          id: item.id,
+          url: uploaded?.url || item.url,
+          type: 'existing',
+          name: '',
+        };
+      });
+
+      const heroItem = mergedItems.find((item) => item.id === galleryHeroId) || mergedItems[0];
+      const heroUrl = heroItem?.url || '';
+      const imageGallery = mergedItems.map((item) => item.url).filter(Boolean);
+
+      const response = await axios.put(
+        `${API_BASE_URL}/admin/products/${galleryProductId}/gallery`,
+        { hero_image_url: heroUrl, imageGallery },
+        { withCredentials: true }
+      );
+
+      setGalleryFromProduct(response.data || {});
+      successToast('Gallery updated successfully');
+    } catch (err) {
+      console.error('Failed to save gallery:', err);
+      setGalleryError(err.response?.data?.error || err.message || 'Failed to save gallery');
+      errorToast(err.response?.data?.error || err.message || 'Failed to save gallery');
+    } finally {
+      setGallerySaving(false);
+    }
   };
 
   const buildProductPayload = () => {
@@ -324,6 +559,7 @@ export default function AdminPage() {
           headers: {
             'Content-Type': 'multipart/form-data',
           },
+          withCredentials: true,
         }
       );
 
@@ -917,6 +1153,12 @@ export default function AdminPage() {
         >
           Products
         </button>
+          <button
+            className={activeTab === 'gallery' ? 'tab active' : 'tab'}
+            onClick={() => setActiveTab('gallery')}
+          >
+            Gallery Manager
+          </button>
         <button
           className={activeTab === 'orders' ? 'tab active' : 'tab'}
           onClick={() => setActiveTab('orders')}
@@ -1135,6 +1377,214 @@ export default function AdminPage() {
         </div>
       )}
 
+      {/* ---------- GALLERY MANAGER TAB ---------- */}
+      {activeTab === 'gallery' && (
+        <div>
+          <h2 className="section-header">GALLERY MANAGER</h2>
+
+          <div className="form-section">
+            <div className="gallery-manager-header">
+              <label className="form-label" htmlFor="galleryProductSelect">Select Product</label>
+              <select
+                id="galleryProductSelect"
+                className="form-input"
+                value={galleryProductId}
+                onChange={handleGalleryProductChange}
+              >
+                <option value="">Select a product...</option>
+                {products.map((product) => (
+                  <option key={product._id} value={product._id}>
+                    {product.name || product.title} {product.sku ? `(${product.sku})` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {galleryError && (
+              <div className="status-message error-message">
+                <span>{galleryError}</span>
+              </div>
+            )}
+
+            {galleryLoading ? (
+              <div className="gallery-loading">Loading gallery...</div>
+            ) : (
+              <>
+                <div className="gallery-preview">
+                  <div className="gallery-preview-title">Current Gallery</div>
+                  {galleryItems.length === 0 ? (
+                    <div className="empty-state">No gallery images yet.</div>
+                  ) : (
+                    <div className="gallery-grid">
+                      {galleryItems.map((item, index) => (
+                        <div
+                          key={item.id}
+                          className={`gallery-card${item.id === galleryHeroId ? ' is-hero' : ''}`}
+                          onDragOver={handleGalleryDragOver}
+                          onDrop={handleGalleryDropOn(index)}
+                        >
+                          <div
+                            className="gallery-drag-handle"
+                            draggable
+                            onDragStart={handleGalleryDragStart(index)}
+                            title="Drag to reorder"
+                          >
+                            ⠿
+                          </div>
+                          <img src={item.url} alt="Gallery item" />
+                          {item.id === galleryHeroId && (
+                            <span className="gallery-hero-badge">Hero</span>
+                          )}
+                          <div className="gallery-card-actions">
+                            <button
+                              type="button"
+                              className="secondary-button small-button"
+                              onClick={() => setGalleryHero(item.id)}
+                            >
+                              Set as Hero
+                            </button>
+                            <button
+                              type="button"
+                              className="secondary-button small-button"
+                              onClick={() => {
+                                const inputId = `gallery-replace-${makeSafeDomId(item.id)}`;
+                                const input = document.getElementById(inputId);
+                                if (input) input.click();
+                              }}
+                              disabled={galleryReplacingId === item.id}
+                            >
+                              {galleryReplacingId === item.id ? 'Replacing...' : 'Replace'}
+                            </button>
+                            <button
+                              type="button"
+                              className="danger-button small-button"
+                              onClick={() => removeGalleryItem(item.id)}
+                            >
+                              Remove
+                            </button>
+                          </div>
+                          <input
+                            id={`gallery-replace-${makeSafeDomId(item.id)}`}
+                            className="gallery-replace-input"
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              e.target.value = '';
+                              handleReplaceFile(item.id, file);
+                            }}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="gallery-upload">
+                  <div className="gallery-upload-title">Upload Images</div>
+                  <div
+                    className="gallery-dropzone"
+                    onDragOver={handleGalleryDragOver}
+                    onDrop={handleGalleryDrop}
+                  >
+                    <input
+                      type="file"
+                      multiple
+                      accept="image/*"
+                      onChange={handleGalleryInputChange}
+                    />
+                    <span>Drag images here or click to upload</span>
+                  </div>
+                </div>
+
+                {galleryItems.some((item) => item.type === 'pending') && (
+                  <div className="gallery-pending">
+                    <div className="gallery-preview-title">Pending Uploads</div>
+                    <div className="gallery-grid">
+                      {galleryItems.filter((item) => item.type === 'pending').map((item) => (
+                        <div
+                          key={item.id}
+                          className="gallery-card"
+                          onDragOver={handleGalleryDragOver}
+                          onDrop={handleGalleryDropOn(galleryItems.findIndex((entry) => entry.id === item.id))}
+                        >
+                          <div
+                            className="gallery-drag-handle"
+                            draggable
+                            onDragStart={handleGalleryDragStart(galleryItems.findIndex((entry) => entry.id === item.id))}
+                            title="Drag to reorder"
+                          >
+                            ⠿
+                          </div>
+                          <img src={item.url} alt="Pending upload" />
+                          <input
+                            type="text"
+                            className="form-input gallery-rename"
+                            value={item.name}
+                            placeholder="filename-slug"
+                            onChange={(e) => updateGalleryItem(item.id, { name: normalizeGalleryName(e.target.value) })}
+                          />
+                          <div className="gallery-card-actions">
+                            <button
+                              type="button"
+                              className="secondary-button small-button"
+                              onClick={() => setGalleryHero(item.id)}
+                            >
+                              Set as Hero
+                            </button>
+                            <button
+                              type="button"
+                              className="secondary-button small-button"
+                              onClick={() => {
+                                const inputId = `gallery-replace-${makeSafeDomId(item.id)}`;
+                                const input = document.getElementById(inputId);
+                                if (input) input.click();
+                              }}
+                              disabled={galleryReplacingId === item.id}
+                            >
+                              {galleryReplacingId === item.id ? 'Replacing...' : 'Replace'}
+                            </button>
+                            <button
+                              type="button"
+                              className="danger-button small-button"
+                              onClick={() => removeGalleryItem(item.id)}
+                            >
+                              Remove
+                            </button>
+                          </div>
+                          <input
+                            id={`gallery-replace-${makeSafeDomId(item.id)}`}
+                            className="gallery-replace-input"
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              e.target.value = '';
+                              handleReplaceFile(item.id, file);
+                            }}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="gallery-save-row">
+                  <button
+                    type="button"
+                    className="action-button primary-button"
+                    disabled={!galleryProductId || gallerySaving}
+                    onClick={handleSaveGallery}
+                  >
+                    {gallerySaving ? 'Saving...' : 'Save Gallery'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ---------- ORDERS TAB ---------- */}
       {activeTab === 'orders' && (
         <div>
@@ -1309,13 +1759,19 @@ export default function AdminPage() {
                           <span className="label">Product:</span> {order.productName}
                         </span>
                         <span>
+                          <span className="label">Type:</span> {order.productType || 'panel'}
+                        </span>
+                        <span>
                           <span className="label">Panels:</span> {order.panels}
+                        </span>
+                        <span>
+                          <span className="label">Panel Count:</span> {order.panelCount || '-'}
                         </span>
                         <span>
                           <span className="label">Size:</span> {order.size}
                         </span>
                         <span>
-                          <span className="label">Light:</span> {order.lightType}
+                          <span className="label">Light:</span> {formatLightTypeForDisplay(order.lightType, { internal: true })}
                         </span>
                       </div>
                       <div className="admin-order-meta">
@@ -1366,6 +1822,50 @@ export default function AdminPage() {
                         <span className="label">Customer Notes:</span>
                         <span>{order.notes || '(none)'}</span>
                       </div>
+                      <div className="custom-order-detail-row">
+                        <span className="label">Add-ons:</span>
+                        <span>{order.extras && order.extras.length ? order.extras.join(', ') : 'None'}</span>
+                      </div>
+                      {order.productType === 'cylinder' && (
+                        <div className="custom-order-detail-row">
+                          <span className="label">Image Style:</span>
+                          <span>{order.cylinderOptions?.imageStyle || '-'}</span>
+                        </div>
+                      )}
+                      {order.productType === 'fixedBox4' && (
+                        <>
+                          <div className="custom-order-detail-row">
+                            <span className="label">Lid Type:</span>
+                            <span>{order.boxOptions?.lidType || '-'}</span>
+                          </div>
+                          <div className="custom-order-detail-row">
+                            <span className="label">Top Image:</span>
+                            <span>{order.boxOptions?.topImageIncluded ? 'Included' : 'Not included'}</span>
+                          </div>
+                          <div className="custom-order-detail-row">
+                            <span className="label">Lighting:</span>
+                            <span>{order.boxOptions?.lightingIncluded ? 'Included' : 'Not included'}</span>
+                          </div>
+                        </>
+                      )}
+                      {order.productType === 'swappableBox5' && (
+                        <>
+                          <div className="custom-order-detail-row">
+                            <span className="label">Extra Panel Set:</span>
+                            <span>{order.boxModularOptions?.extraPanelSet ? 'Included' : 'Not included'}</span>
+                          </div>
+                          <div className="custom-order-detail-row">
+                            <span className="label">Lighting:</span>
+                            <span>{order.boxModularOptions?.lightingIncluded ? 'Included' : 'Not included'}</span>
+                          </div>
+                          {order.boxModularOptions?.panelImages?.length ? (
+                            <div className="custom-order-detail-row">
+                              <span className="label">Panel Images:</span>
+                              <span>{order.boxModularOptions.panelImages.join(', ')}</span>
+                            </div>
+                          ) : null}
+                        </>
+                      )}
                       <div className="custom-order-detail-row">
                         <span className="label">Total Price:</span>
                         <span>${order.totalPrice?.toFixed(2) || '0.00'}</span>

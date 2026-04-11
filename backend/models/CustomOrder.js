@@ -17,6 +17,73 @@ const customOrderSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  productType: {
+    type: String,
+    default: 'panel',
+    index: true
+  },
+  boxOptions: {
+    lidType: {
+      type: String,
+      trim: true
+    },
+    topImageIncluded: {
+      type: Boolean,
+      default: false
+    },
+    lightingIncluded: {
+      type: Boolean,
+      default: false
+    },
+    notes: {
+      type: String,
+      trim: true
+    }
+  },
+  boxModularOptions: {
+    panelCount: {
+      type: Number,
+      default: 5
+    },
+    panelImages: {
+      type: [String],
+      default: []
+    },
+    extraPanelSet: {
+      type: Boolean,
+      default: false
+    },
+    lightingIncluded: {
+      type: Boolean,
+      default: false
+    },
+    notes: {
+      type: String,
+      trim: true
+    }
+  },
+  cylinderOptions: {
+    size: {
+      type: String,
+      enum: ['small', 'medium', 'large']
+    },
+    imageStyle: {
+      type: String,
+      trim: true
+    },
+    lightType: {
+      type: String,
+      trim: true
+    },
+    extras: {
+      type: [String],
+      default: []
+    },
+    notes: {
+      type: String,
+      trim: true
+    }
+  },
   customer: {
     name: {
       type: String,
@@ -69,14 +136,23 @@ const customOrderSchema = new mongoose.Schema({
   },
   panels: {
     type: String,
-    enum: ['single', 'double', 'triple', 'quad'],
+    enum: ['single', 'double', 'triple', 'quad', 'five'],
     required: true,
     index: true
   },
+  panelCount: {
+    type: Number,
+    min: 1,
+    max: 5
+  },
   lightType: {
     type: String,
-    enum: ['led', 'incandescent', 'rgb', 'none'],
+    enum: ['led', 'incandescent', 'bulb', 'rgb', 'none'],
     default: 'led'
+  },
+  extras: {
+    type: [String],
+    default: []
   },
   notes: {
     type: String,
@@ -91,7 +167,7 @@ const customOrderSchema = new mongoose.Schema({
     panel: {
       type: Number,
       min: 1,
-      max: 4
+      max: 5
     }
   }],
   totalPrice: {

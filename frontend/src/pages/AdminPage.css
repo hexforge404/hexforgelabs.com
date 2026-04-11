@@ -172,6 +172,140 @@
   object-fit: contain;
 }
 
+/* ===== GALLERY MANAGER ===== */
+.gallery-manager-header {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.gallery-loading {
+  padding: 20px;
+  text-align: center;
+  color: #9aa4b2;
+}
+
+.gallery-preview-title {
+  color: #00ffc8;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 12px;
+  font-size: 0.9rem;
+}
+
+.gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 16px;
+}
+
+.gallery-card {
+  background: #111;
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 12px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.gallery-drag-handle {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid #00ffc8;
+  background: rgba(0, 255, 200, 0.12);
+  color: #00ffc8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  cursor: grab;
+  user-select: none;
+}
+
+.gallery-drag-handle:active {
+  cursor: grabbing;
+}
+
+.gallery-card img {
+  width: 100%;
+  height: 140px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid #00ffc8;
+}
+
+.gallery-card.is-hero {
+  border-color: #00ffc8;
+  box-shadow: 0 0 0 1px rgba(0, 255, 200, 0.2);
+}
+
+.gallery-hero-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  background: rgba(0, 255, 200, 0.2);
+  border: 1px solid #00ffc8;
+  color: #00ffc8;
+  font-size: 0.7rem;
+  padding: 4px 6px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.gallery-card-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.gallery-dropzone {
+  border: 1px dashed #00ffc8;
+  border-radius: 8px;
+  padding: 20px;
+  text-align: center;
+  background: #0d0d0d;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  position: relative;
+}
+
+.gallery-dropzone input[type="file"] {
+  opacity: 0;
+  position: absolute;
+  inset: 0;
+  cursor: pointer;
+}
+
+.gallery-replace-input {
+  display: none;
+}
+
+.gallery-upload {
+  margin-top: 24px;
+}
+
+.gallery-rename {
+  background: #000;
+  border: 1px solid #00ffc8;
+  color: #fff;
+  padding: 8px;
+  font-size: 0.85rem;
+}
+
+.gallery-save-row {
+  margin-top: 20px;
+  display: flex;
+  justify-content: flex-end;
+}
+
 /* ===== CART STYLES (shared admin components) ===== */
 .cart-container {
   background: #1a1a1a;
