@@ -1030,6 +1030,7 @@ router.post(
   '/custom-orders',
   customOrderUpload.fields([
     { name: 'images[]', maxCount: 5 },
+    { name: 'images', maxCount: 5 },
     { name: 'nightlightImage', maxCount: 1 },
   ]),
   handleMulterErrors,
@@ -1047,6 +1048,7 @@ router.post(
         imageStyle,
         panelImages,
         extraPanelSet,
+        lightingIncluded,
         notes,
         promoCode,
         customerName,
@@ -1129,18 +1131,29 @@ router.post(
       const resolvedPanelsLabel = getPanelsLabel(requiredPanels);
       const resolvedLightType = lightType || 'led';
       const resolvedAddons = parseAddonsPayload(addonsPayload);
-      const addonExtras = [
-        resolvedAddons.nightlight ? 'nightlight' : null,
-      ].filter(Boolean);
-      const allowedExtras = new Set(['nightlight']);
+      const addonExtras = Object.entries(resolvedAddons)
+        .filter(([key, value]) => value)
+        .map(([key]) => key)
+        .filter((key) => ['nightlight', 'diffuser', 'moonBackground'].includes(key));
+      const allowedExtras = new Set(['nightlight', 'diffuser', 'moonBackground']);
       const legacyExtras = parseExtras(extrasPayload).filter((item) => allowedExtras.has(item));
       const resolvedExtras = Array.from(new Set([
         ...legacyExtras,
         ...addonExtras,
       ]));
       const resolvedExtraPanelSet = parseBoolean(extraPanelSet);
+      const resolvedLightingIncluded = parseBoolean(req.body.lightingIncluded);
       const resolvedPanelImages = parseStringArray(panelImagesPayload);
-      const mainUploadedFiles = (req.files && req.files['images[]']) || [];
+      const uploadedFiles = ((req.files && req.files['images[]']) || []).concat((req.files && req.files['images']) || []).filter(Boolean);
+      const mainUploadedFiles = uploadedFiles;
+
+      if (resolvedProductType === 'fixedBox4' || resolvedProductType === 'panelBox5') {
+        if (resolvedExtras.length > 0) {
+          return res.status(400).json({
+            error: 'Box orders do not support additional addons or nightlight options.',
+          });
+        }
+      }
 
       const resolvedNightlightAddon = {
         imageSource: nightlightImageSource === 'separate_upload' ? 'separate_upload' : 'main_existing',
@@ -1154,6 +1167,14 @@ router.post(
           size: nightlightImageFile.size,
         } : undefined,
       };
+
+      if (resolvedProductType === 'fixedBox4' || resolvedProductType === 'panelBox5') {
+        if (resolvedAddons.nightlight || nightlightImageFile) {
+          return res.status(400).json({
+            error: 'Box orders cannot include nightlight image options.',
+          });
+        }
+      }
 
       if (resolvedAddons.nightlight) {
         if (resolvedNightlightAddon.imageSource === 'main_existing') {
@@ -1188,8 +1209,7 @@ router.post(
         });
       }
 
-      const uploadedFiles = mainUploadedFiles;
-      if (uploadedFiles.length < minImages) {
+      if (mainUploadedFiles.length < minImages) {
         return res.status(400).json({
           error: `No image files uploaded. ${minImages} image file${minImages === 1 ? '' : 's'} required${isGlobeLampOrder ? ' for globe lamp image upload' : ''}.`,
         });
@@ -1197,6 +1217,13 @@ router.post(
       if (uploadedFiles.length > maxImages) {
         return res.status(400).json({
           error: `Too many images uploaded. Expected ${maxImages} image file${maxImages === 1 ? '' : 's'}${isGlobeLampOrder ? ' for globe lamp image upload' : ` for ${resolvedPanelsLabel} panel(s)`}, but received ${uploadedFiles.length}.`,
+        });
+      }
+
+      const allowedProductTypes = new Set(['panel', 'cylinder', 'globeLamp', 'fixedBox4', 'panelBox5', 'swappableBox5', 'familyBundle4']);
+      if (!allowedProductTypes.has(resolvedProductType)) {
+        return res.status(400).json({
+          error: 'Invalid product type for custom order.',
         });
       }
 
@@ -1394,13 +1421,30 @@ router.post(
         },
       });
 
-      const savedOrder = await customOrderDoc.save();
-
+      let savedOrder = null;
       let checkoutUrl = null;
       let sessionId = null;
 
+      const uploadedFilesCount = uploadedFiles.length;
+      console.info('Received custom order upload', {
+        productId,
+        productType: resolvedProductType,
+        requiredPanels,
+        uploadedFilesCount,
+        minImages,
+        maxImages,
+      });
+
       if (process.env.STRIPE_SECRET_KEY) {
         try {
+          console.info('Creating Stripe checkout session for custom order', {
+            orderId: customOrderDoc.orderId,
+            productId,
+            productType: resolvedProductType,
+            totalPrice: discountedTotal,
+            depositAmount,
+          });
+
           const baseUrl = getBaseUrl();
           const session = await stripe.checkout.sessions.create({
             payment_method_types: ['card'],
@@ -1412,30 +1456,53 @@ router.post(
                   currency: 'usd',
                   product_data: {
                     name: `Deposit for ${product.title}${promoData ? ` (${promoData.promoCode})` : ''}`,
-                    description: `50% deposit for custom lamp order ${savedOrder.orderId}${promoData ? ` - ${promoData.discountType === 'percentage' ? `${promoData.discountValue}% off` : `$${promoData.discountAmount} off`}` : ''}`,
+                    description: `50% deposit for custom lamp order ${customOrderDoc.orderId}${promoData ? ` - ${promoData.discountType === 'percentage' ? `${promoData.discountValue}% off` : `$${promoData.discountAmount} off`}` : ''}`,
                   },
                   unit_amount: Math.round(depositAmount * 100),
                 },
                 quantity: 1,
               },
             ],
-            success_url: `${baseUrl}/custom-order-success?orderId=${encodeURIComponent(savedOrder.orderId)}&sessionId={CHECKOUT_SESSION_ID}`,
+            success_url: `${baseUrl}/custom-order-success?orderId=${encodeURIComponent(customOrderDoc.orderId)}&sessionId={CHECKOUT_SESSION_ID}`,
             cancel_url: `${baseUrl}/store/${encodeURIComponent(product.slug)}`,
             metadata: {
-              orderId: savedOrder.orderId,
+              orderId: customOrderDoc.orderId,
               type: 'custom-order-deposit',
               promoCode: promoData?.promoCode || '',
               discountAmount: promoData?.discountAmount?.toString() || '0',
             },
           });
+
+          console.info('Stripe checkout session created', {
+            orderId: customOrderDoc.orderId,
+            sessionId: session.id,
+            amount: session.amount_total,
+          });
+
+          customOrderDoc.stripeSessionId = session.id;
+          savedOrder = await customOrderDoc.save();
           checkoutUrl = session.url;
           sessionId = session.id;
-          savedOrder.stripeSessionId = session.id;
-          await savedOrder.save();
         } catch (stripeErr) {
-          console.warn('⚠️ Stripe session creation failed:', stripeErr.message || stripeErr);
+          console.error('Stripe session creation failed for custom order', {
+            orderId: customOrderDoc.orderId,
+            error: stripeErr.message || stripeErr,
+          });
+          return res.status(502).json({
+            error: 'Payment service unavailable. Please try again later.',
+          });
         }
+      } else {
+        savedOrder = await customOrderDoc.save();
       }
+
+      console.info('Custom order saved', {
+        orderId: savedOrder.orderId,
+        productType: savedOrder.productType,
+        panelCount: savedOrder.panelCount,
+        totalPrice: savedOrder.totalPrice,
+        checkoutUrl: Boolean(checkoutUrl),
+      });
 
       await sendCustomOrderNotification(savedOrder).catch((emailErr) => {
         console.warn('⚠️ Custom order notification failed:', emailErr.message || emailErr);
@@ -1452,11 +1519,13 @@ router.post(
         extras: savedOrder.extras,
         addons: {
           nightlight: savedOrder.extras?.includes('nightlight') || false,
+          diffuser: savedOrder.extras?.includes('diffuser') || false,
+          moonBackground: savedOrder.extras?.includes('moonBackground') || false,
         },
-        nightlightAddon: savedOrder.nightlightAddon,
-        boxOptions: savedOrder.boxOptions,
-        boxModularOptions: savedOrder.boxModularOptions,
-        cylinderOptions: savedOrder.cylinderOptions,
+        nightlightAddon: savedOrder.extras?.includes('nightlight') ? savedOrder.nightlightAddon : undefined,
+        boxOptions: savedOrder.productType === 'fixedBox4' || savedOrder.productType === 'panelBox5' ? savedOrder.boxOptions : undefined,
+        boxModularOptions: savedOrder.productType === 'swappableBox5' ? savedOrder.boxModularOptions : undefined,
+        cylinderOptions: savedOrder.productType === 'cylinder' ? savedOrder.cylinderOptions : undefined,
         originalPrice,
         discountedTotal,
         discountAmount,
@@ -1499,10 +1568,13 @@ router.get('/custom-orders/:orderId', async (req, res) => {
       extras: customOrder.extras,
       addons: {
         nightlight: customOrder.extras?.includes('nightlight') || false,
+        diffuser: customOrder.extras?.includes('diffuser') || false,
+        moonBackground: customOrder.extras?.includes('moonBackground') || false,
       },
-      boxOptions: customOrder.boxOptions,
-      boxModularOptions: customOrder.boxModularOptions,
-      cylinderOptions: customOrder.cylinderOptions,
+      nightlightAddon: customOrder.extras?.includes('nightlight') ? customOrder.nightlightAddon : undefined,
+      boxOptions: customOrder.productType === 'fixedBox4' || customOrder.productType === 'panelBox5' ? customOrder.boxOptions : undefined,
+      boxModularOptions: customOrder.productType === 'swappableBox5' ? customOrder.boxModularOptions : undefined,
+      cylinderOptions: customOrder.productType === 'cylinder' ? customOrder.cylinderOptions : undefined,
       imagesCount: customOrder.images?.length || 0,
       totalPrice: customOrder.totalPrice,
       originalPrice: customOrder.originalPrice,

@@ -2,6 +2,11 @@
 FROM node:18 AS builder
 WORKDIR /app
 
+ARG BUILD_ID=unknown
+ARG BUILD_TIMESTAMP=unknown
+ENV REACT_APP_BUILD_ID=$BUILD_ID
+ENV REACT_APP_BUILD_TIMESTAMP=$BUILD_TIMESTAMP
+
 # Install dependencies
 COPY package*.json jsconfig.json ./
 RUN npm install
@@ -13,7 +18,7 @@ COPY .env* ./
 COPY public ./public
 COPY src ./src
 
-RUN npm run build
+RUN rm -rf build && npm run build
 
 # Ensure public/images is copied into the final build output
 RUN mkdir -p build/images && cp -R public/images/* build/images/
