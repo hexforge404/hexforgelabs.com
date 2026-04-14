@@ -33,11 +33,36 @@ const getLampBasePrice = (product) => {
   if (sku === 'LITHBOX03') {
     return calculatePrice({ productType: 'fixedBox4' });
   }
+  if (sku === 'LITHBOX05') {
+    return calculatePrice({ productType: 'panelBox5' });
+  }
+  if (sku === 'LITHGLB04') {
+    return calculatePrice({ productType: 'globeLamp' });
+  }
+  if (sku === 'LITHBUNDLE01') {
+    return calculatePrice({ productType: 'familyBundle4' });
+  }
   return null;
 };
 
+const lampsOnlySkus = ['LITHNL01', 'LITHDF01', 'LITHBUNDLE01'];
+
+const getProductCategories = (product) => {
+  if (Array.isArray(product.categories)) {
+    return product.categories;
+  }
+  return product.category ? [product.category] : [];
+};
+
+const isLampProduct = (product) => {
+  const sku = String(product.sku || '').toUpperCase();
+  const categories = getProductCategories(product);
+  return lampsOnlySkus.includes(sku) || categories.includes('lamps');
+};
+
 const normalizeProduct = (product) => {
-  const baseLampPrice = product.category === 'lamps' ? getLampBasePrice(product) : null;
+  const categories = getProductCategories(product);
+  const baseLampPrice = isLampProduct(product) ? getLampBasePrice(product) : null;
   const price = Number(baseLampPrice ?? product.price);
   const gallery = Array.isArray(product.imageGallery)
     ? product.imageGallery.filter(Boolean)
@@ -45,6 +70,7 @@ const normalizeProduct = (product) => {
   const heroImage = product.image || product.hero_image_url || gallery[0] || '';
   return {
     ...product,
+    categories,
     name: product.name || product.title || 'Untitled product',
     image: heroImage,
     imageGallery: gallery,
@@ -94,7 +120,8 @@ const ProductSection = ({ title, subtitle, products, addToCart }) => {
         animation: 'fadeIn 0.5s ease-out'
       }}>
         {products.map((product) => {
-          const isLamp = product.category === 'lamps';
+          const categories = getProductCategories(product);
+          const isLamp = isLampProduct(product);
           const lampCopy = 'Turn favorite memories into a warm, glowing keepsake.';
           return (
             <div
@@ -157,7 +184,7 @@ const ProductSection = ({ title, subtitle, products, addToCart }) => {
               <h3 style={{ fontSize: '18px', margin: '10px 0' }}>{product.name}</h3>
             </Link>
             <p style={{ fontSize: '14px', color: '#ccc' }}>
-              {product.category === 'lamps' ? `Starting at ${product.priceFormatted}` : product.priceFormatted}
+              {isLamp ? `Starting at ${product.priceFormatted}` : product.priceFormatted}
             </p>
             {isLamp && (
               <p style={{ fontSize: '12px', color: '#e9c89a', marginBottom: '10px' }}>{lampCopy}</p>
@@ -181,7 +208,7 @@ const ProductSection = ({ title, subtitle, products, addToCart }) => {
                   cursor: 'pointer'
                 }}
               >
-                {product.category === 'lamps' ? 'Start Custom Order' : 'Add to Cart'}
+                {isLamp ? 'Start Custom Order' : 'Add to Cart'}
               </button>
             </div>
           );
@@ -235,21 +262,30 @@ function ProductList() {
   const getFilteredProducts = () => {
     switch (activeFilter) {
       case 'tech':
-        return products.filter(p => p.category !== 'lamps' && p.category !== 'surface');
+        return products.filter((p) => {
+          const categories = getProductCategories(p);
+          return !isLampProduct(p) && !categories.includes('surface');
+        });
       case 'lamps':
-        return products.filter(p => p.category === 'lamps');
+        return products.filter((p) => isLampProduct(p));
       case 'all':
       default:
-        return products.filter(p => p.category !== 'surface');
+        return products.filter((p) => {
+          const categories = getProductCategories(p);
+          return !categories.includes('surface');
+        });
     }
   };
 
   const getTechProducts = () => {
-    return products.filter(p => p.category !== 'lamps' && p.category !== 'surface');
+    return products.filter((p) => {
+      const categories = getProductCategories(p);
+      return !isLampProduct(p) && !categories.includes('surface');
+    });
   };
 
   const getLampProducts = () => {
-    return products.filter(p => p.category === 'lamps');
+    return products.filter((p) => isLampProduct(p));
   };
 
   const getSectionTitle = () => {
