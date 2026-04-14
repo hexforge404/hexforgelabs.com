@@ -23,66 +23,95 @@ const customOrderSchema = new mongoose.Schema({
     index: true
   },
   boxOptions: {
-    lidType: {
-      type: String,
-      trim: true
-    },
-    topImageIncluded: {
-      type: Boolean,
-      default: false
-    },
-    lightingIncluded: {
-      type: Boolean,
-      default: false
-    },
-    notes: {
-      type: String,
-      trim: true
-    }
+    type: new mongoose.Schema({
+      lidType: {
+        type: String,
+        trim: true
+      },
+      topImageIncluded: {
+        type: Boolean,
+        default: false
+      },
+      lightingIncluded: {
+        type: Boolean,
+        default: false
+      },
+      notes: {
+        type: String,
+        trim: true
+      }
+    }, { _id: false }),
+    default: undefined
   },
   boxModularOptions: {
-    panelCount: {
-      type: Number,
-      default: 5
-    },
-    panelImages: {
-      type: [String],
-      default: []
-    },
-    extraPanelSet: {
-      type: Boolean,
-      default: false
-    },
-    lightingIncluded: {
-      type: Boolean,
-      default: false
-    },
-    notes: {
-      type: String,
-      trim: true
-    }
+    type: new mongoose.Schema({
+      panelCount: {
+        type: Number,
+        default: 5
+      },
+      panelImages: {
+        type: [String],
+        default: []
+      },
+      extraPanelSet: {
+        type: Boolean,
+        default: false
+      },
+      lightingIncluded: {
+        type: Boolean,
+        default: false
+      },
+      notes: {
+        type: String,
+        trim: true
+      }
+    }, { _id: false }),
+    default: undefined
   },
   cylinderOptions: {
-    size: {
-      type: String,
-      enum: ['small', 'medium', 'large']
-    },
-    imageStyle: {
-      type: String,
-      trim: true
-    },
-    lightType: {
-      type: String,
-      trim: true
-    },
-    extras: {
-      type: [String],
-      default: []
-    },
-    notes: {
-      type: String,
-      trim: true
-    }
+    type: new mongoose.Schema({
+      size: {
+        type: String,
+        enum: ['small', 'medium', 'large']
+      },
+      imageStyle: {
+        type: String,
+        trim: true
+      },
+      lightType: {
+        type: String,
+        trim: true
+      },
+      extras: {
+        type: [String],
+        default: []
+      },
+      notes: {
+        type: String,
+        trim: true
+      }
+    }, { _id: false }),
+    default: undefined
+  },
+  nightlightAddon: {
+    type: new mongoose.Schema({
+      imageSource: {
+        type: String,
+        enum: ['main_existing', 'separate_upload'],
+        default: 'main_existing'
+      },
+      selectedMainImageIndex: {
+        type: Number,
+        min: 0
+      },
+      separateImage: {
+        path: String,
+        originalName: String,
+        mimeType: String,
+        size: Number
+      }
+    }, { _id: false }),
+    default: undefined
   },
   customer: {
     name: {

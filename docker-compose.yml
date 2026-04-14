@@ -24,6 +24,9 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        BUILD_ID: ${BUILD_ID:-unknown}
+        BUILD_TIMESTAMP: ${BUILD_TIMESTAMP:-unknown}
     image: hexforge-nginx
     container_name: hexforge-nginx
     ports:
@@ -88,6 +91,8 @@ services:
       SURFACE_API_KEY: ${SURFACE_API_KEY:-}
       SURFACE_DEFAULT_SUBFOLDER: ${SURFACE_DEFAULT_SUBFOLDER:-}
       SURFACE_OUTPUT_DIR: /var/www/hexforge3d/surface
+      BUILD_ID: ${BUILD_ID:-unknown}
+      BUILD_TIMESTAMP: ${BUILD_TIMESTAMP:-unknown}
 
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]

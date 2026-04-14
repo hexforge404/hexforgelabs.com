@@ -203,6 +203,19 @@ app.get("/api/health", (req, res) => {
     service: "hexforge-backend",
     uptime: process.uptime(),
     timestamp: new Date().toISOString(),
+    buildId: process.env.BUILD_ID || process.env.DEPLOY_BUILD_ID || "unknown",
+    buildTimestamp: process.env.BUILD_TIMESTAMP || process.env.DEPLOY_TIMESTAMP || "unknown",
+  });
+});
+
+app.get("/api/version", (req, res) => {
+  res.json({
+    status: "ok",
+    service: "hexforge-backend",
+    buildId: process.env.BUILD_ID || process.env.DEPLOY_BUILD_ID || "unknown",
+    buildTimestamp: process.env.BUILD_TIMESTAMP || process.env.DEPLOY_TIMESTAMP || "unknown",
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
   });
 });
 

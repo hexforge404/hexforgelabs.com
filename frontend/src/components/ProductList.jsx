@@ -25,10 +25,10 @@ const FALLBACK_PRODUCTS = [
 const getLampBasePrice = (product) => {
   const sku = String(product.sku || '').toUpperCase();
   if (sku === 'LITHCYL01') {
-    return calculatePrice({ productType: 'cylinder', panelCount: 2 });
+    return calculatePrice({ productType: 'cylinder', panelCount: 2, size: 'medium' });
   }
   if (sku === 'LITHMUL02') {
-    return calculatePrice({ productType: 'panel', panelCount: 2 });
+    return calculatePrice({ productType: 'panel', panelCount: 2, size: 'medium' });
   }
   if (sku === 'LITHBOX03') {
     return calculatePrice({ productType: 'fixedBox4' });
@@ -37,7 +37,7 @@ const getLampBasePrice = (product) => {
     return calculatePrice({ productType: 'panelBox5' });
   }
   if (sku === 'LITHGLB04') {
-    return calculatePrice({ productType: 'globeLamp' });
+    return calculatePrice({ productType: 'globeLamp', size: 'medium' });
   }
   if (sku === 'LITHBUNDLE01') {
     return calculatePrice({ productType: 'familyBundle4' });
@@ -80,6 +80,58 @@ const normalizeProduct = (product) => {
 
 const getImageSrc = (image) => resolveImageUrl(image);
 
+const getProductCardMeta = (product) => {
+  const sku = String(product.sku || '').toUpperCase();
+  const isCustomKeepsake = ['LITHCYL01', 'LITHMUL02', 'LITHGLB04', 'LITHBOX03', 'LITHBOX05', 'LITHBUNDLE01'].includes(sku);
+  const isSimpleAddOn = ['LITHNL01', 'LITHDF01'].includes(sku);
+  const isBundle = sku === 'LITHBUNDLE01';
+
+  const microcopyMap = {
+    LITHCYL01: 'Turn your photos into a glowing keepsake',
+    LITHMUL02: 'Wrap multiple memories into one custom lamp',
+    LITHGLB04: 'A glowing photo lamp with a unique round display',
+    LITHBOX03: 'Custom photo box that glows from within',
+    LITHBOX05: 'More photo space in a premium keepsake box',
+    LITHBUNDLE01: 'Best-value custom family keepsake set',
+    LITHNL01: 'Small glowing keepsake made from your photo',
+    LITHDF01: 'Add a softer, cleaner glow to your display',
+  };
+
+  const defaultMicrocopy = product.category === 'tools'
+    ? 'Security hardware built for professionals'
+    : product.category === 'surface'
+      ? 'High-quality 3D model assets ready for your workflow'
+      : 'Reliable gear for HexForge users';
+
+  const badge = isBundle
+    ? 'Best Value'
+    : isCustomKeepsake
+      ? 'Custom Order'
+      : isSimpleAddOn
+        ? 'Ready to Order'
+        : '';
+
+  const cta = isBundle
+    ? 'Build My Bundle'
+    : isCustomKeepsake
+      ? 'Start Custom Order'
+      : 'Add to Cart';
+
+  const pricePrefix = isCustomKeepsake ? 'Starts at ' : '';
+  const priceNote = isCustomKeepsake ? '50% deposit at checkout' : '';
+
+  return {
+    badge,
+    microcopy: microcopyMap[sku] || (isCustomKeepsake ? 'Handmade custom keepsake from your photos' : defaultMicrocopy),
+    cta,
+    pricePrefix,
+    priceNote,
+    isCustomKeepsake,
+    isSimpleAddOn,
+    isBundle,
+  };
+};
+
 const ProductSection = ({ title, subtitle, products, addToCart }) => {
   const navigate = useNavigate();
 
@@ -120,78 +172,93 @@ const ProductSection = ({ title, subtitle, products, addToCart }) => {
         animation: 'fadeIn 0.5s ease-out'
       }}>
         {products.map((product) => {
-          const categories = getProductCategories(product);
-          const isLamp = isLampProduct(product);
-          const lampCopy = 'Turn favorite memories into a warm, glowing keepsake.';
+          const meta = getProductCardMeta(product);
+          const cardHighlight = product.sku?.toUpperCase() === 'LITHBUNDLE01' ? {
+            boxShadow: '0 0 20px rgba(255, 209, 102, 0.25)',
+            border: '1px solid rgba(255, 209, 102, 0.45)',
+          } : {};
           return (
             <div
               key={product._id}
               className="product-card"
               style={{
-              width: '200px',
-              margin: '10px',
-              backgroundColor: '#111',
-              padding: '15px',
-              borderRadius: '10px',
-              color: '#fff',
-              textAlign: 'center',
-              transition: 'transform 0.2s, box-shadow 0.2s',
-              boxShadow: '0 0 0 rgba(0, 0, 0, 0)',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.boxShadow = '0 4px 15px rgba(0, 255, 200, 0.3)';
-              e.currentTarget.style.transform = 'translateY(-4px)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.boxShadow = '0 0 0 rgba(0, 0, 0, 0)';
-              e.currentTarget.style.transform = 'translateY(0)';
-            }}
-          >
-            <Link to={`/store/${product.slug}`} style={{ textDecoration: 'none', color: 'inherit' }}>
-              <div style={{ position: 'relative' }}>
-                {isLamp && (
-                  <div
-                    style={{
-                      position: 'absolute',
-                      top: '10px',
-                      left: '10px',
-                      padding: '4px 8px',
-                      borderRadius: '999px',
-                      background: 'rgba(255, 209, 102, 0.2)',
-                      border: '1px solid rgba(255, 209, 102, 0.45)',
-                      color: '#ffd166',
-                      fontSize: '11px',
-                      fontWeight: 'bold',
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.8px',
+                width: '220px',
+                minHeight: '360px',
+                margin: '10px',
+                backgroundColor: '#111',
+                padding: '15px',
+                borderRadius: '12px',
+                color: '#fff',
+                textAlign: 'center',
+                transition: 'transform 0.2s, box-shadow 0.2s',
+                boxShadow: '0 0 0 rgba(0, 0, 0, 0)',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between',
+                ...cardHighlight,
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.boxShadow = '0 4px 15px rgba(0, 255, 200, 0.3)';
+                e.currentTarget.style.transform = 'translateY(-4px)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.boxShadow = '0 0 0 rgba(0, 0, 0, 0)';
+                e.currentTarget.style.transform = 'translateY(0)';
+              }}
+            >
+              <Link to={`/store/${product.slug}`} style={{ textDecoration: 'none', color: 'inherit' }}>
+                <div style={{ position: 'relative' }}>
+                  {meta.badge && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: '10px',
+                        left: '10px',
+                        padding: '4px 9px',
+                        borderRadius: '999px',
+                        background: 'rgba(255, 209, 102, 0.18)',
+                        border: '1px solid rgba(255, 209, 102, 0.35)',
+                        color: '#ffd166',
+                        fontSize: '11px',
+                        fontWeight: '700',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.7px',
+                      }}
+                    >
+                      {meta.badge}
+                    </div>
+                  )}
+                  <img
+                    src={getImageSrc(product.image)}
+                    alt={product.name}
+                    onError={(e) => {
+                      e.currentTarget.src = DEFAULT_PLACEHOLDER;
                     }}
-                  >
-                    Custom Order
-                  </div>
-                )}
-                <img
-                  src={getImageSrc(product.image)}
-                  alt={product.name}
-                  onError={(e) => {
-                    e.currentTarget.src = DEFAULT_PLACEHOLDER;
-                  }}
-                  style={{ width: '100%', height: 'auto', borderRadius: '8px', marginBottom: '10px' }}
-                />
-              </div>
-            </Link>
+                    style={{ width: '100%', height: 'auto', borderRadius: '10px', marginBottom: '14px' }}
+                  />
+                </div>
+              </Link>
 
-            <Link to={`/store/${product.slug}`} style={{ textDecoration: 'none', color: 'inherit' }}>
-              <h3 style={{ fontSize: '18px', margin: '10px 0' }}>{product.name}</h3>
-            </Link>
-            <p style={{ fontSize: '14px', color: '#ccc' }}>
-              {isLamp ? `Starting at ${product.priceFormatted}` : product.priceFormatted}
-            </p>
-            {isLamp && (
-              <p style={{ fontSize: '12px', color: '#e9c89a', marginBottom: '10px' }}>{lampCopy}</p>
-            )}
+              <div>
+                <Link to={`/store/${product.slug}`} style={{ textDecoration: 'none', color: 'inherit' }}>
+                  <h3 style={{ fontSize: '18px', margin: '10px 0 8px', lineHeight: '1.2', minHeight: '48px' }}>{product.name}</h3>
+                </Link>
+                <p style={{ fontSize: '13px', color: '#ccc', minHeight: '42px', margin: '0 0 12px' }}>
+                  {meta.microcopy}
+                </p>
+                <p style={{ fontSize: '14px', color: '#fff', margin: '0 0 6px', fontWeight: '600' }}>
+                  {meta.pricePrefix}{product.priceFormatted}
+                </p>
+                {meta.priceNote && (
+                  <p style={{ fontSize: '12px', color: '#e9c89a', margin: '0 0 14px' }}>
+                    {meta.priceNote}
+                  </p>
+                )}
+              </div>
+
               <button
                 onClick={() => {
-                  if (isLamp) {
+                  if (meta.isCustomKeepsake) {
                     navigate(`/store/${product.slug}`);
                     return;
                   }
@@ -199,16 +266,20 @@ const ProductSection = ({ title, subtitle, products, addToCart }) => {
                   toast.success(`${product.name} added to cart!`);
                 }}
                 style={{
-                  padding: '8px 16px',
-                  backgroundColor: '#00ffc8',
+                  padding: '10px 16px',
+                  backgroundColor: meta.isCustomKeepsake ? '#00ffc8' : '#ffd166',
                   border: 'none',
-                  borderRadius: '5px',
-                  color: '#111',
+                  borderRadius: '8px',
+                  color: meta.isCustomKeepsake ? '#000' : '#111',
                   fontWeight: 'bold',
-                  cursor: 'pointer'
+                  cursor: 'pointer',
+                  width: '100%',
+                  marginTop: '10px',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
                 }}
               >
-                {isLamp ? 'Start Custom Order' : 'Add to Cart'}
+                {meta.cta}
               </button>
             </div>
           );
