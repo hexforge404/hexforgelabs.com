@@ -5,6 +5,175 @@
  */
 
 export const productOverrides = {
+  'custom-lithophane-lamp-cylinder': {
+    highlights: [
+      'Custom cylinder lamp built from your photos',
+      'Panel count from 2 to 5',
+      'Handcrafted with fine detail',
+      'Designed to pair with a compatible base'
+    ],
+    useCases: [
+      'Anniversary & wedding gifts',
+      'Family photo keepsakes',
+      'Memorial tributes',
+      'Cozy home decor'
+    ],
+    whatsIncluded: [
+      'Custom cylinder lithophane lamp',
+      'Photo review and print prep',
+      'Packaging for safe delivery'
+    ],
+    description: 'A custom lithophane cylinder lamp made from your photos. Choose your panel count and we will craft a glowing lamp designed to pair with a compatible base.',
+    batchNote: 'Handcrafted | Made to order'
+  },
+  'multi-panel-lithophane-lamp': {
+    highlights: [
+      'Multi-panel display built from your photos',
+      'Panel count from 2 to 5',
+      'Handcrafted with fine detail',
+      'Designed to pair with a compatible base'
+    ],
+    useCases: [
+      'Anniversary & wedding gifts',
+      'Family photo keepsakes',
+      'Memorial tributes',
+      'Cozy home decor'
+    ],
+    whatsIncluded: [
+      'Custom multi-panel lithophane display',
+      'Photo review and print prep',
+      'Packaging for safe delivery'
+    ],
+    description: 'A custom multi-panel lithophane display made from your photos. Choose your panel count and we will craft a glowing display designed to fit with a compatible base.',
+    batchNote: 'Handcrafted | Made to order'
+  },
+  'lithophane-box': {
+    highlights: [
+      'Four-sided lithophane box with removable lid',
+      'Crafted from your photos',
+      'Glowing keepsake storage box',
+      'Hand-finished details'
+    ],
+    useCases: [
+      'Keepsake storage',
+      'Memorial displays',
+      'Gift presentation',
+      'Home decor'
+    ],
+    whatsIncluded: [
+      'Custom lithophane box (4 panels)',
+      'Removable lid',
+      'Photo review and print prep'
+    ],
+    description: 'A four-sided lithophane box with a removable lid made from your photos. Designed as a glowing keepsake box with practical storage.',
+    batchNote: 'Handcrafted | Made to order'
+  },
+  'five-sided-lithophane-panel-box': {
+    highlights: [
+      'Five-sided lithophane panel box',
+      'Removable lid',
+      'Crafted from your photos',
+      'Glowing keepsake display'
+    ],
+    useCases: [
+      'Keepsake storage',
+      'Memorial displays',
+      'Gift presentation',
+      'Home decor'
+    ],
+    whatsIncluded: [
+      'Custom lithophane box (5 panels)',
+      'Removable lid',
+      'Photo review and print prep'
+    ],
+    description: 'A five-sided lithophane panel box with a removable lid made from your photos. Designed as a glowing keepsake box with practical storage.',
+    batchNote: 'Handcrafted | Made to order'
+  },
+  'lithophane-globe-lamp': {
+    highlights: [
+      'Globe-style lithophane lamp',
+      'Crafted from your photos',
+      'Soft, ambient glow',
+      'Hand-finished details'
+    ],
+    useCases: [
+      'Anniversary & wedding gifts',
+      'Family photo keepsakes',
+      'Memorial tributes',
+      'Cozy home decor'
+    ],
+    whatsIncluded: [
+      'Custom lithophane globe lamp',
+      'Photo review and print prep',
+      'Packaging for safe delivery'
+    ],
+    description: 'Upload up to 5 images to wrap around your globe lamp. Use a moon background to fill unused sections for a unique ambient look.',
+    batchNote: 'Handcrafted | Made to order'
+  },
+  'custom-family-lithophane-bundle': {
+    highlights: [
+      'Complete family lithophane bundle',
+      'Includes 2 lamps, 4 night lights, and 2 diffuser inserts',
+      'Unified photo set across all pieces',
+      'Perfect for gifts and memorial displays'
+    ],
+    useCases: [
+      'Family gift sets',
+      'Memorial displays',
+      'Coordinated room décor',
+      'Special occasion centerpieces'
+    ],
+    whatsIncluded: [
+      '2 matching lithophane lamps',
+      '4 matching night lights',
+      '2 diffuser inserts',
+      'Photo review and packaging'
+    ],
+    description: 'Upload 4 photos and we’ll create a complete matching set: 2 lithophane lamps, 4 night lights, and 2 diffuser inserts. Each image is reused across all pieces for a unified keepsake display.',
+    batchNote: 'Handcrafted | Ready to ship'
+  },
+  'lithophane-diffuser-insert': {
+    highlights: [
+      'Standalone diffuser accessory',
+      'Softens ambient lamp glow',
+      'No custom image upload required',
+      'Easy installation'
+    ],
+    useCases: [
+      'Ambient lighting',
+      'Home decor',
+      'Photography props',
+      'Room accent lighting'
+    ],
+    whatsIncluded: [
+      'Lithophane diffuser insert',
+      'Installation guide',
+      'Protective packaging'
+    ],
+    description: 'A standalone diffuser insert for lithophane lamps that softens light and creates a more even glow without custom images.',
+    batchNote: 'Accessory | Ready to ship'
+  },
+  'lithophane-night-light': {
+    highlights: [
+      'Standalone night light',
+      'Warm ambient illumination',
+      'No custom image upload needed',
+      'Perfect for bedside or hallway use'
+    ],
+    useCases: [
+      'Night light',
+      'Ambient décor',
+      'Children’s rooms',
+      'Gift-ready accessory'
+    ],
+    whatsIncluded: [
+      'Lithophane night light',
+      'Power adapter',
+      'Packaging and guide'
+    ],
+    description: 'A standalone lithophane night light with warm glow and simple plug-and-play operation. Designed for easy use with no image upload required.',
+    batchNote: 'Accessory | Ready to ship'
+  },
   'usb-keylogger': {
     highlights: [
       'Compact form factor for discreet operation',

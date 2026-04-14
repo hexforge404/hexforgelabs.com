@@ -154,6 +154,23 @@ const customOrderSchema = new mongoose.Schema({
     type: [String],
     default: []
   },
+  nightlightAddon: {
+    imageSource: {
+      type: String,
+      enum: ['main_existing', 'separate_upload'],
+      default: 'main_existing'
+    },
+    selectedMainImageIndex: {
+      type: Number,
+      min: 0
+    },
+    separateImage: {
+      path: String,
+      originalName: String,
+      mimeType: String,
+      size: Number
+    }
+  },
   notes: {
     type: String,
     trim: true,

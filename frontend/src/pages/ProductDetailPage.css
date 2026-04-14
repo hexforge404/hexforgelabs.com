@@ -587,11 +587,20 @@
 
 /* Custom Order Form Styles */
 .product-detail-custom-order {
+  display: flex;
+  flex-direction: column;
   margin-top: 30px;
   padding: 25px;
   background: rgba(0, 255, 200, 0.05);
   border: 1px solid rgba(0, 255, 200, 0.2);
   border-radius: 12px;
+  overflow: hidden;
+}
+
+.product-detail-configurator {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .product-detail-custom-order-title {

@@ -832,27 +832,39 @@ const getPanelsLabel = (count) => PANEL_LABEL_MAP[count] || 'single';
 
 const getRequiredPanelCount = ({ productType, panels, panelCount }) => {
   if (productType === 'fixedBox4') return 4;
-  if (productType === 'swappableBox5') return 5;
+  if (productType === 'panelBox5' || productType === 'swappableBox5') return 5;
+  if (productType === 'familyBundle4') return 4;
 
   const labelCount = PANEL_COUNT_MAP[String(panels || '').toLowerCase()] ?? null;
-  const minPanels = productType === 'panel' || productType === 'cylinder' ? 2 : 1;
+  const minPanels = productType === 'panel' || productType === 'cylinder' ? 2 : productType === 'globeLamp' ? 1 : 1;
   return clampPanelCount(panelCount, labelCount, minPanels, 5);
 };
 
-const calculateCustomOrderPrice = ({ productType, panelCount, addons = {} }) => {
+const SIZE_PRICE_MAP = {
+  small: 0,
+  medium: 10,
+  large: 20,
+};
+
+const calculateCustomOrderPrice = ({ productType, panelCount, size = 'small', addons = {} }) => {
   let basePrice = 0;
+  const sizeAdjustment = SIZE_PRICE_MAP[String(size).toLowerCase()] || 0;
   if (productType === 'panel' || productType === 'cylinder') {
     const count = Math.max(2, Number(panelCount) || 2);
-    basePrice = 50 + Math.max(0, count - 2) * 10;
+    basePrice = 50 + sizeAdjustment + Math.max(0, count - 2) * 10;
+  } else if (productType === 'globeLamp') {
+    basePrice = 50 + sizeAdjustment;
   } else if (productType === 'fixedBox4') {
-    basePrice = 60;
-  } else if (productType === 'swappableBox5') {
-    basePrice = 75;
+    basePrice = 45;
+  } else if (productType === 'panelBox5' || productType === 'swappableBox5') {
+    basePrice = 55;
+  } else if (productType === 'familyBundle4') {
+    basePrice = 299.99;
   }
 
   let total = basePrice;
+  if (addons.diffuser) total += 10;
   if (addons.nightlight) total += 5;
-  if (addons.globe) total += 10;
   return roundMoney(total);
 };
 
@@ -879,6 +891,7 @@ router.post('/custom-orders/validate-promo', express.json(), async (req, res) =>
       productType,
       panels,
       panelCount,
+      size,
       addons,
     } = req.body;
 
@@ -960,6 +973,7 @@ router.post('/custom-orders/validate-promo', express.json(), async (req, res) =>
     const originalPrice = calculateCustomOrderPrice({
       productType: resolvedProductType,
       panelCount: requiredPanels,
+      size,
       addons: resolvedAddons,
     });
     let discountAmount = 0;
@@ -1014,7 +1028,10 @@ const handleMulterErrors = (err, req, res, next) => {
 
 router.post(
   '/custom-orders',
-  customOrderUpload.array('images[]', 5),
+  customOrderUpload.fields([
+    { name: 'images[]', maxCount: 5 },
+    { name: 'nightlightImage', maxCount: 1 },
+  ]),
   handleMulterErrors,
   async (req, res) => {
     try {
@@ -1028,9 +1045,6 @@ router.post(
         extras,
         addons,
         imageStyle,
-        lidType,
-        topImageIncluded,
-        lightingIncluded,
         panelImages,
         extraPanelSet,
         notes,
@@ -1087,6 +1101,11 @@ router.post(
         return [];
       };
 
+      const nightlightImageSource = req.body.nightlightImageSource;
+      const nightlightSelectedMainImageIndex = req.body.nightlightSelectedMainImageIndex;
+      const nightlightImageFiles = (req.files && req.files['nightlightImage']) || [];
+      const nightlightImageFile = nightlightImageFiles[0] || null;
+
       const extrasPayload = extras ?? req.body['extras[]'];
       const addonsPayload = addons ?? req.body['addons'];
       const panelImagesPayload = panelImages ?? req.body['panelImages[]'];
@@ -1103,24 +1122,55 @@ router.post(
         });
       }
 
+      const isGlobeLampOrder = resolvedProductType === 'globeLamp';
+      const minImages = isGlobeLampOrder ? 1 : requiredPanels;
+      const maxImages = isGlobeLampOrder ? 5 : requiredPanels;
       const resolvedPanelCount = clampPanelCount(panelCount, requiredPanels, 1, 5);
       const resolvedPanelsLabel = getPanelsLabel(requiredPanels);
       const resolvedLightType = lightType || 'led';
       const resolvedAddons = parseAddonsPayload(addonsPayload);
       const addonExtras = [
         resolvedAddons.nightlight ? 'nightlight' : null,
-        resolvedAddons.globe ? 'globe' : null,
       ].filter(Boolean);
-      const allowedExtras = new Set(['nightlight', 'globe']);
+      const allowedExtras = new Set(['nightlight']);
       const legacyExtras = parseExtras(extrasPayload).filter((item) => allowedExtras.has(item));
       const resolvedExtras = Array.from(new Set([
         ...legacyExtras,
         ...addonExtras,
       ]));
-      const resolvedTopImageIncluded = parseBoolean(topImageIncluded);
-      const resolvedLightingIncluded = parseBoolean(lightingIncluded);
       const resolvedExtraPanelSet = parseBoolean(extraPanelSet);
       const resolvedPanelImages = parseStringArray(panelImagesPayload);
+      const mainUploadedFiles = (req.files && req.files['images[]']) || [];
+
+      const resolvedNightlightAddon = {
+        imageSource: nightlightImageSource === 'separate_upload' ? 'separate_upload' : 'main_existing',
+        selectedMainImageIndex: Number.isNaN(Number(nightlightSelectedMainImageIndex))
+          ? undefined
+          : Number(nightlightSelectedMainImageIndex),
+        separateImage: nightlightImageFile ? {
+          path: nightlightImageFile.path,
+          originalName: nightlightImageFile.originalname,
+          mimeType: nightlightImageFile.mimetype,
+          size: nightlightImageFile.size,
+        } : undefined,
+      };
+
+      if (resolvedAddons.nightlight) {
+        if (resolvedNightlightAddon.imageSource === 'main_existing') {
+          const index = resolvedNightlightAddon.selectedMainImageIndex;
+          if (typeof index !== 'number' || index < 0 || index >= mainUploadedFiles.length || !mainUploadedFiles[index]) {
+            return res.status(400).json({
+              error: 'Please select a valid main uploaded image for the nightlight addon.',
+            });
+          }
+        } else if (resolvedNightlightAddon.imageSource === 'separate_upload') {
+          if (!nightlightImageFile) {
+            return res.status(400).json({
+              error: 'Please upload a separate image for the nightlight addon.',
+            });
+          }
+        }
+      }
 
       if (!productId) {
         return res.status(400).json({ error: 'Product ID is required for custom orders.' });
@@ -1138,20 +1188,15 @@ router.post(
         });
       }
 
-      const uploadedFiles = Array.isArray(req.files) ? req.files : [];
-      if (uploadedFiles.length === 0) {
+      const uploadedFiles = mainUploadedFiles;
+      if (uploadedFiles.length < minImages) {
         return res.status(400).json({
-          error: `No image files uploaded. ${requiredPanels} image file${requiredPanels === 1 ? '' : 's'} required for ${resolvedPanelsLabel} panel(s).`,
+          error: `No image files uploaded. ${minImages} image file${minImages === 1 ? '' : 's'} required${isGlobeLampOrder ? ' for globe lamp image upload' : ''}.`,
         });
       }
-      if (uploadedFiles.length < requiredPanels) {
+      if (uploadedFiles.length > maxImages) {
         return res.status(400).json({
-          error: `Too few images uploaded. Expected ${requiredPanels} image file${requiredPanels === 1 ? '' : 's'} for ${resolvedPanelsLabel} panel(s), but received ${uploadedFiles.length}.`,
-        });
-      }
-      if (uploadedFiles.length > requiredPanels) {
-        return res.status(400).json({
-          error: `Too many images uploaded. Expected ${requiredPanels} image file${requiredPanels === 1 ? '' : 's'} for ${resolvedPanelsLabel} panel(s), but received ${uploadedFiles.length}.`,
+          error: `Too many images uploaded. Expected ${maxImages} image file${maxImages === 1 ? '' : 's'}${isGlobeLampOrder ? ' for globe lamp image upload' : ` for ${resolvedPanelsLabel} panel(s)`}, but received ${uploadedFiles.length}.`,
         });
       }
 
@@ -1165,6 +1210,7 @@ router.post(
       const originalPrice = calculateCustomOrderPrice({
         productType: resolvedProductType,
         panelCount: requiredPanels,
+        size,
         addons: resolvedAddons,
       });
       let discountedTotal = originalPrice;
@@ -1297,11 +1343,8 @@ router.post(
         lightType: resolvedLightType,
         extras: resolvedExtras,
         notes: notes || '',
-        boxOptions: resolvedProductType === 'fixedBox4'
+        boxOptions: resolvedProductType === 'fixedBox4' || resolvedProductType === 'panelBox5'
           ? {
-            lidType: lidType || 'standard',
-            topImageIncluded: resolvedTopImageIncluded,
-            lightingIncluded: resolvedLightingIncluded,
             notes: notes || '',
           }
           : undefined,
@@ -1324,6 +1367,7 @@ router.post(
           }
           : undefined,
         images,
+        nightlightAddon: resolvedAddons.nightlight ? resolvedNightlightAddon : undefined,
         originalPrice,
         discountedTotal,
         discountAmount,
@@ -1408,8 +1452,8 @@ router.post(
         extras: savedOrder.extras,
         addons: {
           nightlight: savedOrder.extras?.includes('nightlight') || false,
-          globe: savedOrder.extras?.includes('globe') || false,
         },
+        nightlightAddon: savedOrder.nightlightAddon,
         boxOptions: savedOrder.boxOptions,
         boxModularOptions: savedOrder.boxModularOptions,
         cylinderOptions: savedOrder.cylinderOptions,
@@ -1455,7 +1499,6 @@ router.get('/custom-orders/:orderId', async (req, res) => {
       extras: customOrder.extras,
       addons: {
         nightlight: customOrder.extras?.includes('nightlight') || false,
-        globe: customOrder.extras?.includes('globe') || false,
       },
       boxOptions: customOrder.boxOptions,
       boxModularOptions: customOrder.boxModularOptions,

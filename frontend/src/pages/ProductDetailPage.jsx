@@ -70,16 +70,71 @@ function PanelConfigurator({
           <label className="product-detail-custom-checkbox">
             <input
               type="checkbox"
-              checked={lampshade.addons.globe}
-              onChange={() => onToggleAddon('globe')}
+              checked={lampshade.addons.diffuser}
+              onChange={() => onToggleAddon('diffuser')}
             />
-            Globe (+$10)
+            Diffuser (+$10)
           </label>
+        </div>
+        <div className="product-detail-custom-helper">
+          Diffuser softens the light and improves image clarity.
         </div>
       </div>
 
       <div className="product-detail-custom-field">
         <label className="product-detail-custom-label">Lampshade Notes</label>
+        <textarea
+          value={lampshade.notes}
+          onChange={(e) => onNotesChange(e.target.value)}
+          placeholder="Any special instructions or preferences..."
+          className="product-detail-custom-textarea"
+          rows={3}
+        />
+      </div>
+    </>
+  );
+}
+
+function GlobeLampConfigurator({ lampshade, onSizeChange, onToggleAddon, onNotesChange }) {
+  return (
+    <>
+      <div className="product-detail-custom-field">
+        <label className="product-detail-custom-label">Size</label>
+        <select
+          value={lampshade.size}
+          onChange={(e) => onSizeChange(e.target.value)}
+          className="product-detail-custom-select"
+        >
+          <option value="small">Small (4" height)</option>
+          <option value="medium">Medium (6" height)</option>
+          <option value="large">Large (8" height)</option>
+        </select>
+      </div>
+
+      <div className="product-detail-custom-field">
+        <label className="product-detail-custom-label">Add-ons</label>
+        <div className="product-detail-custom-extras">
+          <label className="product-detail-custom-checkbox">
+            <input
+              type="checkbox"
+              checked={lampshade.addons.nightlight}
+              onChange={() => onToggleAddon('nightlight')}
+            />
+            Nightlight (+$5)
+          </label>
+          <label className="product-detail-custom-checkbox">
+            <input
+              type="checkbox"
+              checked={lampshade.addons.moonBackground}
+              onChange={() => onToggleAddon('moonBackground')}
+            />
+            Use Moon Background for Empty Space
+          </label>
+        </div>
+      </div>
+
+      <div className="product-detail-custom-field">
+        <label className="product-detail-custom-label">Lamp Notes</label>
         <textarea
           value={lampshade.notes}
           onChange={(e) => onNotesChange(e.target.value)}
@@ -156,28 +211,6 @@ function CylinderConfigurator({
       </div>
 
       <div className="product-detail-custom-field">
-        <label className="product-detail-custom-label">Add-ons</label>
-        <div className="product-detail-custom-extras">
-          <label className="product-detail-custom-checkbox">
-            <input
-              type="checkbox"
-              checked={cylinder.addons.nightlight}
-              onChange={() => onToggleAddon('nightlight')}
-            />
-            Nightlight (+$5)
-          </label>
-          <label className="product-detail-custom-checkbox">
-            <input
-              type="checkbox"
-              checked={cylinder.addons.globe}
-              onChange={() => onToggleAddon('globe')}
-            />
-            Globe (+$10)
-          </label>
-        </div>
-      </div>
-
-      <div className="product-detail-custom-field">
         <label className="product-detail-custom-label">Cylinder Notes</label>
         <textarea
           value={cylinder.notes}
@@ -193,77 +226,67 @@ function CylinderConfigurator({
 
 function BoxConfigurator({
   box,
-  onLidTypeChange,
-  onTopImageIncludedChange,
-  onLightingIncludedChange,
-  onToggleAddon,
   onNotesChange,
 }) {
   return (
     <>
       <div className="product-detail-custom-field">
-        <label className="product-detail-custom-label">Lid Type</label>
-        <select
-          value={box.lidType}
-          onChange={(e) => onLidTypeChange(e.target.value)}
-          className="product-detail-custom-select"
-        >
-          <option value="standard">Standard Lid</option>
-          <option value="custom">Custom Lid</option>
-          <option value="swappable">Swappable Lid</option>
-        </select>
-      </div>
-
-      <div className="product-detail-custom-field">
-        <label className="product-detail-custom-label">Top Image Included</label>
-        <label className="product-detail-custom-checkbox">
-          <input
-            type="checkbox"
-            checked={box.topImageIncluded}
-            onChange={(e) => onTopImageIncludedChange(e.target.checked)}
-          />
-          Include top image panel
-        </label>
-      </div>
-
-      <div className="product-detail-custom-field">
-        <label className="product-detail-custom-label">Lighting Included</label>
-        <label className="product-detail-custom-checkbox">
-          <input
-            type="checkbox"
-            checked={box.lightingIncluded}
-            onChange={(e) => onLightingIncludedChange(e.target.checked)}
-          />
-          Include lighting kit
-        </label>
-      </div>
-
-      <div className="product-detail-custom-field">
-        <label className="product-detail-custom-label">Add-ons</label>
-        <div className="product-detail-custom-extras">
-          <label className="product-detail-custom-checkbox">
-            <input
-              type="checkbox"
-              checked={box.addons.nightlight}
-              onChange={() => onToggleAddon('nightlight')}
-            />
-            Nightlight (+$5)
-          </label>
-          <label className="product-detail-custom-checkbox">
-            <input
-              type="checkbox"
-              checked={box.addons.globe}
-              onChange={() => onToggleAddon('globe')}
-            />
-            Globe (+$10)
-          </label>
-        </div>
-      </div>
-
-      <div className="product-detail-custom-field">
         <label className="product-detail-custom-label">Box Notes</label>
         <textarea
           value={box.notes}
+          onChange={(e) => onNotesChange(e.target.value)}
+          placeholder="Any special instructions or preferences..."
+          className="product-detail-custom-textarea"
+          rows={3}
+        />
+      </div>
+    </>
+  );
+}
+
+function FamilyBundleConfigurator({
+  images,
+  onImageUpload,
+  notes,
+  onNotesChange,
+}) {
+  const imageSlots = [...images].slice(0, 4);
+  while (imageSlots.length < 4) imageSlots.push(null);
+
+  return (
+    <>
+      <div className="product-detail-custom-field">
+        <label className="product-detail-custom-label">UPLOAD YOUR 4 PHOTOS</label>
+        <p className="product-detail-custom-helper">
+          Each image will be used across both lamps and all 4 matching night lights.
+        </p>
+        <div className="product-detail-custom-helper" style={{ fontStyle: 'italic', marginBottom: '12px' }}>
+          Your 4 images → 2 Lamps + 4 Night Lights + Diffusers
+        </div>
+        {imageSlots.map((image, index) => (
+          <div key={index} className="product-detail-custom-field" style={{ marginBottom: '12px' }}>
+            <label className="product-detail-custom-label">Image {index + 1}</label>
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) onImageUpload(index, file);
+              }}
+              className="product-detail-custom-input"
+            />
+            {image && (
+              <div style={{ marginTop: '8px', color: '#ccc' }}>
+                Selected file: {image.name}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+      <div className="product-detail-custom-field">
+        <label className="product-detail-custom-label">Bundle Notes</label>
+        <textarea
+          value={notes}
           onChange={(e) => onNotesChange(e.target.value)}
           placeholder="Any special instructions or preferences..."
           className="product-detail-custom-textarea"
@@ -313,28 +336,6 @@ function SwappableBoxConfigurator({
       </div>
 
       <div className="product-detail-custom-field">
-        <label className="product-detail-custom-label">Add-ons</label>
-        <div className="product-detail-custom-extras">
-          <label className="product-detail-custom-checkbox">
-            <input
-              type="checkbox"
-              checked={swappableBox.addons.nightlight}
-              onChange={() => onToggleAddon('nightlight')}
-            />
-            Nightlight (+$5)
-          </label>
-          <label className="product-detail-custom-checkbox">
-            <input
-              type="checkbox"
-              checked={swappableBox.addons.globe}
-              onChange={() => onToggleAddon('globe')}
-            />
-            Globe (+$10)
-          </label>
-        </div>
-      </div>
-
-      <div className="product-detail-custom-field">
         <label className="product-detail-custom-label">Swappable Box Notes</label>
         <textarea
           value={swappableBox.notes}
@@ -369,7 +370,8 @@ function ProductDetailPage() {
       lightType: 'led',
       addons: {
         nightlight: false,
-        globe: false,
+        diffuser: false,
+        moonBackground: false,
       },
       notes: '',
     },
@@ -380,18 +382,10 @@ function ProductDetailPage() {
       lightType: 'led',
       addons: {
         nightlight: false,
-        globe: false,
       },
       notes: '',
     },
     fixedBox4: {
-      lidType: 'standard',
-      topImageIncluded: false,
-      lightingIncluded: false,
-      addons: {
-        nightlight: false,
-        globe: false,
-      },
       notes: '',
     },
     swappableBox5: {
@@ -401,10 +395,15 @@ function ProductDetailPage() {
       lightingIncluded: false,
       addons: {
         nightlight: false,
-        globe: false,
       },
       notes: '',
     },
+    nightlightAddon: {
+      imageSource: 'main_existing',
+      selectedMainImageIndex: 0,
+      separateImage: null,
+    },
+    notes: '',
     customerName: '',
     customerEmail: '',
     customerPhone: '',
@@ -425,6 +424,42 @@ function ProductDetailPage() {
   const clampPanelCount = (value) => {
     const count = Number(value) || 2;
     return Math.min(5, Math.max(2, count));
+  };
+
+  const requiresBoxConfigurator = (type) => type === 'fixedBox4' || type === 'panelBox5';
+
+  const resolveProductType = (productData, routeSlug) => {
+    const sku = String(productData?.sku || '').toUpperCase();
+    if (sku === 'LITHCYL01') return 'cylinder';
+    if (sku === 'LITHMUL02') return 'panel';
+    if (sku === 'LITHBOX03') return 'fixedBox4';
+    if (sku === 'LITHBOX05') return 'panelBox5';
+    if (sku === 'LITHGLB04') return 'globeLamp';
+    if (sku === 'LITHBUNDLE01') return 'familyBundle4';
+    if (routeSlug === 'lithophane-box') return 'fixedBox4';
+    if (routeSlug === 'five-sided-lithophane-panel-box') return 'panelBox5';
+    if (routeSlug === 'custom-lithophane-lamp-cylinder') return 'cylinder';
+    if (routeSlug === 'multi-panel-lithophane-lamp') return 'panel';
+    if (routeSlug === 'custom-family-lithophane-bundle') return 'familyBundle4';
+    if (routeSlug === 'lithophane-globe-lamp') return 'globeLamp';
+    return 'panel';
+  };
+
+  const getBasePriceForLamp = (productData, routeSlug) => {
+    const type = resolveProductType(productData, routeSlug);
+    if (type === 'fixedBox4') {
+      return calculatePrice({ productType: 'fixedBox4' });
+    }
+    if (type === 'panelBox5' || type === 'swappableBox5') {
+      return calculatePrice({ productType: 'panelBox5' });
+    }
+    if (type === 'globeLamp') {
+      return calculatePrice({ productType: 'globeLamp' });
+    }
+    if (type === 'familyBundle4') {
+      return calculatePrice({ productType: 'familyBundle4' });
+    }
+    return calculatePrice({ productType: type, panelCount: 2 });
   };
 
   const updateLampshade = (updates) => {
@@ -467,21 +502,55 @@ function ProductDetailPage() {
     }));
   };
 
+  const updateNightlightAddon = (updates) => {
+    setCustomOrder((prev) => ({
+      ...prev,
+      nightlightAddon: {
+        ...prev.nightlightAddon,
+        ...updates,
+      },
+    }));
+  };
+
   const toggleAddon = (target, addonKey) => {
     setCustomOrder((prev) => {
       const current = prev[target] || {};
-      const addons = current.addons || { nightlight: false, globe: false };
+      const addons = current.addons || { nightlight: false };
+      const nextValue = !addons[addonKey];
       return {
         ...prev,
         [target]: {
           ...current,
           addons: {
             ...addons,
-            [addonKey]: !addons[addonKey],
+            [addonKey]: nextValue,
           },
         },
+        ...(addonKey === 'nightlight' && !nextValue ? {
+          nightlightAddon: {
+            imageSource: 'main_existing',
+            selectedMainImageIndex: 0,
+            separateImage: null,
+          },
+        } : {}),
       };
     });
+  };
+
+  const getActiveAddons = () => {
+    const isCylinderOrder = customOrder.productType === 'cylinder';
+    const isPanelOrder = customOrder.productType === 'panel';
+    const isGlobeLampOrder = customOrder.productType === 'globeLamp';
+    const isPanelBox5Order = customOrder.productType === 'panelBox5';
+    const isFixedBox4Order = customOrder.productType === 'fixedBox4';
+    const isSwappableBox5Order = customOrder.productType === 'swappableBox5';
+    return isCylinderOrder
+      ? customOrder.cylinder.addons
+      : isFixedBox4Order
+        ? customOrder.fixedBox4.addons
+        : isSwappableBox5Order
+          ? customOrder.swappableBox5.addons
+          : customOrder.lampshade.addons;
   };
 
   const handlePromoValidation = async () => {
@@ -495,24 +564,22 @@ function ProductDetailPage() {
 
     const isCylinderOrder = customOrder.productType === 'cylinder';
     const isPanelOrder = customOrder.productType === 'panel';
+    const isGlobeLampOrder = customOrder.productType === 'globeLamp';
+    const isPanelBox5Order = customOrder.productType === 'panelBox5';
     const isFixedBox4Order = customOrder.productType === 'fixedBox4';
     const isSwappableBox5Order = customOrder.productType === 'swappableBox5';
     const activePanelCount = isCylinderOrder
       ? clampPanelCount(customOrder.cylinder.panelCount)
       : isPanelOrder
         ? clampPanelCount(customOrder.lampshade.panelCount)
-        : isFixedBox4Order
-          ? 4
-          : isSwappableBox5Order
-            ? 5
-            : 2;
-    const activeAddons = isCylinderOrder
-      ? customOrder.cylinder.addons
-      : isFixedBox4Order
-        ? customOrder.fixedBox4.addons
-        : isSwappableBox5Order
-          ? customOrder.swappableBox5.addons
-          : customOrder.lampshade.addons;
+        : isGlobeLampOrder
+          ? 1
+          : isFixedBox4Order
+            ? 4
+            : isPanelBox5Order || isSwappableBox5Order
+              ? 5
+              : 2;
+const activeAddons = getActiveAddons();
 
     try {
       const response = await fetch('/api/products/custom-orders/validate-promo', {
@@ -525,6 +592,11 @@ function ProductDetailPage() {
           promoCode: promoCode.trim(),
           productType: customOrder.productType || 'panel',
           panelCount: activePanelCount,
+          size: customOrder.productType === 'cylinder'
+            ? customOrder.cylinder.size
+            : customOrder.productType === 'globeLamp'
+              ? customOrder.lampshade.size
+              : customOrder.lampshade.size,
           addons: activeAddons,
         }),
       });
@@ -582,6 +654,16 @@ function ProductDetailPage() {
     });
   };
 
+  const handleNightlightImageUpload = (file) => {
+    setCustomOrder(prev => ({
+      ...prev,
+      nightlightAddon: {
+        ...prev.nightlightAddon,
+        separateImage: file,
+      },
+    }));
+  };
+
   const handleRemovePanelImage = (index) => {
     setCustomOrder(prev => {
       const nextImages = [...prev.images];
@@ -600,6 +682,19 @@ function ProductDetailPage() {
     });
   };
 
+  const handleBundleImageUpload = (index, file) => {
+    if (!file) return;
+    setCustomOrder(prev => {
+      const nextImages = [...prev.images];
+      while (nextImages.length < 4) nextImages.push(null);
+      nextImages[index] = file;
+      return {
+        ...prev,
+        images: nextImages,
+      };
+    });
+  };
+
   useEffect(() => {
     async function fetchProduct() {
       try {
@@ -614,6 +709,11 @@ function ProductDetailPage() {
         }
         const data = await res.json();
         setProduct(data);
+        const resolvedType = resolveProductType(data, slug);
+        setCustomOrder((prev) => ({
+          ...prev,
+          productType: resolvedType,
+        }));
 
         // Fetch related products
         if (data.category && data.category !== 'surface') {
@@ -748,7 +848,7 @@ function ProductDetailPage() {
       'hardware': `Professional-grade hardware security tool designed for authorized testing and research. ${title} is engineered for durability and reliable performance in real-world security assessment scenarios. Built with quality materials and thorough quality assurance to ensure consistent results.`,
       'software': `Comprehensive security software designed for authorized professionals and researchers. ${title} provides systematic assessment capabilities with integrated tools for thorough evaluation. Professional-grade implementation with reliable performance and robust functionality.`,
       'linux': `Security-focused Linux distribution optimized for penetration testing and security research. ${title} combines a carefully-tuned system environment with comprehensive security tools. Designed for authorized professionals and educators conducting security assessments.`,
-      'lamps': `Turn your favorite photos into a warm, glowing lithophane lampshade that pairs with a compatible base. ${title} is handcrafted to preserve fine detail, designed to feel premium, and made to gift, display, and treasure for years. Choose your size, panel count, and lighting for a truly personal shade.`,
+      'lamps': `Turn your favorite photos into a warm, glowing lithophane lamp that pairs with a compatible base. ${title} is handcrafted to preserve fine detail, designed to feel premium, and made to gift, display, and treasure for years. Choose your size, panel count, and lighting for a truly personal lamp.`,
     };
     const defaultDesc = `Premium professional-grade tool from HexForge Labs. ${title} delivers quality and reliability for security professionals and authorized researchers. Built with attention to detail and thoroughly tested for consistent performance.`;
     return categoryDescriptions[prod.category] || defaultDesc;
@@ -762,26 +862,60 @@ function ProductDetailPage() {
     ];
   };
 
+  const activeAddons = getActiveAddons();
+  const nightlightAddon = customOrder.nightlightAddon || {};
+  const mainUploadedImages = customOrder.images.filter(Boolean);
+
   const handleCustomOrderSubmit = async () => {
     const isCylinderOrder = customOrder.productType === 'cylinder';
     const isPanelOrder = customOrder.productType === 'panel';
+    const isGlobeLampOrder = customOrder.productType === 'globeLamp';
+    const isPanelBox5Order = customOrder.productType === 'panelBox5';
     const isFixedBox4Order = customOrder.productType === 'fixedBox4';
+    const isFamilyBundleOrder = customOrder.productType === 'familyBundle4';
     const isSwappableBox5Order = customOrder.productType === 'swappableBox5';
     const activePanelCount = isCylinderOrder
       ? clampPanelCount(customOrder.cylinder.panelCount)
       : isPanelOrder
         ? clampPanelCount(customOrder.lampshade.panelCount)
-        : isFixedBox4Order
-          ? 4
-          : isSwappableBox5Order
-            ? 5
-            : 2;
+        : isGlobeLampOrder
+          ? 1
+          : isFixedBox4Order
+            ? 4
+            : isPanelBox5Order || isSwappableBox5Order
+              ? 5
+              : 2;
     const requiredPanels = activePanelCount;
-    const panelImages = customOrder.images.slice(0, requiredPanels);
+    const panelImages = customOrder.productType === 'globeLamp'
+      ? customOrder.images.filter(Boolean).slice(0, 5)
+      : customOrder.images.slice(0, requiredPanels);
 
-    if (!panelImages.every(Boolean)) {
-      toast.error('Please upload all required images for each panel before submitting.');
+    const activeAddons = getActiveAddons();
+
+    if (customOrder.productType === 'globeLamp') {
+      if (panelImages.length < 1) {
+        toast.error('Please upload at least one image before submitting.');
+        return;
+      }
+    } else if (!panelImages.every(Boolean)) {
+      toast.error('Please upload all required images before submitting.');
       return;
+    }
+
+    const isNightlightSelected = activeAddons.nightlight;
+    if (isNightlightSelected) {
+      const { imageSource, selectedMainImageIndex, separateImage } = customOrder.nightlightAddon || {};
+      if (imageSource === 'main_existing') {
+        if (selectedMainImageIndex == null || !customOrder.images[selectedMainImageIndex]) {
+          toast.error('Please select a main image for the nightlight addon.');
+          return;
+        }
+      } else if (imageSource === 'separate_upload') {
+        if (!separateImage) {
+          toast.error('Please upload a separate image for the nightlight addon.');
+          return;
+        }
+      }
     }
 
     if (!customOrder.customerName.trim() || !customOrder.customerEmail.trim() || !customOrder.customerPhone.trim()) {
@@ -818,14 +952,11 @@ function ProductDetailPage() {
       formData.append('addons', JSON.stringify(customOrder.cylinder.addons || {}));
       formData.append('notes', customOrder.cylinder.notes);
       formData.append('imageStyle', customOrder.cylinder.imageStyle);
-    } else if (isFixedBox4Order) {
-      formData.append('panelCount', 4);
-      formData.append('lightType', customOrder.fixedBox4.lightingIncluded ? 'led' : 'none');
-      formData.append('addons', JSON.stringify(customOrder.fixedBox4.addons || {}));
+    } else if (isFixedBox4Order || isPanelBox5Order) {
+      const panelCount = isPanelBox5Order ? 5 : 4;
+      formData.append('panelCount', panelCount);
+      formData.append('lightType', 'none');
       formData.append('notes', customOrder.fixedBox4.notes);
-      formData.append('lidType', customOrder.fixedBox4.lidType);
-      formData.append('topImageIncluded', !!customOrder.fixedBox4.topImageIncluded);
-      formData.append('lightingIncluded', !!customOrder.fixedBox4.lightingIncluded);
     } else if (isSwappableBox5Order) {
       formData.append('panelCount', 5);
       formData.append('lightType', customOrder.swappableBox5.lightingIncluded ? 'led' : 'none');
@@ -834,6 +965,12 @@ function ProductDetailPage() {
       appendArray('panelImages', customOrder.swappableBox5.panelImages || []);
       formData.append('extraPanelSet', !!customOrder.swappableBox5.extraPanelSet);
       formData.append('lightingIncluded', !!customOrder.swappableBox5.lightingIncluded);
+    } else if (customOrder.productType === 'globeLamp') {
+      formData.append('size', customOrder.lampshade.size);
+      formData.append('addons', JSON.stringify(customOrder.lampshade.addons || {}));
+      formData.append('notes', customOrder.lampshade.notes);
+    } else if (isFamilyBundleOrder) {
+      formData.append('notes', customOrder.notes || '');
     } else {
       formData.append('size', customOrder.lampshade.size);
       formData.append('panelCount', activePanelCount);
@@ -841,6 +978,16 @@ function ProductDetailPage() {
       formData.append('addons', JSON.stringify(customOrder.lampshade.addons || {}));
       formData.append('notes', customOrder.lampshade.notes);
     }
+
+    const nightlightAddon = customOrder.nightlightAddon || {};
+    formData.append('nightlightImageSource', nightlightAddon.imageSource || 'main_existing');
+    if (nightlightAddon.imageSource === 'main_existing' && Number.isInteger(nightlightAddon.selectedMainImageIndex)) {
+      formData.append('nightlightSelectedMainImageIndex', nightlightAddon.selectedMainImageIndex);
+    }
+    if (nightlightAddon.imageSource === 'separate_upload' && nightlightAddon.separateImage) {
+      formData.append('nightlightImage', nightlightAddon.separateImage);
+    }
+
     formData.append('customerName', customOrder.customerName);
     formData.append('customerEmail', customOrder.customerEmail);
     formData.append('customerPhone', customOrder.customerPhone);
@@ -895,7 +1042,6 @@ function ProductDetailPage() {
           lightType: 'led',
           addons: {
             nightlight: false,
-            globe: false,
           },
           notes: '',
         },
@@ -906,18 +1052,10 @@ function ProductDetailPage() {
           lightType: 'led',
           addons: {
             nightlight: false,
-            globe: false,
           },
           notes: '',
         },
         fixedBox4: {
-          lidType: 'standard',
-          topImageIncluded: false,
-          lightingIncluded: false,
-          addons: {
-            nightlight: false,
-            globe: false,
-          },
           notes: '',
         },
         swappableBox5: {
@@ -927,10 +1065,15 @@ function ProductDetailPage() {
           lightingIncluded: false,
           addons: {
             nightlight: false,
-            globe: false,
           },
           notes: '',
         },
+        nightlightAddon: {
+          imageSource: 'main_existing',
+          selectedMainImageIndex: 0,
+          separateImage: null,
+        },
+        notes: '',
         customerName: '',
         customerEmail: '',
         customerPhone: '',
@@ -948,14 +1091,17 @@ function ProductDetailPage() {
     }
   };
 
-  const normalizeProduct = (p) => ({
-    ...p,
-    name: p.name || p.title || 'Untitled',
-    title: p.title || p.name || 'Untitled',
-    imageGallery: Array.isArray(p.imageGallery) ? p.imageGallery.filter(Boolean) : [],
-    image: p.image || p.hero_image_url || (Array.isArray(p.imageGallery) ? p.imageGallery[0] : '') || '',
-    priceFormatted: p.priceFormatted || (Number.isFinite(p.price) ? `$${p.price.toFixed(2)}` : '$0.00'),
-  });
+  const normalizeProduct = (p) => {
+    const basePrice = p?.category === 'lamps' ? getBasePriceForLamp(p, slug) : Number(p?.price || 0);
+    return {
+      ...p,
+      name: p.name || p.title || 'Untitled',
+      title: p.title || p.name || 'Untitled',
+      imageGallery: Array.isArray(p.imageGallery) ? p.imageGallery.filter(Boolean) : [],
+      image: p.image || p.hero_image_url || (Array.isArray(p.imageGallery) ? p.imageGallery[0] : '') || '',
+      priceFormatted: p.priceFormatted || (Number.isFinite(basePrice) ? `$${basePrice.toFixed(2)}` : '$0.00'),
+    };
+  };
 
   const getGalleryImages = (prod) => {
     const list = Array.isArray(prod.imageGallery) ? prod.imageGallery.filter(Boolean) : [];
@@ -1001,39 +1147,59 @@ function ProductDetailPage() {
 
   const normalized = normalizeProduct(product);
   const availability = getAvailabilityStatus(product.stock, product.status);
-  const requiredPanelCount = customOrder.productType === 'cylinder'
-    ? clampPanelCount(customOrder.cylinder.panelCount)
-    : customOrder.productType === 'fixedBox4'
-      ? 4
-      : customOrder.productType === 'swappableBox5'
-        ? 5
-        : clampPanelCount(customOrder.lampshade.panelCount);
+  const requiredPanelCount = customOrder.productType === 'familyBundle4'
+    ? 4
+    : customOrder.productType === 'globeLamp'
+      ? 5
+      : customOrder.productType === 'cylinder'
+        ? clampPanelCount(customOrder.cylinder.panelCount)
+        : customOrder.productType === 'fixedBox4'
+          ? 4
+          : customOrder.productType === 'panelBox5' || customOrder.productType === 'swappableBox5'
+            ? 5
+            : clampPanelCount(customOrder.lampshade.panelCount);
   const isLamp = product.category === 'lamps';
   const galleryImages = getGalleryImages(normalized);
   const heroImage = galleryImages[activeImageIndex] || normalized.image;
   const customOrderTotal = (() => {
+    if (customOrder.productType === 'familyBundle4') {
+      return calculatePrice({ productType: 'familyBundle4' });
+    }
     if (customOrder.productType === 'cylinder') {
       return calculatePrice({
         productType: 'cylinder',
         panelCount: requiredPanelCount,
+        size: customOrder.cylinder.size,
         addons: customOrder.cylinder.addons,
       });
     }
     if (customOrder.productType === 'fixedBox4') {
       return calculatePrice({
         productType: 'fixedBox4',
-        addons: customOrder.fixedBox4.addons,
+      });
+    }
+    if (customOrder.productType === 'panelBox5') {
+      return calculatePrice({
+        productType: 'panelBox5',
       });
     }
     if (customOrder.productType === 'swappableBox5') {
       return calculatePrice({
-        productType: 'swappableBox5',
+        productType: 'panelBox5',
         addons: customOrder.swappableBox5.addons,
+      });
+    }
+    if (customOrder.productType === 'globeLamp') {
+      return calculatePrice({
+        productType: 'globeLamp',
+        size: customOrder.lampshade.size,
+        addons: customOrder.lampshade.addons,
       });
     }
     return calculatePrice({
       productType: 'panel',
       panelCount: requiredPanelCount,
+      size: customOrder.lampshade.size,
       addons: customOrder.lampshade.addons,
     });
   })();
@@ -1114,26 +1280,63 @@ function ProductDetailPage() {
           {/* Highlights */}
           <ul className="product-detail-highlights">
             {productContent.highlights.map((highlight, idx) => (
-              <li key={idx}>{highlight}</li>
+              <li key={`${highlight}-${idx}`}>{highlight}</li>
             ))}
           </ul>
 
           {/* Add to Cart Actions or Custom Order Form */}
           {product.category === 'lamps' ? (
             <div className="product-detail-custom-order">
-              <div className="product-detail-custom-order-title">Custom Photo Lampshade</div>
+              <div className="product-detail-custom-order-title">
+                {customOrder.productType === 'fixedBox4'
+                  ? 'Lithophane Box Lamp – 4-Sided'
+                  : customOrder.productType === 'panelBox5'
+                    ? 'Five-Sided Lithophane Panel Box'
+                    : customOrder.productType === 'globeLamp'
+                      ? 'Lithophane Globe Lamp'
+                      : customOrder.productType === 'cylinder'
+                        ? 'Custom Lithophane Cylinder Lamp'
+                        : customOrder.productType === 'familyBundle4'
+                          ? 'CUSTOM FAMILY LITHOPHANE BUNDLE'
+                          : 'Custom Multi-Panel Lithophane Display'}
+              </div>
               <div className="product-detail-custom-note">
-                Lampshade only — lamp base not included.
+                {customOrder.productType === 'fixedBox4'
+                  ? 'A 4-sided lithophane box with a removable lid.'
+                  : customOrder.productType === 'panelBox5'
+                    ? 'A five-sided panel box with a removable lid.'
+                    : customOrder.productType === 'globeLamp'
+                      ? 'A globe-style lithophane lamp made from your photos.'
+                      : customOrder.productType === 'cylinder'
+                        ? 'A custom lithophane cylinder lamp made from your photos.'
+                        : customOrder.productType === 'familyBundle4'
+                          ? 'A complete family bundle with matching lamps, night lights, and diffuser inserts.'
+                          : 'A custom multi-panel lithophane display made from your photos.'}
               </div>
               <p className="product-detail-custom-order-copy">
-                Upload your favorite photos and we will craft a glowing shade made to gift or display.
+                {customOrder.productType === 'fixedBox4'
+                  ? 'Upload your photos and we will craft a four-sided lithophane box with a removable lid.'
+                  : customOrder.productType === 'panelBox5'
+                    ? 'Upload your photos and we will craft a five-sided panel box with a removable lid.'
+                    : customOrder.productType === 'globeLamp'
+                      ? 'Upload up to 5 images to wrap around your globe lamp. Use a moon background to fill unused sections for a unique ambient look.'
+                      : customOrder.productType === 'familyBundle4' ? (
+                        <>
+                          Upload 4 photos and we’ll create a complete matching set:<br />
+                          • 2 matching lithophane lamps<br />
+                          • 4 matching night lights<br />
+                          • 2 diffuser inserts<br /><br />
+                          Each image is used across all pieces to create a unified family display set.<br />
+                          Perfect for gifts, memorials, or centerpiece decor.
+                        </>
+                      ) : 'Upload your favorite photos and we will craft a glowing multi-panel lithophane display made to gift or display.'}
               </p>
 
               {customOrderResult && (
                 <div className="product-detail-custom-success">
                   <h3>Order started</h3>
                   <p>
-                    Your custom lampshade order <strong>{customOrderResult.orderId}</strong> has been created.
+                    Your custom order <strong>{customOrderResult.orderId}</strong> has been created.
                   </p>
                   <div className="product-detail-summary-row">
                     <span>Total Price:</span>
@@ -1150,43 +1353,51 @@ function ProductDetailPage() {
                 </div>
               )}
 
-              <div className="product-detail-custom-field">
-                <label className="product-detail-custom-label">Upload Photos</label>
-                <p className="product-detail-custom-helper">Upload one image per panel in the order you want them displayed.</p>
-                {Array.from({ length: requiredPanelCount }, (_, index) => (
-                  <div key={index} className="product-detail-panel-upload-block">
-                    <div className="product-detail-panel-upload-label">Panel {index + 1}</div>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => {
-                        const file = e.target.files[0];
-                        handlePanelImageUpload(index, file);
-                      }}
-                      className="product-detail-custom-file"
-                    />
-                    {customOrder.images[index] && (
-                      <div className="product-detail-custom-preview">
-                        <img
-                          src={URL.createObjectURL(customOrder.images[index])}
-                          alt={`Panel ${index + 1} Preview`}
-                          className="product-detail-custom-preview-img"
-                        />
-                        <div className="product-detail-custom-filename">
-                          {customOrder.images[index].name}
-                        </div>
-                        <button
-                          type="button"
-                          className="product-detail-custom-remove"
-                          onClick={() => handleRemovePanelImage(index)}
-                        >
-                          Remove
-                        </button>
+              {customOrder.productType !== 'familyBundle4' && (
+                <div className="product-detail-custom-field">
+                  <label className="product-detail-custom-label">Upload Photos</label>
+                  <p className="product-detail-custom-helper">
+                    {customOrder.productType === 'globeLamp'
+                      ? 'Upload up to 5 images to wrap around your globe lamp. Use a moon background to fill unused sections for a unique ambient look.'
+                      : 'Upload one image per panel in the order you want them displayed.'}
+                  </p>
+                  {Array.from({ length: requiredPanelCount }, (_, index) => (
+                    <div key={`panel-${requiredPanelCount}-${index}`} className="product-detail-panel-upload-block">
+                      <div className="product-detail-panel-upload-label">
+                        {customOrder.productType === 'globeLamp' ? `Image ${index + 1}` : `Panel ${index + 1}`}
                       </div>
-                    )}
-                  </div>
-                ))}
-              </div>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => {
+                          const file = e.target.files[0];
+                          handlePanelImageUpload(index, file);
+                        }}
+                        className="product-detail-custom-file"
+                      />
+                      {customOrder.images[index] && (
+                        <div className="product-detail-custom-preview">
+                          <img
+                            src={URL.createObjectURL(customOrder.images[index])}
+                            alt={`${customOrder.productType === 'globeLamp' ? `Image ${index + 1}` : `Panel ${index + 1}`} Preview`}
+                            className="product-detail-custom-preview-img"
+                          />
+                          <div className="product-detail-custom-filename">
+                            {customOrder.images[index].name}
+                          </div>
+                          <button
+                            type="button"
+                            className="product-detail-custom-remove"
+                            onClick={() => handleRemovePanelImage(index)}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
 
               <div className="product-detail-custom-field">
                 <label className="product-detail-custom-label">Your Contact Information</label>
@@ -1256,58 +1467,154 @@ function ProductDetailPage() {
                 </div>
               </div>
 
-              {customOrder.productType === 'cylinder' ? (
-                <CylinderConfigurator
-                  cylinder={customOrder.cylinder}
-                  onSizeChange={(value) => updateCylinder({ size: value })}
-                  onPanelCountChange={(value) => updateCylinder({ panelCount: clampPanelCount(value) })}
-                  onImageStyleChange={(value) => updateCylinder({ imageStyle: value })}
-                  onLightTypeChange={(value) => updateCylinder({ lightType: value })}
-                  onToggleAddon={(value) => toggleAddon('cylinder', value)}
-                  onNotesChange={(value) => updateCylinder({ notes: value })}
-                />
-              ) : customOrder.productType === 'fixedBox4' ? (
-                <BoxConfigurator
-                  box={customOrder.fixedBox4}
-                  onLidTypeChange={(value) => updateFixedBox4({ lidType: value })}
-                  onTopImageIncludedChange={(value) => updateFixedBox4({ topImageIncluded: value })}
-                  onLightingIncludedChange={(value) => updateFixedBox4({ lightingIncluded: value })}
-                  onToggleAddon={(value) => toggleAddon('fixedBox4', value)}
-                  onNotesChange={(value) => updateFixedBox4({ notes: value })}
-                />
-              ) : customOrder.productType === 'swappableBox5' ? (
-                <SwappableBoxConfigurator
-                  swappableBox={customOrder.swappableBox5}
-                  onExtraPanelSetChange={(value) => updateSwappableBox5({ extraPanelSet: value })}
-                  onLightingIncludedChange={(value) => updateSwappableBox5({ lightingIncluded: value })}
-                  onToggleAddon={(value) => toggleAddon('swappableBox5', value)}
-                  onNotesChange={(value) => updateSwappableBox5({ notes: value })}
-                />
-              ) : (
-                <PanelConfigurator
-                  lampshade={customOrder.lampshade}
-                  onSizeChange={(value) => updateLampshade({ size: value })}
-                  onPanelCountChange={(value) => {
-                    const nextCount = clampPanelCount(value);
-                    setCustomOrder((prev) => {
-                      const nextImages = [...(prev.images || [])].slice(0, nextCount);
-                      while (nextImages.length < nextCount) {
-                        nextImages.push(null);
-                      }
-                      return {
-                        ...prev,
-                        images: nextImages,
-                        lampshade: {
-                          ...prev.lampshade,
-                          panelCount: nextCount,
-                        },
-                      };
-                    });
-                  }}
-                  onLightTypeChange={(value) => updateLampshade({ lightType: value })}
-                  onToggleAddon={(value) => toggleAddon('lampshade', value)}
-                  onNotesChange={(value) => updateLampshade({ notes: value })}
-                />
+              <div className="product-detail-configurator" key={customOrder.productType}>
+                {customOrder.productType === 'cylinder' ? (
+                  <CylinderConfigurator
+                    cylinder={customOrder.cylinder}
+                    onSizeChange={(value) => updateCylinder({ size: value })}
+                    onPanelCountChange={(value) => {
+                      const nextCount = clampPanelCount(value);
+                      setCustomOrder((prev) => {
+                        const nextImages = [...(prev.images || [])].slice(0, nextCount);
+                        while (nextImages.length < nextCount) {
+                          nextImages.push(null);
+                        }
+                        return {
+                          ...prev,
+                          images: nextImages,
+                          cylinder: {
+                            ...prev.cylinder,
+                            panelCount: nextCount,
+                          },
+                        };
+                      });
+                    }}
+                    onImageStyleChange={(value) => updateCylinder({ imageStyle: value })}
+                    onLightTypeChange={(value) => updateCylinder({ lightType: value })}
+                    onToggleAddon={(value) => toggleAddon('cylinder', value)}
+                    onNotesChange={(value) => updateCylinder({ notes: value })}
+                  />
+                ) : requiresBoxConfigurator(customOrder.productType) ? (
+                  <BoxConfigurator
+                    box={customOrder.fixedBox4}
+                    onNotesChange={(value) => updateFixedBox4({ notes: value })}
+                  />
+                ) : customOrder.productType === 'swappableBox5' ? (
+                  <SwappableBoxConfigurator
+                    swappableBox={customOrder.swappableBox5}
+                    onExtraPanelSetChange={(value) => updateSwappableBox5({ extraPanelSet: value })}
+                    onLightingIncludedChange={(value) => updateSwappableBox5({ lightingIncluded: value })}
+                    onToggleAddon={(value) => toggleAddon('swappableBox5', value)}
+                    onNotesChange={(value) => updateSwappableBox5({ notes: value })}
+                  />
+                ) : customOrder.productType === 'globeLamp' ? (
+                  <GlobeLampConfigurator
+                    lampshade={customOrder.lampshade}
+                    onSizeChange={(value) => updateLampshade({ size: value })}
+                    onToggleAddon={(value) => toggleAddon('lampshade', value)}
+                    onNotesChange={(value) => updateLampshade({ notes: value })}
+                  />
+                ) : customOrder.productType === 'familyBundle4' ? (
+                  <FamilyBundleConfigurator
+                    images={customOrder.images}
+                    onImageUpload={handleBundleImageUpload}
+                    notes={customOrder.notes}
+                    onNotesChange={(value) => setCustomOrder((prev) => ({ ...prev, notes: value }))}
+                  />
+                ) : (
+                  <PanelConfigurator
+                    lampshade={customOrder.lampshade}
+                    onSizeChange={(value) => updateLampshade({ size: value })}
+                    onPanelCountChange={(value) => {
+                      const nextCount = clampPanelCount(value);
+                      setCustomOrder((prev) => {
+                        const nextImages = [...(prev.images || [])].slice(0, nextCount);
+                        while (nextImages.length < nextCount) {
+                          nextImages.push(null);
+                        }
+                        return {
+                          ...prev,
+                          images: nextImages,
+                          lampshade: {
+                            ...prev.lampshade,
+                            panelCount: nextCount,
+                          },
+                        };
+                      });
+                    }}
+                    onLightTypeChange={(value) => updateLampshade({ lightType: value })}
+                    onToggleAddon={(value) => toggleAddon('lampshade', value)}
+                    onNotesChange={(value) => updateLampshade({ notes: value })}
+                  />
+                )}
+              </div>
+
+              {customOrder.productType !== 'familyBundle4' && activeAddons.nightlight && (
+                <div className="product-detail-custom-field">
+                  <label className="product-detail-custom-label">Nightlight Image</label>
+                  <div className="product-detail-custom-extras">
+                    <label className="product-detail-custom-radio">
+                      <input
+                        type="radio"
+                        name="nightlightImageSource"
+                        value="main_existing"
+                        checked={nightlightAddon.imageSource === 'main_existing'}
+                        onChange={(e) => updateNightlightAddon({
+                          imageSource: e.target.value,
+                          separateImage: null,
+                        })}
+                      />
+                      Use one of my main uploaded images
+                    </label>
+                    <label className="product-detail-custom-radio">
+                      <input
+                        type="radio"
+                        name="nightlightImageSource"
+                        value="separate_upload"
+                        checked={nightlightAddon.imageSource === 'separate_upload'}
+                        onChange={(e) => updateNightlightAddon({ imageSource: e.target.value })}
+                      />
+                      Upload a separate image
+                    </label>
+                  </div>
+
+                  {nightlightAddon.imageSource === 'main_existing' ? (
+                    <div style={{ marginTop: '12px' }}>
+                      <select
+                        value={nightlightAddon.selectedMainImageIndex ?? ''}
+                        onChange={(e) => updateNightlightAddon({ selectedMainImageIndex: Number(e.target.value) })}
+                        className="product-detail-custom-select"
+                        disabled={mainUploadedImages.length === 0}
+                      >
+                        <option value="" disabled>
+                          {mainUploadedImages.length === 0 ? 'Upload main images first' : 'Select a main image'}
+                        </option>
+                        {mainUploadedImages.map((img, index) => (
+                          <option key={index} value={index}>
+                            Main Image {index + 1}{img.name ? ` — ${img.name}` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : (
+                    <div style={{ marginTop: '12px' }}>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) handleNightlightImageUpload(file);
+                        }}
+                        className="product-detail-custom-input"
+                      />
+                      {nightlightAddon.separateImage && (
+                        <div style={{ marginTop: '8px', color: '#ccc' }}>
+                          Selected file: {nightlightAddon.separateImage.name}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               )}
 
               {/* Promo Code Section */}
@@ -1393,7 +1700,7 @@ function ProductDetailPage() {
                   </>
                 )}
                 <div className="product-detail-summary-note">
-                  A 50% deposit is required to begin your custom lampshade order.
+                  A 50% deposit is required to begin your custom order.
                 </div>
               </div>
 
@@ -1403,7 +1710,13 @@ function ProductDetailPage() {
               </div>
 
               <div className="product-detail-custom-note">
-                Designed for use with a compatible lamp base. This listing is for the custom shade only.
+                {customOrder.productType === 'familyBundle4'
+                  ? 'This listing covers a complete family bundle with matching lamps, night lights, and diffuser inserts.'
+                  : customOrder.productType === 'fixedBox4' || customOrder.productType === 'panelBox5'
+                    ? 'This listing is for the custom lithophane box only.'
+                    : customOrder.productType === 'globeLamp'
+                      ? 'Designed as a globe-style lithophane lamp.'
+                      : 'Designed for use with a compatible lamp base. This listing is for the custom shade only.'}
               </div>
 
               <button
@@ -1411,7 +1724,7 @@ function ProductDetailPage() {
                 className="product-detail-custom-submit"
                 disabled={isSubmittingCustomOrder || !customOrder.images.slice(0, requiredPanelCount).every(Boolean)}
               >
-                {isSubmittingCustomOrder ? 'Processing...' : 'Pay Deposit & Start Custom Lampshade'}
+                {isSubmittingCustomOrder ? 'Processing...' : 'Pay Deposit & Start Custom Order'}
               </button>
             </div>
           ) : (
@@ -1435,7 +1748,7 @@ function ProductDetailPage() {
           {/* Trust Indicators */}
           <div className="product-detail-trust-indicators">
             {getTrustIndicators().map((indicator, idx) => (
-              <div key={idx} className="product-detail-trust-item">
+              <div key={`${indicator.text}-${idx}`} className="product-detail-trust-item">
                 <div className="product-detail-trust-icon">{indicator.icon}</div>
                 <div>{indicator.text}</div>
               </div>
@@ -1489,7 +1802,7 @@ function ProductDetailPage() {
           <div className="product-detail-section-title">What's Included</div>
           <ul>
             {productContent.whatsIncluded.map((item, idx) => (
-              <li key={idx}>{item}</li>
+              <li key={`${item}-${idx}`}>{item}</li>
             ))}
           </ul>
         </div>
@@ -1500,7 +1813,7 @@ function ProductDetailPage() {
         <div className="product-detail-use-cases-title">Use Cases & Applications</div>
         <ul>
           {productContent.useCases.map((useCase, idx) => (
-            <li key={idx}>{useCase}</li>
+            <li key={`${useCase}-${idx}`}>{useCase}</li>
           ))}
         </ul>
       </div>
