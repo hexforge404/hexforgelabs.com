@@ -5,11 +5,21 @@ const rateLimit = require('express-rate-limit');
 const Product = require('../models/Product');
 const Order = require('../models/Order');
 const CustomOrder = require('../models/CustomOrder');
+const PrintJob = require('../models/PrintJob');
+const Batch = require('../models/Batch');
 const PromoCode = require('../models/PromoCode');
 const PromoAuditLog = require('../models/PromoAuditLog');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const archiver = require('archiver');
+const {
+  normalizeCustomOrder,
+  resolveCustomOrderImageDiskPath,
+  isAllowedFulfillmentTransition,
+  getFulfillmentTimestampKey,
+  FULFILLMENT_STAGES,
+} = require('../utils/customOrderUtils');
 
 const STATUS_VALUES = ['draft', 'active', 'archived'];
 
@@ -606,7 +616,7 @@ router.get('/custom-orders', async (req, res) => {
     const total = await CustomOrder.countDocuments(filter);
 
     res.json({
-      data: customOrders,
+      data: customOrders.map(normalizeCustomOrder),
       pagination: {
         total,
         limit: Number(limit),
@@ -623,6 +633,68 @@ router.get('/custom-orders', async (req, res) => {
   }
 });
 
+// Download all custom order images as a ZIP archive
+router.get('/custom-orders/:orderId/images.zip', requireAdmin, async (req, res) => {
+  try {
+    const customOrder = await CustomOrder.findOne({ orderId: req.params.orderId });
+    if (!customOrder) {
+      return res.status(404).json({ error: 'Custom order not found' });
+    }
+
+    const images = Array.isArray(customOrder.images) ? customOrder.images.filter(Boolean) : [];
+    if (images.length === 0) {
+      return res.status(400).json({ error: 'No uploaded images available for this order.' });
+    }
+
+    const zipFilename = `custom-order-${customOrder.orderId}.zip`;
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${zipFilename}"`);
+
+    const archive = archiver('zip', { zlib: { level: 9 } });
+    archive.on('error', (err) => {
+      console.error('❌ ZIP archive error:', err);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Failed to create ZIP archive' });
+      } else {
+        res.end();
+      }
+    });
+
+    archive.pipe(res);
+
+    for (let index = 0; index < images.length; index += 1) {
+      const img = images[index];
+      const diskPath = resolveCustomOrderImageDiskPath(img);
+      if (!diskPath) {
+        archive.append(`Missing file: ${img.originalName || `image-${index + 1}`}` , { name: `missing-${index + 1}.txt` });
+        continue;
+      }
+      try {
+        if (fs.existsSync(diskPath)) {
+          const entryName = img.originalName || path.basename(diskPath) || `image-${index + 1}`;
+          archive.file(diskPath, { name: entryName });
+        } else {
+          archive.append(`Missing file: ${img.originalName || path.basename(diskPath) || 'unknown'}`, {
+            name: `missing-${index + 1}.txt`
+          });
+        }
+      } catch (zipErr) {
+        console.warn('⚠️ Skipping missing image for ZIP:', zipErr.message || zipErr);
+      }
+    }
+
+    await archive.finalize();
+  } catch (err) {
+    console.error('❌ Failed to stream images ZIP:', err);
+    if (!res.headersSent) {
+      res.status(500).json({
+        error: 'Failed to create ZIP archive',
+        details: process.env.NODE_ENV === 'development' ? err.message : undefined
+      });
+    }
+  }
+});
+
 // GET single custom order by ID
 router.get('/custom-orders/:orderId', async (req, res) => {
   try {
@@ -632,7 +704,7 @@ router.get('/custom-orders/:orderId', async (req, res) => {
       return res.status(404).json({ error: 'Custom order not found' });
     }
 
-    res.json(customOrder);
+    res.json(normalizeCustomOrder(customOrder));
   } catch (err) {
     console.error('❌ Failed to fetch custom order:', err);
     res.status(500).json({
@@ -642,16 +714,874 @@ router.get('/custom-orders/:orderId', async (req, res) => {
   }
 });
 
+const getPrintJobDefaults = (productType) => {
+  const normalized = String(productType || '').toLowerCase();
+  const defaults = {
+    printerProfile: 'Cura Default Profile',
+    materialProfile: 'PLA Standard',
+    slicerProfile: 'Ultimaker Cura',
+    nozzle: '0.4mm',
+    layerHeight: 0.2,
+    infill: 20,
+    wallCount: 2,
+    estimatedPrintHours: 4,
+  };
+
+  if (normalized.includes('cylinder')) {
+    return {
+      ...defaults,
+      printerProfile: 'Prusa MK3S+ / Cylinder',
+      slicerProfile: 'PrusaSlicer',
+      layerHeight: 0.18,
+      infill: 15,
+      wallCount: 2,
+      estimatedPrintHours: 8,
+    };
+  }
+
+  if (normalized.includes('globe')) {
+    return {
+      ...defaults,
+      printerProfile: 'Anycubic Photon',
+      slicerProfile: 'Lychee Slicer',
+      layerHeight: 0.05,
+      infill: 10,
+      wallCount: 1,
+      estimatedPrintHours: 12,
+    };
+  }
+
+  if (normalized.includes('box') || normalized.includes('panel')) {
+    return {
+      ...defaults,
+      printerProfile: 'Prusa MK4',
+      slicerProfile: 'PrusaSlicer',
+      layerHeight: 0.2,
+      infill: 15,
+      wallCount: 2,
+      estimatedPrintHours: 6,
+    };
+  }
+
+  return defaults;
+};
+
+const normalizePrintJobPayload = (rawJob) => {
+  if (!rawJob) return rawJob;
+  const job = rawJob.toObject ? rawJob.toObject({ getters: true, virtuals: false }) : { ...rawJob };
+  return job;
+};
+
+const normalizeCompatProfile = (value) => String(value || '').trim().toLowerCase();
+
+const isSlicerProfileCompatible = (candidate, existing) => {
+  const a = normalizeCompatProfile(candidate);
+  const b = normalizeCompatProfile(existing);
+  if (!a || !b) return true;
+  return a === b || a.includes(b) || b.includes(a);
+};
+
+const isPrintJobCompatibleWithBatch = (job, batch) => {
+  if (!batch) return false;
+  return (
+    normalizeCompatProfile(job.printerProfile) === normalizeCompatProfile(batch.printerProfile) &&
+    normalizeCompatProfile(job.materialProfile) === normalizeCompatProfile(batch.materialProfile) &&
+    normalizeCompatProfile(job.nozzle) === normalizeCompatProfile(batch.nozzle) &&
+    Number(job.layerHeight) === Number(batch.layerHeight) &&
+    isSlicerProfileCompatible(job.slicerProfile, batch.slicerProfile)
+  );
+};
+
+const computeBatchTotals = async (printJobIds) => {
+  if (!Array.isArray(printJobIds) || !printJobIds.length) return 0;
+  const jobs = await PrintJob.find({ printJobId: { $in: printJobIds } });
+  return jobs.reduce((sum, job) => sum + Number(job.estimatedPrintHours || 0), 0);
+};
+
+const sanitizeFilename = (value) => {
+  if (!value) return 'file';
+  return String(value)
+    .trim()
+    .replace(/[^a-zA-Z0-9._-]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 180) || 'file';
+};
+
+const buildWorkOrderHtml = (order, printJob) => {
+  const shipping = order.customer?.shippingAddress
+    ? `${order.customer.shippingAddress.street}, ${order.customer.shippingAddress.city}, ${order.customer.shippingAddress.state} ${order.customer.shippingAddress.zipCode}, ${order.customer.shippingAddress.country}`
+    : 'Not provided';
+  const imagesCount = Array.isArray(order.images) ? order.images.length : order.imagesCount || 0;
+  const createdAt = order.createdAt ? new Date(order.createdAt).toLocaleString() : 'N/A';
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Work Order ${order.orderId}</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #0a0a0a; color: #eceff4; padding: 24px; }
+    h1, h2 { color: #00ffc8; }
+    .section { margin-bottom: 20px; padding: 16px; border: 1px solid #222; border-radius: 10px; background: #10131a; }
+    .section dt { font-weight: bold; margin-top: 8px; }
+    .section dd { margin: 4px 0 10px 0; }
+    .metadata { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+  </style>
+</head>
+<body>
+  <h1>Work Order ${order.orderId}</h1>
+  <div class="section">
+    <h2>Customer</h2>
+    <dl class="metadata">
+      <dt>Name</dt><dd>${order.customer?.name || 'Unknown'}</dd>
+      <dt>Email</dt><dd>${order.customer?.email || 'Unknown'}</dd>
+      <dt>Phone</dt><dd>${order.customer?.phone || 'Unknown'}</dd>
+      <dt>Shipping</dt><dd>${shipping}</dd>
+    </dl>
+  </div>
+  <div class="section">
+    <h2>Order Details</h2>
+    <dl class="metadata">
+      <dt>Product</dt><dd>${order.productName || 'Unknown'}</dd>
+      <dt>Type</dt><dd>${order.productType || 'Unknown'}</dd>
+      <dt>Panels</dt><dd>${order.panels || 'N/A'}</dd>
+      <dt>Images</dt><dd>${imagesCount}</dd>
+      <dt>Payment</dt><dd>${order.paymentStatus || 'pending'}</dd>
+      <dt>Fulfillment</dt><dd>${order.fulfillmentStatus || order.status || 'submitted'}</dd>
+      <dt>Created</dt><dd>${createdAt}</dd>
+    </dl>
+  </div>
+  <div class="section">
+    <h2>Print Job</h2>
+    <dl class="metadata">
+      <dt>Print Job</dt><dd>${printJob.printJobId}</dd>
+      <dt>Status</dt><dd>${printJob.status}</dd>
+      <dt>Printer</dt><dd>${printJob.printerProfile || 'TBD'}</dd>
+      <dt>Material</dt><dd>${printJob.materialProfile || 'TBD'}</dd>
+      <dt>Slicer</dt><dd>${printJob.slicerProfile || 'TBD'}</dd>
+      <dt>Nozzle</dt><dd>${printJob.nozzle || 'TBD'}</dd>
+      <dt>Layer Height</dt><dd>${printJob.layerHeight || 'TBD'}</dd>
+      <dt>Generation Method</dt><dd>${printJob.generationMethod || 'Manual'}</dd>
+      <dt>Lithophane Type</dt><dd>${printJob.lithophaneType || 'Custom'}</dd>
+      <dt>Target Width</dt><dd>${printJob.targetWidthMm || 'N/A'} mm</dd>
+      <dt>Target Height</dt><dd>${printJob.targetHeightMm || 'N/A'} mm</dd>
+      <dt>Target Depth</dt><dd>${printJob.targetDepthMm || 'N/A'} mm</dd>
+      <dt>Panel Count</dt><dd>${printJob.panelCount || 1}</dd>
+      <dt>STL Filename</dt><dd>${printJob.stlFilename || 'Not set'}</dd>
+      <dt>STL Path</dt><dd>${printJob.stlPath || 'Not set'}</dd>
+      <dt>STL Version</dt><dd>${printJob.stlVersion || 'Not set'}</dd>
+      <dt>Infill</dt><dd>${printJob.infill || 'TBD'}%</dd>
+      <dt>Walls</dt><dd>${printJob.wallCount || 'TBD'}</dd>
+      <dt>Estimated Hours</dt><dd>${printJob.estimatedPrintHours || 0}</dd>
+    </dl>
+  </div>
+  <div class="section">
+    <h2>Notes</h2>
+    <pre style="white-space: pre-wrap; color: #d1dbe3;">${(printJob.notes || 'No notes').replace(/</g, '&lt;')}</pre>
+  </div>
+</body>
+</html>`;
+};
+
+// CREATE a print job from a custom order
+router.post('/print-jobs', async (req, res) => {
+  try {
+    const {
+      orderId,
+      customOrderId,
+      printerProfile,
+      materialProfile,
+      slicerProfile,
+      nozzle,
+      layerHeight,
+      infill,
+      wallCount,
+      generationMethod,
+      lithophaneType,
+      targetWidthMm,
+      targetHeightMm,
+      targetDepthMm,
+      panelCount,
+      generationNotes,
+      status,
+      assignedBatchId,
+      stlFilename,
+      stlPath,
+      stlVersion,
+      projectFilePath,
+      gcodePath,
+      estimatedPrintHours,
+      notes,
+      partType,
+    } = req.body;
+
+    if (!orderId && !customOrderId) {
+      return res.status(400).json({ error: 'orderId or customOrderId is required to create a print job.' });
+    }
+
+    let customOrder;
+    if (orderId) {
+      customOrder = await CustomOrder.findOne({ orderId });
+    }
+    if (!customOrder && customOrderId) {
+      customOrder = await CustomOrder.findOne({ _id: customOrderId });
+    }
+    if (!customOrder) {
+      return res.status(404).json({ error: 'Custom order not found.' });
+    }
+
+    const normalizedOrder = normalizeCustomOrder(customOrder);
+    const suggested = getPrintJobDefaults(normalizedOrder.productType);
+
+    const sourceImages = Array.isArray(normalizedOrder.images)
+      ? normalizedOrder.images.map((img) => ({
+          path: img.path || '',
+          publicUrl: img.publicUrl || '',
+          relativePath: img.relativePath || '',
+          originalName: img.originalName || '',
+          mimeType: img.mimeType || '',
+          size: img.size || 0,
+        }))
+      : [];
+
+    const printJob = await PrintJob.create({
+      orderId: normalizedOrder.orderId,
+      customOrderId: customOrderId || normalizedOrder._id || normalizedOrder.orderId,
+      productType: normalizedOrder.productType || 'panel',
+      partType: partType || normalizedOrder.productType || 'custom_order',
+      sourceImages,
+      printerProfile: printerProfile || suggested.printerProfile,
+      materialProfile: materialProfile || suggested.materialProfile,
+      slicerProfile: slicerProfile || suggested.slicerProfile,
+      nozzle: nozzle || suggested.nozzle,
+      layerHeight: typeof layerHeight === 'number' ? layerHeight : suggested.layerHeight,
+      infill: typeof infill === 'number' ? infill : suggested.infill,
+      wallCount: typeof wallCount === 'number' ? wallCount : suggested.wallCount,
+      generationMethod: generationMethod || '',
+      lithophaneType: lithophaneType || '',
+      targetWidthMm: typeof targetWidthMm === 'number' ? targetWidthMm : 0,
+      targetHeightMm: typeof targetHeightMm === 'number' ? targetHeightMm : 0,
+      targetDepthMm: typeof targetDepthMm === 'number' ? targetDepthMm : 0,
+      panelCount: typeof panelCount === 'number' ? panelCount : 1,
+      generationNotes: generationNotes || '',
+      status: status || 'queued_for_generation',
+      assignedBatchId: assignedBatchId || '',
+      stlFilename: stlFilename || '',
+      stlPath: stlPath || '',
+      stlVersion: stlVersion || '',
+      projectFilePath: projectFilePath || '',
+      gcodePath: gcodePath || '',
+      estimatedPrintHours: typeof estimatedPrintHours === 'number' ? estimatedPrintHours : suggested.estimatedPrintHours,
+      notes: notes || '',
+    });
+
+    res.status(201).json(normalizePrintJobPayload(printJob));
+  } catch (err) {
+    console.error('❌ Failed to create print job:', err);
+    res.status(500).json({
+      error: 'Failed to create print job',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined,
+    });
+  }
+});
+
+// GET print jobs
+router.get('/print-jobs', async (req, res) => {
+  try {
+    const { status, limit = 100, offset = 0 } = req.query;
+    const filter = {};
+    if (status) filter.status = status;
+
+    if (typeof status === 'string' && status.includes(',')) {
+      const statusList = status.split(',').map((s) => s.trim()).filter(Boolean);
+      if (statusList.length) {
+        filter.status = { $in: statusList };
+      }
+    }
+
+    const jobs = await PrintJob.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(Number(offset))
+      .limit(Number(limit));
+
+    const total = await PrintJob.countDocuments(filter);
+
+    res.json({
+      data: jobs.map(normalizePrintJobPayload),
+      pagination: {
+        total,
+        limit: Number(limit),
+        offset: Number(offset),
+        hasMore: Number(offset) + Number(limit) < total,
+      }
+    });
+  } catch (err) {
+    console.error('❌ Failed to fetch print jobs:', err);
+    res.status(500).json({
+      error: 'Failed to fetch print jobs',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined,
+    });
+  }
+});
+
+// PATCH print job fields/status
+router.get('/print-jobs/:printJobId/slicer-packet.zip', async (req, res) => {
+  try {
+    const { printJobId } = req.params;
+    const printJob = await PrintJob.findOne({ printJobId });
+    if (!printJob) {
+      return res.status(404).json({ error: 'Print job not found.' });
+    }
+
+    const customOrder = await CustomOrder.findOne({ orderId: printJob.orderId });
+    if (!customOrder) {
+      return res.status(404).json({ error: 'Linked custom order not found.' });
+    }
+
+    const normalizedOrder = normalizeCustomOrder(customOrder);
+    const jobPayload = normalizePrintJobPayload(printJob);
+    const orderPayload = {
+      ...normalizedOrder,
+      sourceImages: normalizedOrder.images,
+    };
+
+    const zipFilename = `slicer-packet-${sanitizeFilename(printJob.printJobId)}.zip`;
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${zipFilename}"`);
+
+    const archive = archiver('zip', { zlib: { level: 9 } });
+    archive.on('error', (err) => {
+      console.error('❌ Slicer packet archive error:', err);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Failed to create slicer packet' });
+      } else {
+        res.end();
+      }
+    });
+
+    archive.pipe(res);
+
+    archive.append(JSON.stringify(orderPayload, null, 2), { name: 'order.json' });
+    archive.append(JSON.stringify(jobPayload, null, 2), { name: 'print-job.json' });
+    archive.append(buildWorkOrderHtml(normalizedOrder, jobPayload), { name: 'work-order.html' });
+
+    const notesText = [];
+    notesText.push(`Custom Order Notes:\n${normalizedOrder.notes || 'None'}`);
+    notesText.push('');
+    notesText.push(`Print Job Notes:\n${jobPayload.notes || 'None'}`);
+    archive.append(notesText.join('\n'), { name: 'slicer-notes.txt' });
+
+    const outputName = `slicer-packet-${sanitizeFilename(printJob.printJobId)}`;
+    archive.append(outputName, { name: 'output-name.txt' });
+
+    const sourceImages = Array.isArray(jobPayload.sourceImages) ? jobPayload.sourceImages : [];
+    for (let index = 0; index < sourceImages.length; index += 1) {
+      const img = sourceImages[index];
+      const diskPath = resolveCustomOrderImageDiskPath(img);
+      if (!diskPath) {
+        archive.append(`Missing source image at index ${index + 1}: ${img.originalName || 'unknown'}`, {
+          name: `missing-image-${index + 1}.txt`
+        });
+        continue;
+      }
+      try {
+        if (fs.existsSync(diskPath)) {
+          const ext = path.extname(diskPath) || '.img';
+          const safeName = sanitizeFilename(img.originalName || `source-image-${index + 1}`);
+          const entryName = `source-image-${index + 1}-${safeName}${ext}`;
+          archive.file(diskPath, { name: entryName });
+        } else {
+          archive.append(`Missing source image file: ${img.originalName || 'unknown'}`, {
+            name: `missing-image-${index + 1}.txt`
+          });
+        }
+      } catch (imgErr) {
+        archive.append(`Failed to attach source image: ${img.originalName || 'unknown'} (${imgErr.message || imgErr})`, {
+          name: `missing-image-${index + 1}.txt`
+        });
+      }
+    }
+
+    await archive.finalize();
+  } catch (err) {
+    console.error('❌ Failed to export slicer packet:', err);
+    if (!res.headersSent) {
+      res.status(500).json({
+        error: 'Failed to export slicer packet',
+        details: process.env.NODE_ENV === 'development' ? err.message : undefined,
+      });
+    }
+  }
+});
+
+router.get('/print-jobs/:printJobId/lithophane-packet.zip', async (req, res) => {
+  try {
+    const { printJobId } = req.params;
+    const printJob = await PrintJob.findOne({ printJobId });
+    if (!printJob) {
+      return res.status(404).json({ error: 'Print job not found.' });
+    }
+
+    const customOrder = await CustomOrder.findOne({ orderId: printJob.orderId });
+    if (!customOrder) {
+      return res.status(404).json({ error: 'Linked custom order not found.' });
+    }
+
+    const normalizedOrder = normalizeCustomOrder(customOrder);
+    const jobPayload = normalizePrintJobPayload(printJob);
+    const orderPayload = {
+      ...normalizedOrder,
+      sourceImages: normalizedOrder.images,
+    };
+
+    const zipFilename = `lithophane-packet-${sanitizeFilename(printJob.printJobId)}.zip`;
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${zipFilename}"`);
+
+    const archive = archiver('zip', { zlib: { level: 9 } });
+    archive.on('error', (err) => {
+      console.error('❌ Lithophane packet archive error:', err);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Failed to create lithophane packet' });
+      } else {
+        res.end();
+      }
+    });
+
+    archive.pipe(res);
+
+    archive.append(JSON.stringify(orderPayload, null, 2), { name: 'order.json' });
+    archive.append(JSON.stringify(jobPayload, null, 2), { name: 'print-job.json' });
+    archive.append(buildWorkOrderHtml(normalizedOrder, jobPayload), { name: 'work-order.html' });
+
+    const instructions = [];
+    instructions.push(`Lithophane Source Packet for Print Job ${printJob.printJobId}`);
+    instructions.push('----------------------------------------');
+    instructions.push(`Order: ${normalizedOrder.orderId}`);
+    instructions.push(`Generation Method: ${printJob.generationMethod || 'Manual'}`);
+    instructions.push(`Lithophane Type: ${printJob.lithophaneType || 'Custom'}`);
+    instructions.push(`Target Size: ${printJob.targetWidthMm || 'N/A'}mm x ${printJob.targetHeightMm || 'N/A'}mm x ${printJob.targetDepthMm || 'N/A'}mm`);
+    instructions.push(`Panel Count: ${printJob.panelCount || 1}`);
+    instructions.push('');
+    instructions.push('1. Open LithophaneMaker Desktop.');
+    instructions.push('2. Import the source images included in this packet.');
+    instructions.push('3. Set the target dimensions and rendering options per the details above.');
+    instructions.push('4. Generate the STL and save it using the STL filename and version conventions below.');
+    instructions.push('5. Attach the generated STL to this print job using the admin STL handoff form.');
+    instructions.push('');
+    instructions.push(`Suggested STL filename: ${printJob.stlFilename || `PJ-${printJob.printJobId}.stl`}`);
+    instructions.push(`STL version: ${printJob.stlVersion || 'v1'}`);
+    instructions.push('');
+    instructions.push('Generation Notes:');
+    instructions.push(printJob.generationNotes || 'None');
+    archive.append(instructions.join('\n'), { name: 'lithophane-instructions.txt' });
+
+    const outputName = `lithophane-packet-${sanitizeFilename(printJob.printJobId)}`;
+    archive.append(outputName, { name: 'output-name.txt' });
+
+    const sourceImages = Array.isArray(jobPayload.sourceImages) ? jobPayload.sourceImages : [];
+    for (let index = 0; index < sourceImages.length; index += 1) {
+      const img = sourceImages[index];
+      const diskPath = resolveCustomOrderImageDiskPath(img);
+      if (!diskPath) {
+        archive.append(`Missing source image at index ${index + 1}: ${img.originalName || 'unknown'}`, {
+          name: `missing-image-${index + 1}.txt`
+        });
+        continue;
+      }
+      try {
+        if (fs.existsSync(diskPath)) {
+          const ext = path.extname(diskPath) || '.img';
+          const safeName = sanitizeFilename(img.originalName || `source-image-${index + 1}`);
+          const entryName = `source-image-${index + 1}-${safeName}${ext}`;
+          archive.file(diskPath, { name: entryName });
+        } else {
+          archive.append(`Missing source image file: ${img.originalName || 'unknown'}`, {
+            name: `missing-image-${index + 1}.txt`
+          });
+        }
+      } catch (imgErr) {
+        archive.append(`Failed to attach source image: ${img.originalName || 'unknown'} (${imgErr.message || imgErr})`, {
+          name: `missing-image-${index + 1}.txt`
+        });
+      }
+    }
+
+    await archive.finalize();
+  } catch (err) {
+    console.error('❌ Failed to export lithophane packet:', err);
+    if (!res.headersSent) {
+      res.status(500).json({
+        error: 'Failed to export lithophane packet',
+        details: process.env.NODE_ENV === 'development' ? err.message : undefined,
+      });
+    }
+  }
+});
+
+router.patch('/print-jobs/:printJobId/stl-handoff', async (req, res) => {
+  try {
+    const { printJobId } = req.params;
+    const {
+      stlFilename,
+      stlPath,
+      stlVersion,
+      generationNotes,
+      status,
+    } = req.body;
+
+    const validStatuses = [
+      'queued_for_generation',
+      'generating_stl',
+      'stl_ready',
+      'queued_for_slicing',
+      'sliced',
+      'queued_for_batch',
+      'assigned_to_printer',
+      'printing',
+      'printed',
+      'failed',
+      'cancelled'
+    ];
+
+    if (status && !validStatuses.includes(status)) {
+      return res.status(400).json({
+        error: `Invalid status. Valid values: ${validStatuses.join(', ')}`
+      });
+    }
+
+    const update = {};
+    if (stlFilename !== undefined) update.stlFilename = stlFilename;
+    if (stlPath !== undefined) update.stlPath = stlPath;
+    if (stlVersion !== undefined) update.stlVersion = stlVersion;
+    if (generationNotes !== undefined) update.generationNotes = generationNotes;
+    if (status !== undefined) update.status = status;
+    update.updatedAt = new Date();
+
+    const printJob = await PrintJob.findOneAndUpdate(
+      { printJobId },
+      update,
+      { new: true, runValidators: true }
+    );
+
+    if (!printJob) {
+      return res.status(404).json({ error: 'Print job not found.' });
+    }
+
+    res.json(normalizePrintJobPayload(printJob));
+  } catch (err) {
+    console.error('❌ Failed to update STL handoff:', err);
+    res.status(500).json({
+      error: 'Failed to update STL handoff',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined,
+    });
+  }
+});
+
+router.post('/batches', async (req, res) => {
+  try {
+    const {
+      printerProfile,
+      materialProfile,
+      slicerProfile,
+      nozzle,
+      layerHeight,
+      printJobIds = [],
+      status,
+      projectFilePath,
+      gcodePath,
+      notes,
+    } = req.body;
+
+    if (!printerProfile || !materialProfile || !nozzle || layerHeight === undefined) {
+      return res.status(400).json({ error: 'printerProfile, materialProfile, nozzle, and layerHeight are required.' });
+    }
+
+    const batch = new Batch({
+      printerProfile,
+      materialProfile,
+      slicerProfile: slicerProfile || '',
+      nozzle,
+      layerHeight,
+      printJobIds: [],
+      totalEstimatedPrintHours: 0,
+      status: status || 'pending',
+      projectFilePath: projectFilePath || '',
+      gcodePath: gcodePath || '',
+      notes: notes || '',
+    });
+
+    if (printJobIds.length) {
+      const printJobs = await PrintJob.find({ printJobId: { $in: printJobIds } });
+      const missingIds = printJobIds.filter((id) => !printJobs.some((job) => job.printJobId === id));
+      if (missingIds.length) {
+        return res.status(404).json({ error: `Print jobs not found: ${missingIds.join(', ')}` });
+      }
+
+      for (const job of printJobs) {
+        if (!isPrintJobCompatibleWithBatch(job, batch)) {
+          return res.status(400).json({
+            error: `Print job ${job.printJobId} is not compatible with this batch.`
+          });
+        }
+      }
+
+      batch.printJobIds = printJobs.map((job) => job.printJobId);
+      batch.totalEstimatedPrintHours = await computeBatchTotals(batch.printJobIds);
+    }
+
+    await batch.save();
+
+    if (batch.printJobIds.length) {
+      await PrintJob.updateMany(
+        { printJobId: { $in: batch.printJobIds } },
+        { assignedBatchId: batch.batchId }
+      );
+    }
+
+    res.status(201).json(batch.toObject({ getters: true, virtuals: false }));
+  } catch (err) {
+    console.error('❌ Failed to create batch:', err);
+    res.status(500).json({
+      error: 'Failed to create batch',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined,
+    });
+  }
+});
+
+router.get('/batches', async (req, res) => {
+  try {
+    const { status, limit = 100, offset = 0 } = req.query;
+    const filter = {};
+    if (status) filter.status = status;
+
+    const batches = await Batch.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(Number(offset))
+      .limit(Number(limit));
+
+    const total = await Batch.countDocuments(filter);
+
+    res.json({
+      data: batches.map((batch) => batch.toObject({ getters: true, virtuals: false })),
+      pagination: {
+        total,
+        limit: Number(limit),
+        offset: Number(offset),
+        hasMore: Number(offset) + Number(limit) < total,
+      }
+    });
+  } catch (err) {
+    console.error('❌ Failed to fetch batches:', err);
+    res.status(500).json({
+      error: 'Failed to fetch batches',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined,
+    });
+  }
+});
+
+router.patch('/batches/:batchId', async (req, res) => {
+  try {
+    const { batchId } = req.params;
+    const {
+      printerProfile,
+      materialProfile,
+      slicerProfile,
+      nozzle,
+      layerHeight,
+      status,
+      projectFilePath,
+      gcodePath,
+      notes,
+    } = req.body;
+
+    const update = {};
+    if (printerProfile !== undefined) update.printerProfile = printerProfile;
+    if (materialProfile !== undefined) update.materialProfile = materialProfile;
+    if (slicerProfile !== undefined) update.slicerProfile = slicerProfile;
+    if (nozzle !== undefined) update.nozzle = nozzle;
+    if (layerHeight !== undefined) update.layerHeight = layerHeight;
+    if (status !== undefined) update.status = status;
+    if (projectFilePath !== undefined) update.projectFilePath = projectFilePath;
+    if (gcodePath !== undefined) update.gcodePath = gcodePath;
+    if (notes !== undefined) update.notes = notes;
+    update.updatedAt = new Date();
+
+    const batch = await Batch.findOneAndUpdate(
+      { batchId },
+      update,
+      { new: true, runValidators: true }
+    );
+
+    if (!batch) {
+      return res.status(404).json({ error: 'Batch not found.' });
+    }
+
+    res.json(batch.toObject({ getters: true, virtuals: false }));
+  } catch (err) {
+    console.error('❌ Failed to update batch:', err);
+    res.status(500).json({
+      error: 'Failed to update batch',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined,
+    });
+  }
+});
+
+router.post('/batches/:batchId/assign', async (req, res) => {
+  try {
+    const { batchId } = req.params;
+    const { printJobId } = req.body;
+    if (!printJobId) {
+      return res.status(400).json({ error: 'printJobId is required.' });
+    }
+
+    const batch = await Batch.findOne({ batchId });
+    if (!batch) {
+      return res.status(404).json({ error: 'Batch not found.' });
+    }
+
+    const printJob = await PrintJob.findOne({ printJobId });
+    if (!printJob) {
+      return res.status(404).json({ error: 'Print job not found.' });
+    }
+
+    if (!isPrintJobCompatibleWithBatch(printJob, batch)) {
+      return res.status(400).json({ error: 'Print job is not compatible with this batch.' });
+    }
+
+    if (printJob.assignedBatchId && printJob.assignedBatchId !== batch.batchId) {
+      return res.status(400).json({ error: 'Print job is already assigned to a different batch.' });
+    }
+
+    if (!batch.printJobIds.includes(printJobId)) {
+      batch.printJobIds.push(printJobId);
+      batch.totalEstimatedPrintHours = await computeBatchTotals(batch.printJobIds);
+      await batch.save();
+    }
+
+    printJob.assignedBatchId = batch.batchId;
+    await printJob.save();
+
+    res.json(batch.toObject({ getters: true, virtuals: false }));
+  } catch (err) {
+    console.error('❌ Failed to assign print job to batch:', err);
+    res.status(500).json({
+      error: 'Failed to assign print job to batch',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined,
+    });
+  }
+});
+
+router.post('/batches/:batchId/unassign', async (req, res) => {
+  try {
+    const { batchId } = req.params;
+    const { printJobId } = req.body;
+    if (!printJobId) {
+      return res.status(400).json({ error: 'printJobId is required.' });
+    }
+
+    const batch = await Batch.findOne({ batchId });
+    if (!batch) {
+      return res.status(404).json({ error: 'Batch not found.' });
+    }
+
+    const printJob = await PrintJob.findOne({ printJobId });
+    if (!printJob) {
+      return res.status(404).json({ error: 'Print job not found.' });
+    }
+
+    batch.printJobIds = batch.printJobIds.filter((id) => id !== printJobId);
+    batch.totalEstimatedPrintHours = await computeBatchTotals(batch.printJobIds);
+    await batch.save();
+
+    if (printJob.assignedBatchId === batch.batchId) {
+      printJob.assignedBatchId = '';
+      await printJob.save();
+    }
+
+    res.json(batch.toObject({ getters: true, virtuals: false }));
+  } catch (err) {
+    console.error('❌ Failed to unassign print job from batch:', err);
+    res.status(500).json({
+      error: 'Failed to unassign print job from batch',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined,
+    });
+  }
+});
+
+router.patch('/print-jobs/:printJobId', async (req, res) => {
+  try {
+    const { printJobId } = req.params;
+    const {
+      printerProfile,
+      materialProfile,
+      slicerProfile,
+      nozzle,
+      layerHeight,
+      infill,
+      wallCount,
+      status,
+      assignedBatchId,
+      stlPath,
+      projectFilePath,
+      gcodePath,
+      estimatedPrintHours,
+      notes,
+    } = req.body;
+
+    const validStatuses = ['queued_for_slicing', 'sliced', 'queued_for_batch', 'assigned_to_printer', 'printing', 'printed', 'failed', 'cancelled'];
+    if (printerProfile !== undefined) update.printerProfile = printerProfile;
+    if (materialProfile !== undefined) update.materialProfile = materialProfile;
+    if (slicerProfile !== undefined) update.slicerProfile = slicerProfile;
+    if (nozzle !== undefined) update.nozzle = nozzle;
+    if (layerHeight !== undefined) update.layerHeight = layerHeight;
+    if (infill !== undefined) update.infill = infill;
+    if (wallCount !== undefined) update.wallCount = wallCount;
+    if (status !== undefined) update.status = status;
+    if (assignedBatchId !== undefined) update.assignedBatchId = assignedBatchId;
+    if (stlPath !== undefined) update.stlPath = stlPath;
+    if (projectFilePath !== undefined) update.projectFilePath = projectFilePath;
+    if (gcodePath !== undefined) update.gcodePath = gcodePath;
+    if (estimatedPrintHours !== undefined) update.estimatedPrintHours = estimatedPrintHours;
+    if (notes !== undefined) update.notes = notes;
+    update.updatedAt = new Date();
+
+    const printJob = await PrintJob.findOneAndUpdate(
+      { printJobId },
+      update,
+      { new: true, runValidators: true }
+    );
+
+    if (!printJob) {
+      return res.status(404).json({ error: 'Print job not found.' });
+    }
+
+    res.json(normalizePrintJobPayload(printJob));
+  } catch (err) {
+    console.error('❌ Failed to update print job:', err);
+    res.status(500).json({
+      error: 'Failed to update print job',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined,
+    });
+  }
+});
+
 // UPDATE custom order status
 router.patch('/custom-orders/:orderId', async (req, res) => {
   try {
-    const { status, adminNotes, paymentStatus, trackingCarrier, trackingNumber, trackingUrl } = req.body;
-    const validStatuses = ['submitted', 'awaiting_deposit', 'deposit_paid', 'reviewing_assets', 'in_production', 'ready_to_ship', 'shipped', 'completed', 'cancelled'];
+    const { status, fulfillmentStatus, adminNotes, paymentStatus, trackingCarrier, trackingNumber, trackingUrl } = req.body;
+    const validStatuses = FULFILLMENT_STAGES;
     const validPaymentStatuses = ['pending', 'deposit_paid', 'paid_in_full', 'failed', 'refunded'];
 
     if (status && !validStatuses.includes(status)) {
       return res.status(400).json({
         error: `Invalid status. Valid values: ${validStatuses.join(', ')}`
+      });
+    }
+
+    if (fulfillmentStatus && !validStatuses.includes(fulfillmentStatus)) {
+      return res.status(400).json({
+        error: `Invalid fulfillmentStatus. Valid values: ${validStatuses.join(', ')}`
       });
     }
 
@@ -661,26 +1591,58 @@ router.patch('/custom-orders/:orderId', async (req, res) => {
       });
     }
 
+    const customOrder = await CustomOrder.findOne({ orderId: req.params.orderId });
+    if (!customOrder) {
+      return res.status(404).json({ error: 'Custom order not found' });
+    }
+
+    const currentStage = customOrder.fulfillmentStatus || customOrder.status;
+    const desiredStage = fulfillmentStatus || status;
+
+    if (desiredStage && !isAllowedFulfillmentTransition(currentStage, desiredStage)) {
+      return res.status(400).json({
+        error: `Invalid transition from ${currentStage} to ${desiredStage}.`,
+      });
+    }
+
     const update = {};
-    if (status) update.status = status;
+    const timestamp = new Date();
+    const appliedStatus = desiredStage;
+
+    if (status) {
+      update.status = status;
+      update.fulfillmentStatus = status;
+      const timeKey = getFulfillmentTimestampKey(status);
+      if (timeKey) update[`fulfillmentTimestamps.${timeKey}`] = timestamp;
+    }
+    if (fulfillmentStatus) {
+      update.fulfillmentStatus = fulfillmentStatus;
+      update.status = fulfillmentStatus;
+      const timeKey = getFulfillmentTimestampKey(fulfillmentStatus);
+      if (timeKey) update[`fulfillmentTimestamps.${timeKey}`] = timestamp;
+    }
     if (adminNotes !== undefined) update.adminNotes = adminNotes;
     if (paymentStatus) update.paymentStatus = paymentStatus;
     if (trackingCarrier !== undefined) update.trackingCarrier = trackingCarrier;
     if (trackingNumber !== undefined) update.trackingNumber = trackingNumber;
     if (trackingUrl !== undefined) update.trackingUrl = trackingUrl;
 
-    const customOrder = await CustomOrder.findOneAndUpdate(
+    if (appliedStatus === 'deposit_paid') {
+      update.depositPaidAt = timestamp;
+    }
+
+    const updatedCustomOrder = await CustomOrder.findOneAndUpdate(
       { orderId: req.params.orderId },
       update,
       { new: true, runValidators: true }
     );
 
-    if (!customOrder) {
+    if (!updatedCustomOrder) {
       return res.status(404).json({ error: 'Custom order not found' });
     }
 
-    console.log(`✅ Custom order ${req.params.orderId} updated to status: ${status}`);
-    res.json(customOrder);
+    console.log(`✅ Custom order ${req.params.orderId} updated to fulfillment status: ${appliedStatus}`);
+    res.json(normalizeCustomOrder(updatedCustomOrder));
   } catch (err) {
     console.error('❌ Failed to update custom order:', err);
     res.status(500).json({

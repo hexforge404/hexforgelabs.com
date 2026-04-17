@@ -1,10 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import './AdminPage.css';
 import API_BASE_URL from '../utils/apiBase';
 import { successToast, errorToast, warningToast } from '../utils/toastUtils';
 import InventoryViewer from '../components/InventoryViewer';
 import { useAdmin } from '../context/AdminContext';
+import { resolveImageUrl } from '../utils/resolveImageUrl';
 
 const EMPTY_PRODUCT = {
   name: '',
@@ -52,8 +54,24 @@ const formatLightTypeForDisplay = (lightType, { internal = false } = {}) => {
   return lightType;
 };
 
+const normalizeCustomOrderImageUrl = (rawPath) => {
+  if (!rawPath) return '';
+  const raw = String(rawPath).trim();
+  if (!raw) return '';
+  if (/^data:/i.test(raw) || /^https?:\/\//i.test(raw)) return raw;
+  if (raw.startsWith('/uploads/') || raw.startsWith('/images/')) return raw;
+  const uploadsIndex = raw.indexOf('/uploads/');
+  if (uploadsIndex !== -1) {
+    return raw.slice(uploadsIndex);
+  }
+  const fileName = raw.split('/').pop();
+  if (!fileName || !fileName.includes('.')) return '';
+  return `/uploads/custom-orders/${fileName}`;
+};
+
 export default function AdminPage() {
   const { admin } = useAdmin();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('products');
 
   // Products / Orders / Blog
@@ -64,6 +82,22 @@ export default function AdminPage() {
   const [orders, setOrders] = useState([]);
   const [customOrders, setCustomOrders] = useState([]);
   const [customOrderStatusFilter, setCustomOrderStatusFilter] = useState('all');
+  const [productionQueueFilter, setProductionQueueFilter] = useState('all');
+  const [productionQueueSort, setProductionQueueSort] = useState('newest');
+  const [expandedCustomOrders, setExpandedCustomOrders] = useState({});
+  const [draggedOrderId, setDraggedOrderId] = useState(null);
+  const [dragOverStage, setDragOverStage] = useState(null);
+  const [printJobs, setPrintJobs] = useState([]);
+  const [printJobStatusFilter, setPrintJobStatusFilter] = useState('all');
+  const [lithophaneJobs, setLithophaneJobs] = useState([]);
+  const [lithophaneStatusFilter, setLithophaneStatusFilter] = useState('all');
+  const [batchStatusFilter, setBatchStatusFilter] = useState('all');
+  const [batches, setBatches] = useState([]);
+  const [isLoadingPrintJobs, setIsLoadingPrintJobs] = useState(false);
+  const [isLoadingLithophaneJobs, setIsLoadingLithophaneJobs] = useState(false);
+  const [isLoadingBatches, setIsLoadingBatches] = useState(false);
+  const [stlEditsByJob, setStlEditsByJob] = useState({});
+  const [imageModalState, setImageModalState] = useState({ open: false, order: null, index: 0 });
   const [posts, setPosts] = useState([]);
   const [promoCodes, setPromoCodes] = useState([]);
 
@@ -212,9 +246,10 @@ export default function AdminPage() {
   }, [activeTab, canManagePromos, promoAuditPage, promoAuditQueryToken]);
 
   useEffect(() => {
-    if (activeTab !== 'custom-orders') return;
+    if (activeTab !== 'custom-orders' && activeTab !== 'production-queue') return;
     const loadFilteredCustomOrders = async () => {
-      const customOrderData = await fetchCustomOrders(customOrderStatusFilter);
+      const targetStatus = activeTab === 'custom-orders' ? customOrderStatusFilter : 'all';
+      const customOrderData = await fetchCustomOrders(targetStatus);
       setCustomOrders(customOrderData);
     };
     loadFilteredCustomOrders();
@@ -272,6 +307,56 @@ export default function AdminPage() {
     cancelled: 'Cancelled',
   };
 
+  const FULFILLMENT_STAGES = [
+    'awaiting_deposit',
+    'deposit_paid',
+    'reviewing_assets',
+    'print_ready',
+    'in_production',
+    'printed',
+    'assembled',
+    'packed',
+    'shipped',
+    'completed',
+  ];
+
+  const FULFILLMENT_STAGE_LABELS = {
+    awaiting_deposit: 'Awaiting Deposit',
+    deposit_paid: 'Deposit Paid',
+    reviewing_assets: 'Reviewing Assets',
+    print_ready: 'Print Ready',
+    in_production: 'In Production',
+    printed: 'Printed',
+    assembled: 'Assembled',
+    packed: 'Packed',
+    shipped: 'Shipped',
+    completed: 'Completed',
+  };
+
+  const ALLOWED_FULFILLMENT_TRANSITIONS = {
+    awaiting_deposit: ['deposit_paid'],
+    deposit_paid: ['awaiting_deposit', 'reviewing_assets'],
+    reviewing_assets: ['deposit_paid', 'print_ready'],
+    print_ready: ['reviewing_assets', 'in_production'],
+    in_production: ['print_ready', 'printed'],
+    printed: ['in_production', 'assembled'],
+    assembled: ['printed', 'packed'],
+    packed: ['assembled', 'shipped'],
+    shipped: ['packed', 'completed'],
+    completed: ['shipped'],
+  };
+
+  const getOrderStage = (order) => {
+    const stage = order.fulfillmentStatus || order.status || 'submitted';
+    return stage === 'ready_to_ship' ? 'print_ready' : stage;
+  };
+
+  const isAllowedFulfillmentTransition = (fromStage, toStage) => {
+    if (!fromStage || !toStage) return false;
+    if (fromStage === toStage) return true;
+    return ALLOWED_FULFILLMENT_TRANSITIONS[fromStage]?.includes(toStage) || false;
+  };
+
   const fetchCustomOrders = async (status = 'all') => {
     try {
       const statusParam = status && status !== 'all' ? `?status=${encodeURIComponent(status)}` : '';
@@ -283,6 +368,456 @@ export default function AdminPage() {
       console.error('Failed to fetch custom orders:', err);
       return [];
     }
+  };
+
+  const fetchPrintJobs = async (status = 'all') => {
+    try {
+      const params = {};
+      if (status && status !== 'all') {
+        params.status = status;
+      }
+      const response = await axios.get(`${API_BASE_URL}/admin/print-jobs`, {
+        params,
+        withCredentials: true,
+      });
+      return response.data?.data || [];
+    } catch (err) {
+      console.error('Failed to fetch print jobs:', err);
+      return [];
+    }
+  };
+
+  const fetchLithophaneJobs = async (status = 'all') => {
+    if (status === 'all') {
+      return fetchPrintJobs('queued_for_generation,generating_stl,stl_ready,queued_for_slicing');
+    }
+    return fetchPrintJobs(status);
+  };
+
+  const fetchBatches = async (status = 'all') => {
+    try {
+      const params = {};
+      if (status && status !== 'all') {
+        params.status = status;
+      }
+      const response = await axios.get(`${API_BASE_URL}/admin/batches`, {
+        params,
+        withCredentials: true,
+      });
+      return response.data?.data || [];
+    } catch (err) {
+      console.error('Failed to fetch batches:', err);
+      return [];
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab !== 'print-jobs') return;
+    const loadPrintJobs = async () => {
+      setIsLoadingPrintJobs(true);
+      const jobs = await fetchPrintJobs(printJobStatusFilter);
+      setPrintJobs(jobs);
+      setIsLoadingPrintJobs(false);
+    };
+
+    loadPrintJobs();
+  }, [activeTab, printJobStatusFilter]);
+
+  useEffect(() => {
+    if (activeTab !== 'lithophane') return;
+    const loadLithophaneJobs = async () => {
+      setIsLoadingLithophaneJobs(true);
+      const jobs = await fetchLithophaneJobs(lithophaneStatusFilter);
+      setLithophaneJobs(jobs);
+      setIsLoadingLithophaneJobs(false);
+    };
+
+    loadLithophaneJobs();
+  }, [activeTab, lithophaneStatusFilter]);
+
+  useEffect(() => {
+    if (activeTab !== 'batches' && activeTab !== 'print-jobs') return;
+    const loadBatches = async () => {
+      setIsLoadingBatches(true);
+      const batchList = await fetchBatches(batchStatusFilter);
+      setBatches(batchList);
+      setIsLoadingBatches(false);
+    };
+
+    loadBatches();
+  }, [activeTab, batchStatusFilter]);
+
+  const handleCreateBatchFromPrintJob = async (job) => {
+    try {
+      const response = await axios.post(
+        `${API_BASE_URL}/admin/batches`,
+        {
+          printerProfile: job.printerProfile,
+          materialProfile: job.materialProfile,
+          slicerProfile: job.slicerProfile,
+          nozzle: job.nozzle,
+          layerHeight: job.layerHeight,
+          printJobIds: [job.printJobId],
+          status: 'queued_for_batch',
+          notes: `Created from print job ${job.printJobId}`,
+        },
+        { withCredentials: true }
+      );
+
+      const createdBatch = response.data;
+      setBatches((prev) => [createdBatch, ...prev]);
+      setPrintJobs((prev) =>
+        prev.map((existingJob) =>
+          existingJob.printJobId === job.printJobId
+            ? { ...existingJob, assignedBatchId: createdBatch.batchId }
+            : existingJob
+        )
+      );
+      successToast(`Batch ${createdBatch.batchId} created and assigned.`);
+      return createdBatch;
+    } catch (err) {
+      console.error('Create batch from print job error:', err.response || err);
+      const msg =
+        err.response?.data?.message ||
+        err.response?.data?.error ||
+        err.message ||
+        'Failed to create batch';
+      errorToast(msg);
+      return null;
+    }
+  };
+
+  const handleAssignPrintJobToBatch = async (job, batchId) => {
+    try {
+      const response = await axios.post(
+        `${API_BASE_URL}/admin/batches/${encodeURIComponent(batchId)}/assign`,
+        { printJobId: job.printJobId },
+        { withCredentials: true }
+      );
+      const updatedBatch = response.data;
+      setBatches((prev) => prev.map((batch) => (batch.batchId === updatedBatch.batchId ? updatedBatch : batch)));
+      setPrintJobs((prev) =>
+        prev.map((existingJob) =>
+          existingJob.printJobId === job.printJobId
+            ? { ...existingJob, assignedBatchId: updatedBatch.batchId }
+            : existingJob
+        )
+      );
+      successToast(`Print job ${job.printJobId} assigned to batch ${batchId}.`);
+      return updatedBatch;
+    } catch (err) {
+      console.error('Assign print job to batch error:', err.response || err);
+      const msg =
+        err.response?.data?.message ||
+        err.response?.data?.error ||
+        err.message ||
+        'Failed to assign print job to batch';
+      errorToast(msg);
+      return null;
+    }
+  };
+
+  const renderPrintJobCard = (job) => {
+    const stlEdits = stlEditsByJob[job.printJobId] || {};
+    const stlFilenameValue = stlEdits.stlFilename !== undefined ? stlEdits.stlFilename : job.stlFilename || '';
+    const stlPathValue = stlEdits.stlPath !== undefined ? stlEdits.stlPath : job.stlPath || '';
+    const stlVersionValue = stlEdits.stlVersion !== undefined ? stlEdits.stlVersion : job.stlVersion || '';
+    const generationNotesValue = stlEdits.generationNotes !== undefined ? stlEdits.generationNotes : job.generationNotes || '';
+
+    return (
+      <div key={job.printJobId} className="print-job-card">
+        <div className="print-job-card-header">
+          <div>
+            <div className="print-job-title">{job.printJobId}</div>
+            <div className="print-job-subtitle">Order: {job.orderId}</div>
+          </div>
+          <div>
+            <div className={`print-job-status print-job-status-${job.status}`}>{job.status.replace(/_/g, ' ')}</div>
+            <select
+              value={job.status}
+              onChange={(e) => handleUpdatePrintJob(job.printJobId, { status: e.target.value })}
+              className="admin-order-status-select"
+              style={{ marginTop: '10px', minWidth: '180px' }}
+            >
+              <option value="queued_for_generation">Queued for Generation</option>
+              <option value="generating_stl">Generating STL</option>
+              <option value="stl_ready">STL Ready</option>
+              <option value="queued_for_slicing">Queued for Slicing</option>
+              <option value="sliced">Sliced</option>
+              <option value="queued_for_batch">Queued for Batch</option>
+              <option value="assigned_to_printer">Assigned to Printer</option>
+              <option value="printing">Printing</option>
+              <option value="printed">Printed</option>
+              <option value="failed">Failed</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+          </div>
+        </div>
+        <div className="print-job-meta">
+          <div><strong>Printer:</strong> {job.printerProfile || 'TBD'}</div>
+          <div><strong>Material:</strong> {job.materialProfile || 'TBD'}</div>
+          <div><strong>Slicer:</strong> {job.slicerProfile || 'TBD'}</div>
+          <div><strong>Nozzle:</strong> {job.nozzle || 'TBD'}</div>
+          <div><strong>Layer Height:</strong> {job.layerHeight || 'TBD'}</div>
+          <div><strong>Generation Method:</strong> {job.generationMethod || 'Manual'}</div>
+          <div><strong>Lithophane Type:</strong> {job.lithophaneType || 'Custom'}</div>
+          <div><strong>Target WxHxD:</strong> {job.targetWidthMm || 'N/A'} x {job.targetHeightMm || 'N/A'} x {job.targetDepthMm || 'N/A'} mm</div>
+          <div><strong>Panel Count:</strong> {job.panelCount || 1}</div>
+          <div><strong>Infill:</strong> {job.infill || 'TBD'}%</div>
+          <div><strong>Walls:</strong> {job.wallCount || 'TBD'}</div>
+          <div><strong>Estimated Hours:</strong> {job.estimatedPrintHours || 0}</div>
+        </div>
+        <div className="print-job-links">
+          <div><strong>STL:</strong> {job.stlPath ? 'Attached' : 'Missing'}</div>
+          <div><strong>Filename:</strong> {job.stlFilename || 'Not set'}</div>
+          <div><strong>Version:</strong> {job.stlVersion || 'Not set'}</div>
+          <div><strong>Project:</strong> {job.projectFilePath ? 'Attached' : 'Missing'}</div>
+          <div><strong>G-code:</strong> {job.gcodePath ? 'Attached' : 'Missing'}</div>
+        </div>
+        <div className="print-job-actions">
+          <button
+            type="button"
+            className="secondary-button small-button"
+            onClick={() => handleExportSlicerPacket(job.printJobId)}
+          >
+            Export Slicer Packet
+          </button>
+          <button
+            type="button"
+            className="secondary-button small-button"
+            onClick={() => handleExportLithophanePacket(job.printJobId)}
+          >
+            Export Lithophane Packet
+          </button>
+          <button
+            type="button"
+            className="secondary-button small-button"
+            onClick={() => handleCreateBatchFromPrintJob(job)}
+          >
+            New Batch from Job
+          </button>
+          {batches.length > 0 && (
+            <select
+              value={job.assignedBatchId || ''}
+              onChange={(e) => {
+                const batchId = e.target.value;
+                if (!batchId) return;
+                handleAssignPrintJobToBatch(job, batchId);
+              }}
+              className="admin-order-status-select"
+              style={{ minWidth: '170px' }}
+            >
+              <option value="">Assign to batch...</option>
+              {batches.map((batch) => (
+                <option key={batch.batchId} value={batch.batchId}>
+                  {batch.batchId} • {batch.status || 'pending'}
+                </option>
+              ))}
+            </select>
+          )}
+          <button
+            type="button"
+            className="secondary-button small-button"
+            onClick={() => handleUpdateStlHandoff(job)}
+          >
+            Save STL Handoff
+          </button>
+          <button
+            type="button"
+            className="secondary-button small-button"
+            onClick={() => handleUpdateStlHandoff(job, { status: 'stl_ready' })}
+          >
+            Mark STL Ready
+          </button>
+        </div>
+        <div className="print-job-notes">
+          <strong>Generation Notes</strong>
+          <textarea
+            className="form-input print-job-textarea"
+            value={generationNotesValue}
+            onChange={(e) => handleStlEditChange(job.printJobId, 'generationNotes', e.target.value)}
+            rows={3}
+          />
+        </div>
+        <div className="print-job-edit-row">
+          <input
+            className="form-input"
+            placeholder="STL Filename"
+            value={stlFilenameValue}
+            onChange={(e) => handleStlEditChange(job.printJobId, 'stlFilename', e.target.value)}
+          />
+          <input
+            className="form-input"
+            placeholder="STL Path"
+            value={stlPathValue}
+            onChange={(e) => handleStlEditChange(job.printJobId, 'stlPath', e.target.value)}
+          />
+          <input
+            className="form-input"
+            placeholder="STL Version"
+            value={stlVersionValue}
+            onChange={(e) => handleStlEditChange(job.printJobId, 'stlVersion', e.target.value)}
+          />
+        </div>
+        <div className="print-job-notes">
+          <strong>Notes</strong>
+          <p>{job.notes || 'No notes'}</p>
+        </div>
+      </div>
+    );
+  };
+
+  const openCustomOrderImageModal = (order, index) => {
+    setImageModalState({ open: true, order, index });
+  };
+
+  const closeCustomOrderImageModal = () => {
+    setImageModalState({ open: false, order: null, index: 0 });
+  };
+
+  const showNextCustomOrderImage = () => {
+    setImageModalState((prev) => {
+      if (!prev.order) return prev;
+      const nextIndex = (prev.index + 1) % (prev.order.images?.length || 1);
+      return { ...prev, index: nextIndex };
+    });
+  };
+
+  const showPreviousCustomOrderImage = () => {
+    setImageModalState((prev) => {
+      if (!prev.order) return prev;
+      const length = prev.order.images?.length || 1;
+      const prevIndex = (prev.index - 1 + length) % length;
+      return { ...prev, index: prevIndex };
+    });
+  };
+
+  const isCustomOrderPrintReady = (order) => {
+    if (order?.isPrintReady !== undefined) {
+      return order.isPrintReady;
+    }
+    const imageCount = Array.isArray(order.images) ? order.images.length : order.imagesCount || 0;
+    const paid = ['paid_in_full', 'deposit_paid'].includes(order.paymentStatus);
+    const status = order.fulfillmentStatus || order.status;
+    const validStatus = !['cancelled', 'completed'].includes(status);
+    return paid && imageCount > 0 && validStatus;
+  };
+
+  const getProductionQueueItems = useMemo(() => {
+    if (!customOrders || !customOrders.length) return [];
+    const all = [...customOrders];
+    const filtered = all.filter((order) => {
+      const imageCount = Array.isArray(order.images) ? order.images.length : order.imagesCount || 0;
+      switch (productionQueueFilter) {
+        case 'ready':
+          return isCustomOrderPrintReady(order);
+        case 'missing_images':
+          return imageCount === 0;
+        case 'pending_deposit':
+          return order.paymentStatus === 'pending';
+        case 'in_production':
+          return (order.fulfillmentStatus || order.status) === 'in_production';
+        case 'completed':
+          return (order.fulfillmentStatus || order.status) === 'completed';
+        default:
+          return true;
+      }
+    });
+    return filtered.sort((a, b) => {
+      const totalA = Number(a.totalPrice || a.discountedTotal || 0);
+      const totalB = Number(b.totalPrice || b.discountedTotal || 0);
+      if (productionQueueSort === 'oldest') {
+        return new Date(a.createdAt) - new Date(b.createdAt);
+      }
+      if (productionQueueSort === 'highest_total') {
+        return totalB - totalA;
+      }
+      if (productionQueueSort === 'lowest_total') {
+        return totalA - totalB;
+      }
+      return new Date(b.createdAt) - new Date(a.createdAt);
+    });
+  }, [customOrders, productionQueueFilter, productionQueueSort]);
+
+  const boardColumns = useMemo(
+    () => FULFILLMENT_STAGES.map((stage) => ({
+      stage,
+      label: FULFILLMENT_STAGE_LABELS[stage],
+      orders: getProductionQueueItems.filter((order) => getOrderStage(order) === stage),
+    })),
+    [getProductionQueueItems]
+  );
+
+  const handleKanbanDragStart = (event, orderId) => {
+    try {
+      event.dataTransfer.setData('text/plain', orderId);
+      event.dataTransfer.effectAllowed = 'move';
+    } catch (err) {
+      // Some browsers may block dataTransfer writes on unsupported devices.
+    }
+    setDraggedOrderId(orderId);
+  };
+
+  const handleKanbanDragOver = (event, stage) => {
+    event.preventDefault();
+    setDragOverStage(stage);
+  };
+
+  const handleKanbanDragLeave = () => {
+    setDragOverStage(null);
+  };
+
+  const handleKanbanDrop = async (event, destinationStage) => {
+    event.preventDefault();
+    setDragOverStage(null);
+    const orderId = event.dataTransfer.getData('text/plain');
+    if (!orderId) return;
+
+    const order = customOrders.find((o) => o.orderId === orderId);
+    if (!order) return;
+
+    const currentStage = getOrderStage(order);
+    if (!isAllowedFulfillmentTransition(currentStage, destinationStage)) {
+      errorToast(`Cannot move ${order.orderId} from ${FULFILLMENT_STAGE_LABELS[currentStage] || currentStage} to ${FULFILLMENT_STAGE_LABELS[destinationStage]}.`);
+      setDraggedOrderId(null);
+      return;
+    }
+
+    if (currentStage === destinationStage) {
+      setDraggedOrderId(null);
+      return;
+    }
+
+    const optimisticOrders = customOrders.map((o) =>
+      o.orderId === orderId ? { ...o, fulfillmentStatus: destinationStage, status: destinationStage } : o
+    );
+    setCustomOrders(optimisticOrders);
+
+    try {
+      const response = await axios.patch(
+        `${API_BASE_URL}/admin/custom-orders/${orderId}`,
+        { fulfillmentStatus: destinationStage },
+        { withCredentials: true }
+      );
+
+      const updated = response.data;
+      setCustomOrders((prev) => prev.map((o) => (o.orderId === orderId ? updated : o)));
+      successToast(`Moved ${order.orderId} to ${FULFILLMENT_STAGE_LABELS[destinationStage]}.`);
+    } catch (err) {
+      setCustomOrders((prev) => prev.map((o) => (o.orderId === orderId ? order : o)));
+      const msg =
+        err.response?.data?.message ||
+        err.response?.data?.error ||
+        err.message ||
+        'Unable to save stage change';
+      errorToast(msg);
+    } finally {
+      setDraggedOrderId(null);
+    }
+  };
+
+  const handleProductionQuickStatus = async (orderId, status) => {
+    return handleCustomOrderStatusChange(orderId, status);
   };
 
   const handleProductChange = (e) => {
@@ -750,7 +1285,7 @@ export default function AdminPage() {
     try {
       const response = await axios.patch(
         `${API_BASE_URL}/admin/custom-orders/${orderId}`,
-        { status: newStatus },
+        { fulfillmentStatus: newStatus },
         { withCredentials: true }
       );
 
@@ -759,7 +1294,7 @@ export default function AdminPage() {
         prev.map((o) => (o.orderId === orderId ? updated : o))
       );
 
-      successToast(`Custom order status updated to ${newStatus}`);
+      successToast(`Custom order fulfillment status updated to ${newStatus}`);
     } catch (err) {
       console.error('Custom order status update error:', err.response || err);
       const msg =
@@ -768,6 +1303,114 @@ export default function AdminPage() {
         err.message ||
         'Server error';
       errorToast(msg);
+    }
+  };
+
+  const handleCreatePrintJob = async (order) => {
+    try {
+      const response = await axios.post(
+        `${API_BASE_URL}/admin/print-jobs`,
+        {
+          orderId: order.orderId,
+          customOrderId: order._id,
+          productType: order.productType,
+          notes: order.notes || '',
+        },
+        { withCredentials: true }
+      );
+
+      const createdJob = response.data;
+      successToast(`Print job ${createdJob.printJobId} created for ${order.orderId}`);
+      if (activeTab === 'print-jobs') {
+        setPrintJobs((prev) => [createdJob, ...prev]);
+      }
+
+      return createdJob;
+    } catch (err) {
+      console.error('Create print job error:', err.response || err);
+      const msg =
+        err.response?.data?.message ||
+        err.response?.data?.error ||
+        err.message ||
+        'Failed to create print job';
+      errorToast(msg);
+      return null;
+    }
+  };
+
+  const handleExportSlicerPacket = (printJobId) => {
+    const url = `${API_BASE_URL}/admin/print-jobs/${encodeURIComponent(printJobId)}/slicer-packet.zip`;
+    window.open(url, '_blank');
+  };
+
+  const handleExportLithophanePacket = (printJobId) => {
+    const url = `${API_BASE_URL}/admin/print-jobs/${encodeURIComponent(printJobId)}/lithophane-packet.zip`;
+    window.open(url, '_blank');
+  };
+
+  const handleStlEditChange = (printJobId, field, value) => {
+    setStlEditsByJob((prev) => ({
+      ...prev,
+      [printJobId]: {
+        ...(prev[printJobId] || {}),
+        [field]: value,
+      },
+    }));
+  };
+
+  const handleUpdateStlHandoff = async (printJob, overrides = {}) => {
+    const edits = stlEditsByJob[printJob.printJobId] || {};
+    const payload = {
+      stlFilename: edits.stlFilename !== undefined ? edits.stlFilename : printJob.stlFilename,
+      stlPath: edits.stlPath !== undefined ? edits.stlPath : printJob.stlPath,
+      stlVersion: edits.stlVersion !== undefined ? edits.stlVersion : printJob.stlVersion,
+      generationNotes: edits.generationNotes !== undefined ? edits.generationNotes : printJob.generationNotes,
+      status: overrides.status || edits.status || printJob.status,
+    };
+
+    try {
+      const response = await axios.patch(
+        `${API_BASE_URL}/admin/print-jobs/${encodeURIComponent(printJob.printJobId)}/stl-handoff`,
+        payload,
+        { withCredentials: true }
+      );
+      const updatedJob = response.data;
+      setPrintJobs((prev) => prev.map((jobItem) => (jobItem.printJobId === printJob.printJobId ? updatedJob : jobItem)));
+      setLithophaneJobs((prev) => prev.map((jobItem) => (jobItem.printJobId === printJob.printJobId ? updatedJob : jobItem)));
+      successToast(`STL handoff updated for ${printJob.printJobId}.`);
+      return updatedJob;
+    } catch (err) {
+      console.error('Update STL handoff error:', err.response || err);
+      const msg =
+        err.response?.data?.message ||
+        err.response?.data?.error ||
+        err.message ||
+        'Failed to update STL handoff';
+      errorToast(msg);
+      return null;
+    }
+  };
+
+  const handleUpdatePrintJob = async (printJobId, payload) => {
+    try {
+      const response = await axios.patch(
+        `${API_BASE_URL}/admin/print-jobs/${encodeURIComponent(printJobId)}`,
+        payload,
+        { withCredentials: true }
+      );
+      const updatedJob = response.data;
+      setPrintJobs((prev) => prev.map((job) => (job.printJobId === printJobId ? updatedJob : job)));
+      successToast(`Print job ${printJobId} updated.`);
+      return updatedJob;
+    } catch (err) {
+      console.error('Update print job error:', err.response || err);
+      const msg =
+        err.response?.data?.message ||
+        err.response?.data?.error ||
+        err.message ||
+        'Failed to update print job';
+      errorToast(msg);
+      return null;
     }
   };
 
@@ -1170,6 +1813,30 @@ export default function AdminPage() {
           onClick={() => setActiveTab('custom-orders')}
         >
           Custom Lamp Orders
+        </button>
+        <button
+          className={activeTab === 'production-queue' ? 'tab active' : 'tab'}
+          onClick={() => setActiveTab('production-queue')}
+        >
+          Production Queue
+        </button>
+        <button
+          className={activeTab === 'print-jobs' ? 'tab active' : 'tab'}
+          onClick={() => setActiveTab('print-jobs')}
+        >
+          Print Jobs
+        </button>
+        <button
+          className={activeTab === 'lithophane' ? 'tab active' : 'tab'}
+          onClick={() => setActiveTab('lithophane')}
+        >
+          Lithophane
+        </button>
+        <button
+          className={activeTab === 'batches' ? 'tab active' : 'tab'}
+          onClick={() => setActiveTab('batches')}
+        >
+          Batches
         </button>
         {canManagePromos && (
           <button
@@ -1787,7 +2454,21 @@ export default function AdminPage() {
                       </div>
                       <div className="admin-order-meta">
                         <span>
-                          <span className="label">Status:</span> {order.status}
+                          <span className="label">Images:</span> {order.images?.length || order.imagesCount || 0}
+                        </span>
+                        <span>
+                          <span className="label">Total:</span> ${order.totalPrice?.toFixed(2) || '0.00'}
+                        </span>
+                        <span>
+                          <span className="label">Deposit:</span> ${order.depositAmount?.toFixed(2) || '0.00'}
+                        </span>
+                      </div>
+                      <div className="admin-order-meta">
+                        <span>
+                          <span className="label">Status:</span> {order.status || 'submitted'}
+                        </span>
+                        <span>
+                          <span className="label">Fulfillment:</span> {order.fulfillmentStatus || order.status || 'submitted'}
                         </span>
                         <span>
                           <span className="label">Payment:</span> {order.paymentStatus || 'pending'}
@@ -1796,8 +2477,20 @@ export default function AdminPage() {
                     </div>
 
                     <div className="admin-order-status-wrap">
+                      <button
+                        type="button"
+                        className="admin-order-toggle-button"
+                        onClick={() =>
+                          setExpandedCustomOrders((prev) => ({
+                            ...prev,
+                            [order.orderId]: !prev[order.orderId],
+                          }))
+                        }
+                      >
+                        {expandedCustomOrders[order.orderId] ? 'Hide details' : 'Show details'}
+                      </button>
                       <select
-                        value={order.status || 'submitted'}
+                        value={order.fulfillmentStatus || order.status || 'submitted'}
                         onChange={(e) =>
                           handleCustomOrderStatusChange(order.orderId, e.target.value)
                         }
@@ -1813,11 +2506,26 @@ export default function AdminPage() {
                         <option value="completed">Completed</option>
                         <option value="cancelled">Cancelled</option>
                       </select>
+                      <button
+                        type="button"
+                        className="secondary-button small-button"
+                        onClick={() => handleCreatePrintJob(order)}
+                      >
+                        Create Print Job
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary-button small-button"
+                        onClick={() => navigate(`/admin/work-order/${encodeURIComponent(order.orderId)}`)}
+                      >
+                        Generate Work Order
+                      </button>
                     </div>
                   </div>
 
-                  <div className="admin-order-items">
-                    <div className="custom-order-details-section">
+                  {expandedCustomOrders[order.orderId] && (
+                    <div className="admin-order-items">
+                      <div className="custom-order-details-section">
                       <div className="custom-order-detail-row">
                         <span className="label">Customer Notes:</span>
                         <span>{order.notes || '(none)'}</span>
@@ -1898,18 +2606,54 @@ export default function AdminPage() {
                       </div>
                       {order.images && order.images.length > 0 && (
                         <div className="custom-order-images-list">
-                          <span className="label">Image Files:</span>
-                          <ul>
-                            {order.images.map((img, idx) => (
-                              <li key={idx}>
-                                Panel {img.panel}: {img.originalName} ({(img.size / 1024).toFixed(1)}KB)
-                              </li>
-                            ))}
-                          </ul>
+                          <span className="label">Uploaded Images</span>
+                          <div className="custom-order-image-grid">
+                            {order.images.map((img, idx) => {
+                              const imageUrl = normalizeCustomOrderImageUrl(img.path);
+                              const resolvedUrl = imageUrl ? resolveImageUrl(imageUrl) : '';
+                              return (
+                                <div key={idx} className="custom-order-image-card">
+                                  {resolvedUrl ? (
+                                    <a href={resolvedUrl} target="_blank" rel="noreferrer">
+                                      <img
+                                        src={resolvedUrl}
+                                        alt={img.originalName || `Uploaded image ${idx + 1}`}
+                                        className="custom-order-image-thumb"
+                                        onError={(e) => {
+                                          e.currentTarget.src = '/images/hexforge-logo-removebg.png';
+                                          e.currentTarget.alt = 'Missing image';
+                                        }}
+                                      />
+                                    </a>
+                                  ) : (
+                                    <div className="custom-order-image-missing">Missing image</div>
+                                  )}
+                                  <div className="custom-order-image-meta">
+                                    <div className="custom-order-image-name">
+                                      {img.originalName || `Image ${idx + 1}`}
+                                    </div>
+                                    <div className="custom-order-image-details">
+                                      Panel {img.panel || idx + 1} · {(img.size / 1024).toFixed(1)} KB
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          <div className="custom-order-actions-row">
+                            <button
+                              type="button"
+                              className="secondary-button small-button"
+                              onClick={() => window.open(`${API_BASE_URL}/admin/custom-orders/${encodeURIComponent(order.orderId)}/images.zip`, '_blank')}
+                            >
+                              Download ZIP
+                            </button>
+                          </div>
                         </div>
                       )}
                     </div>
                   </div>
+                  )}
 
                   <div className="admin-custom-order-notes">
                     <label>Admin Notes:</label>
@@ -1946,7 +2690,587 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* ---------- PROMO CODES TAB ---------- */}
+      {activeTab === 'production-queue' && (
+        <div>
+          <div className="admin-order-filter-row">
+            <h2 className="section-header">PRODUCTION QUEUE</h2>
+            <div className="admin-order-filter-controls">
+              <label>
+                Queue filter:
+                <select
+                  value={productionQueueFilter}
+                  onChange={(e) => setProductionQueueFilter(e.target.value)}
+                  className="admin-order-filter-select"
+                >
+                  <option value="all">All</option>
+                  <option value="ready">Print Ready</option>
+                  <option value="missing_images">Missing Images</option>
+                  <option value="pending_deposit">Pending Deposit</option>
+                  <option value="in_production">In Production</option>
+                  <option value="completed">Completed</option>
+                </select>
+              </label>
+              <label>
+                Sort by:
+                <select
+                  value={productionQueueSort}
+                  onChange={(e) => setProductionQueueSort(e.target.value)}
+                  className="admin-order-filter-select"
+                >
+                  <option value="newest">Newest</option>
+                  <option value="oldest">Oldest</option>
+                  <option value="highest_total">Highest Total</option>
+                  <option value="lowest_total">Lowest Total</option>
+                </select>
+              </label>
+            </div>
+          </div>
+          <div className="admin-order-filter-summary">
+            Showing {getProductionQueueItems.length} production queue item{getProductionQueueItems.length === 1 ? '' : 's'}
+            {productionQueueFilter !== 'all' && (
+              <span className="admin-order-filter-badge">
+                {productionQueueFilter.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
+              </span>
+            )}
+          </div>
+
+          {!getProductionQueueItems.length ? (
+            <div className="empty-state">No production queue items match the current filter.</div>
+          ) : (
+            <div className="kanban-board">
+              {boardColumns.map((column) => (
+                <div
+                  key={column.stage}
+                  className={`kanban-column ${dragOverStage === column.stage ? 'drag-over' : ''}`}
+                  onDragOver={(e) => handleKanbanDragOver(e, column.stage)}
+                  onDrop={(e) => handleKanbanDrop(e, column.stage)}
+                  onDragLeave={handleKanbanDragLeave}
+                >
+                  <div className="kanban-column-header">
+                    <div>{column.label}</div>
+                    <div className="kanban-column-count">{column.orders.length}</div>
+                  </div>
+                  <div className="kanban-column-body">
+                    {column.orders.length === 0 ? (
+                      <div className="kanban-empty-state">No orders</div>
+                    ) : (
+                      column.orders.map((order) => {
+                        const imageCount = Array.isArray(order.images) ? order.images.length : order.imagesCount || 0;
+                        const ready = order.isPrintReady !== undefined ? order.isPrintReady : isCustomOrderPrintReady(order);
+                        const notePreview = order.notes ? order.notes.slice(0, 120) : '';
+                        return (
+                          <div
+                            key={order.orderId}
+                            className={`kanban-card ${draggedOrderId === order.orderId ? 'dragging' : ''}`}
+                            draggable
+                            onDragStart={(e) => handleKanbanDragStart(e, order.orderId)}
+                            onDragEnd={() => setDraggedOrderId(null)}
+                          >
+                            <div className="kanban-card-top">
+                              <div>
+                                <div className="kanban-card-title">{order.orderId}</div>
+                                <div className="kanban-card-subtitle">{order.customer?.name || 'Unknown customer'}</div>
+                              </div>
+                              {ready && <div className="kanban-card-badge kanban-card-badge-ready">PRINT READY</div>}
+                            </div>
+                            <div className="kanban-card-meta">
+                              <span>{order.productName || 'Unknown product'}</span>
+                              <span>{order.productType || 'panel'}</span>
+                              <span>{order.paymentStatus || 'pending'}</span>
+                              <span>{order.fulfillmentStatus || order.status || 'submitted'}</span>
+                              <span>${Number(order.totalPrice || order.discountedTotal || 0).toFixed(2)}</span>
+                              <span>Deposit ${Number(order.depositAmount || 0).toFixed(2)}</span>
+                              <span>Remain ${Number(order.remainingBalance || 0).toFixed(2)}</span>
+                              <span>{imageCount} images</span>
+                            </div>
+                            {notePreview ? (
+                              <div className="kanban-card-notes">{notePreview}{order.notes.length > 120 ? '…' : ''}</div>
+                            ) : null}
+                            <div className="kanban-card-actions">
+                              <button
+                                type="button"
+                                className="secondary-button small-button"
+                                onClick={() => handleCreatePrintJob(order)}
+                              >
+                                Create Print Job
+                              </button>
+                              <button
+                                type="button"
+                                className="secondary-button small-button"
+                                onClick={() => navigate(`/admin/work-order/${encodeURIComponent(order.orderId)}`)}
+                              >
+                                Work Order
+                              </button>
+                              <button
+                                type="button"
+                                className="secondary-button small-button"
+                                onClick={() => window.open(`${API_BASE_URL}/admin/custom-orders/${encodeURIComponent(order.orderId)}/images.zip`, '_blank')}
+                              >
+                                Download ZIP
+                              </button>
+                              <button
+                                type="button"
+                                className="secondary-button small-button"
+                                onClick={() => handleCreatePrintJob(order)}
+                              >
+                                Create Print Job
+                              </button>
+                              <button
+                                type="button"
+                                className="secondary-button small-button"
+                                onClick={() => setExpandedCustomOrders((prev) => ({
+                                  ...prev,
+                                  [order.orderId]: !prev[order.orderId],
+                                }))}
+                              >
+                                {expandedCustomOrders[order.orderId] ? 'Hide details' : 'Details'}
+                              </button>
+                            </div>
+                            {expandedCustomOrders[order.orderId] && (
+                              <div className="kanban-card-expanded">
+                                <div><strong>Notes:</strong> {order.notes || 'None'}</div>
+                                <div><strong>Created:</strong> {order.createdAt ? new Date(order.createdAt).toLocaleString() : 'Unknown'}</div>
+                                <div><strong>Shipping:</strong> {order.customer?.shippingAddress ? `${order.customer.shippingAddress.city}, ${order.customer.shippingAddress.state}` : 'Not provided'}</div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'print-jobs' && (
+        <div>
+          <div className="admin-order-filter-row">
+            <h2 className="section-header">PRINT JOBS</h2>
+            <div className="admin-order-filter-controls">
+              <label>
+                Status filter:
+                <select
+                  value={printJobStatusFilter}
+                  onChange={(e) => setPrintJobStatusFilter(e.target.value)}
+                  className="admin-order-filter-select"
+                >
+                  <option value="all">All</option>
+                  <option value="queued_for_slicing">Queued for Slicing</option>
+                  <option value="sliced">Sliced</option>
+                  <option value="queued_for_batch">Queued for Batch</option>
+                  <option value="assigned_to_printer">Assigned to Printer</option>
+                  <option value="printing">Printing</option>
+                  <option value="printed">Printed</option>
+                  <option value="failed">Failed</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+              </label>
+            </div>
+          </div>
+          <div className="admin-order-filter-summary">
+            Showing {printJobs.length} print job{printJobs.length === 1 ? '' : 's'}
+            {printJobStatusFilter !== 'all' && (
+              <span className="admin-order-filter-badge">
+                {printJobStatusFilter.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
+              </span>
+            )}
+          </div>
+          {isLoadingPrintJobs ? (
+            <div className="empty-state">Loading print jobs…</div>
+          ) : !printJobs.length ? (
+            <div className="empty-state">No print jobs found.</div>
+          ) : (
+            <div className="print-jobs-grid">
+              {printJobs.map((job) => {
+                const stlEdits = stlEditsByJob[job.printJobId] || {};
+                const stlFilenameValue = stlEdits.stlFilename !== undefined ? stlEdits.stlFilename : job.stlFilename || '';
+                const stlPathValue = stlEdits.stlPath !== undefined ? stlEdits.stlPath : job.stlPath || '';
+                const stlVersionValue = stlEdits.stlVersion !== undefined ? stlEdits.stlVersion : job.stlVersion || '';
+                const generationNotesValue = stlEdits.generationNotes !== undefined ? stlEdits.generationNotes : job.generationNotes || '';
+
+                return (
+                  <div key={job.printJobId} className="print-job-card">
+                    <div className="print-job-card-header">
+                      <div>
+                      <div className="print-job-title">{job.printJobId}</div>
+                      <div className="print-job-subtitle">Order: {job.orderId}</div>
+                    </div>
+                    <div>
+                      <div className={`print-job-status print-job-status-${job.status}`}>{job.status.replace(/_/g, ' ')}</div>
+                      <select
+                        value={job.status}
+                        onChange={(e) => handleUpdatePrintJob(job.printJobId, { status: e.target.value })}
+                        className="admin-order-status-select"
+                        style={{ marginTop: '10px', minWidth: '180px' }}
+                      >
+                        <option value="queued_for_generation">Queued for Generation</option>
+                        <option value="generating_stl">Generating STL</option>
+                        <option value="stl_ready">STL Ready</option>
+                        <option value="queued_for_slicing">Queued for Slicing</option>
+                        <option value="sliced">Sliced</option>
+                        <option value="queued_for_batch">Queued for Batch</option>
+                        <option value="assigned_to_printer">Assigned to Printer</option>
+                        <option value="printing">Printing</option>
+                        <option value="printed">Printed</option>
+                        <option value="failed">Failed</option>
+                        <option value="cancelled">Cancelled</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="print-job-meta">
+                    <div><strong>Printer:</strong> {job.printerProfile || 'TBD'}</div>
+                    <div><strong>Material:</strong> {job.materialProfile || 'TBD'}</div>
+                    <div><strong>Slicer:</strong> {job.slicerProfile || 'TBD'}</div>
+                    <div><strong>Nozzle:</strong> {job.nozzle || 'TBD'}</div>
+                    <div><strong>Layer Height:</strong> {job.layerHeight || 'TBD'}</div>
+                    <div><strong>Generation Method:</strong> {job.generationMethod || 'Manual'}</div>
+                    <div><strong>Lithophane Type:</strong> {job.lithophaneType || 'Custom'}</div>
+                    <div><strong>Target WxHxD:</strong> {job.targetWidthMm || 'N/A'} x {job.targetHeightMm || 'N/A'} x {job.targetDepthMm || 'N/A'} mm</div>
+                    <div><strong>Panel Count:</strong> {job.panelCount || 1}</div>
+                    <div><strong>Infill:</strong> {job.infill || 'TBD'}%</div>
+                    <div><strong>Walls:</strong> {job.wallCount || 'TBD'}</div>
+                    <div><strong>Estimated Hours:</strong> {job.estimatedPrintHours || 0}</div>
+                  </div>
+                  <div className="print-job-links">
+                    <div><strong>STL:</strong> {job.stlPath ? 'Attached' : 'Missing'}</div>
+                    <div><strong>Project:</strong> {job.projectFilePath ? 'Attached' : 'Missing'}</div>
+                    <div><strong>G-code:</strong> {job.gcodePath ? 'Attached' : 'Missing'}</div>
+                  </div>
+                  <div className="print-job-actions">
+                    <button
+                      type="button"
+                      className="secondary-button small-button"
+                      onClick={() => handleExportSlicerPacket(job.printJobId)}
+                    >
+                      Export Slicer Packet
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary-button small-button"
+                      onClick={() => handleExportLithophanePacket(job.printJobId)}
+                    >
+                      Export Lithophane Packet
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary-button small-button"
+                      onClick={() => handleCreateBatchFromPrintJob(job)}
+                    >
+                      New Batch from Job
+                    </button>
+                    {batches.length > 0 && (
+                      <select
+                        value={job.assignedBatchId || ''}
+                        onChange={(e) => {
+                          const batchId = e.target.value;
+                          if (!batchId) return;
+                          handleAssignPrintJobToBatch(job, batchId);
+                        }}
+                        className="admin-order-status-select"
+                        style={{ minWidth: '170px' }}
+                      >
+                        <option value="">Assign to batch...</option>
+                        {batches.map((batch) => (
+                          <option key={batch.batchId} value={batch.batchId}>
+                            {batch.batchId} • {batch.status || 'pending'}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    <button
+                      type="button"
+                      className="secondary-button small-button"
+                      onClick={() => handleUpdateStlHandoff(job)}
+                    >
+                      Save STL Handoff
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary-button small-button"
+                      onClick={() => handleUpdateStlHandoff(job, { status: 'stl_ready' })}
+                    >
+                      Mark STL Ready
+                    </button>
+                  </div>
+                  <div className="print-job-links">
+                    <div><strong>STL:</strong> {job.stlPath ? 'Attached' : 'Missing'}</div>
+                    <div><strong>Filename:</strong> {job.stlFilename || 'Not set'}</div>
+                    <div><strong>Version:</strong> {job.stlVersion || 'Not set'}</div>
+                    <div><strong>Project:</strong> {job.projectFilePath ? 'Attached' : 'Missing'}</div>
+                    <div><strong>G-code:</strong> {job.gcodePath ? 'Attached' : 'Missing'}</div>
+                  </div>
+                  <div className="print-job-meta">
+                    <div><strong>Generation Notes</strong></div>
+                    <textarea
+                      className="form-input print-job-textarea"
+                      value={generationNotesValue}
+                      onChange={(e) => handleStlEditChange(job.printJobId, 'generationNotes', e.target.value)}
+                      rows={3}
+                    />
+                    <div className="print-job-edit-row">
+                      <input
+                        className="form-input"
+                        placeholder="STL Filename"
+                        value={stlFilenameValue}
+                        onChange={(e) => handleStlEditChange(job.printJobId, 'stlFilename', e.target.value)}
+                      />
+                      <input
+                        className="form-input"
+                        placeholder="STL Path"
+                        value={stlPathValue}
+                        onChange={(e) => handleStlEditChange(job.printJobId, 'stlPath', e.target.value)}
+                      />
+                      <input
+                        className="form-input"
+                        placeholder="STL Version"
+                        value={stlVersionValue}
+                        onChange={(e) => handleStlEditChange(job.printJobId, 'stlVersion', e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div className="print-job-notes">
+                    <strong>Notes</strong>
+                    <p>{job.notes || 'No notes'}</p>
+                  </div>
+                </div>
+              )})}
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'batches' && (
+        <div>
+          <div className="admin-order-filter-row">
+            <h2 className="section-header">BATCHES</h2>
+            <div className="admin-order-filter-controls">
+              <label>
+                Status filter:
+                <select
+                  value={batchStatusFilter}
+                  onChange={(e) => setBatchStatusFilter(e.target.value)}
+                  className="admin-order-filter-select"
+                >
+                  <option value="all">All</option>
+                  <option value="pending">Pending</option>
+                  <option value="queued_for_batch">Queued for Batch</option>
+                  <option value="assigned_to_printer">Assigned to Printer</option>
+                  <option value="printing">Printing</option>
+                  <option value="printed">Printed</option>
+                  <option value="failed">Failed</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+              </label>
+            </div>
+          </div>
+          <div className="admin-order-filter-summary">
+            Showing {batches.length} batch{batches.length === 1 ? '' : 'es'}
+            {batchStatusFilter !== 'all' && (
+              <span className="admin-order-filter-badge">
+                {batchStatusFilter.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
+              </span>
+            )}
+          </div>
+          {isLoadingBatches ? (
+            <div className="empty-state">Loading batches…</div>
+          ) : !batches.length ? (
+            <div className="empty-state">No batches found.</div>
+          ) : (
+            <div className="print-jobs-grid">
+              {batches.map((batch) => (
+                <div key={batch.batchId} className="print-job-card">
+                  <div className="print-job-card-header">
+                    <div>
+                      <div className="print-job-title">{batch.batchId}</div>
+                      <div className="print-job-subtitle">Jobs: {batch.printJobIds?.length || 0}</div>
+                    </div>
+                    <div>
+                      <div className={`print-job-status print-job-status-${batch.status}`}>
+                        {batch.status.replace(/_/g, ' ')}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="print-job-meta">
+                    <div><strong>Printer:</strong> {batch.printerProfile || 'TBD'}</div>
+                    <div><strong>Material:</strong> {batch.materialProfile || 'TBD'}</div>
+                    <div><strong>Slicer:</strong> {batch.slicerProfile || 'TBD'}</div>
+                    <div><strong>Nozzle:</strong> {batch.nozzle || 'TBD'}</div>
+                    <div><strong>Layer Height:</strong> {batch.layerHeight || 'TBD'}</div>
+                    <div><strong>Estimated Hours:</strong> {batch.totalEstimatedPrintHours || 0}</div>
+                  </div>
+                  <div className="print-job-links">
+                    <div><strong>Project:</strong> {batch.projectFilePath ? 'Attached' : 'Missing'}</div>
+                    <div><strong>G-code:</strong> {batch.gcodePath ? 'Attached' : 'Missing'}</div>
+                  </div>
+                  <div className="print-job-actions">
+                    <button
+                      type="button"
+                      className="secondary-button small-button"
+                      onClick={() => navigator.clipboard.writeText(batch.batchId).then(() => successToast('Batch ID copied.')).catch(() => errorToast('Failed to copy.'))}
+                    >
+                      Copy Batch ID
+                    </button>
+                  </div>
+                  <div className="print-job-notes">
+                    <strong>Notes</strong>
+                    <p>{batch.notes || 'No notes'}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'lithophane' && (
+        <div>
+          <div className="admin-order-filter-row">
+            <h2 className="section-header">LITHOPHANE GENERATION</h2>
+            <div className="admin-order-filter-controls">
+              <label>
+                Status filter:
+                <select
+                  value={lithophaneStatusFilter}
+                  onChange={(e) => setLithophaneStatusFilter(e.target.value)}
+                  className="admin-order-filter-select"
+                >
+                  <option value="all">All generation stages</option>
+                  <option value="queued_for_generation">Queued for Generation</option>
+                  <option value="generating_stl">Generating STL</option>
+                  <option value="stl_ready">STL Ready</option>
+                  <option value="queued_for_slicing">Queued for Slicing</option>
+                </select>
+              </label>
+            </div>
+          </div>
+          <div className="admin-order-filter-summary">
+            Showing {lithophaneJobs.length} print job{lithophaneJobs.length === 1 ? '' : 's'}
+            {lithophaneStatusFilter !== 'all' && (
+              <span className="admin-order-filter-badge">
+                {lithophaneStatusFilter.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
+              </span>
+            )}
+          </div>
+          {isLoadingLithophaneJobs ? (
+            <div className="empty-state">Loading lithophane jobs…</div>
+          ) : !lithophaneJobs.length ? (
+            <div className="empty-state">No lithophane jobs found.</div>
+          ) : (
+            <div className="print-jobs-grid">
+              {lithophaneJobs.map((job) => {
+                const stlEdits = stlEditsByJob[job.printJobId] || {};
+                const stlFilenameValue = stlEdits.stlFilename !== undefined ? stlEdits.stlFilename : job.stlFilename || '';
+                const stlPathValue = stlEdits.stlPath !== undefined ? stlEdits.stlPath : job.stlPath || '';
+                const stlVersionValue = stlEdits.stlVersion !== undefined ? stlEdits.stlVersion : job.stlVersion || '';
+                const generationNotesValue = stlEdits.generationNotes !== undefined ? stlEdits.generationNotes : job.generationNotes || '';
+
+                return (
+                  <div key={job.printJobId} className="print-job-card">
+                    <div className="print-job-card-header">
+                      <div>
+                        <div className="print-job-title">{job.printJobId}</div>
+                        <div className="print-job-subtitle">Order: {job.orderId}</div>
+                      </div>
+                      <div>
+                        <div className={`print-job-status print-job-status-${job.status}`}>{job.status.replace(/_/g, ' ')}</div>
+                        <select
+                          value={job.status}
+                          onChange={(e) => handleUpdatePrintJob(job.printJobId, { status: e.target.value })}
+                          className="admin-order-status-select"
+                          style={{ marginTop: '10px', minWidth: '180px' }}
+                        >
+                          <option value="queued_for_generation">Queued for Generation</option>
+                          <option value="generating_stl">Generating STL</option>
+                          <option value="stl_ready">STL Ready</option>
+                          <option value="queued_for_slicing">Queued for Slicing</option>
+                          <option value="sliced">Sliced</option>
+                          <option value="queued_for_batch">Queued for Batch</option>
+                          <option value="assigned_to_printer">Assigned to Printer</option>
+                          <option value="printing">Printing</option>
+                          <option value="printed">Printed</option>
+                          <option value="failed">Failed</option>
+                          <option value="cancelled">Cancelled</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div className="print-job-meta">
+                      <div><strong>Printer:</strong> {job.printerProfile || 'TBD'}</div>
+                      <div><strong>Material:</strong> {job.materialProfile || 'TBD'}</div>
+                      <div><strong>Slicer:</strong> {job.slicerProfile || 'TBD'}</div>
+                      <div><strong>Nozzle:</strong> {job.nozzle || 'TBD'}</div>
+                      <div><strong>Layer Height:</strong> {job.layerHeight || 'TBD'}</div>
+                      <div><strong>Generation Method:</strong> {job.generationMethod || 'Manual'}</div>
+                      <div><strong>Lithophane Type:</strong> {job.lithophaneType || 'Custom'}</div>
+                      <div><strong>Target WxHxD:</strong> {job.targetWidthMm || 'N/A'} x {job.targetHeightMm || 'N/A'} x {job.targetDepthMm || 'N/A'} mm</div>
+                      <div><strong>Panel Count:</strong> {job.panelCount || 1}</div>
+                    </div>
+                    <div className="print-job-links">
+                      <div><strong>STL:</strong> {job.stlPath ? 'Attached' : 'Missing'}</div>
+                      <div><strong>Filename:</strong> {job.stlFilename || 'Not set'}</div>
+                      <div><strong>Version:</strong> {job.stlVersion || 'Not set'}</div>
+                      <div><strong>Project:</strong> {job.projectFilePath ? 'Attached' : 'Missing'}</div>
+                      <div><strong>G-code:</strong> {job.gcodePath ? 'Attached' : 'Missing'}</div>
+                    </div>
+                    <div className="print-job-actions">
+                      <button
+                        type="button"
+                        className="secondary-button small-button"
+                        onClick={() => handleExportLithophanePacket(job.printJobId)}
+                      >
+                        Export Lithophane Packet
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary-button small-button"
+                        onClick={() => handleUpdateStlHandoff(job, { status: 'stl_ready' })}
+                      >
+                        Mark STL Ready
+                      </button>
+                    </div>
+                    <div className="print-job-notes">
+                      <strong>Generation Notes</strong>
+                      <textarea
+                        className="form-input print-job-textarea"
+                        value={generationNotesValue}
+                        onChange={(e) => handleStlEditChange(job.printJobId, 'generationNotes', e.target.value)}
+                        rows={3}
+                      />
+                    </div>
+                    <div className="print-job-edit-row">
+                      <input
+                        className="form-input"
+                        placeholder="STL Filename"
+                        value={stlFilenameValue}
+                        onChange={(e) => handleStlEditChange(job.printJobId, 'stlFilename', e.target.value)}
+                      />
+                      <input
+                        className="form-input"
+                        placeholder="STL Path"
+                        value={stlPathValue}
+                        onChange={(e) => handleStlEditChange(job.printJobId, 'stlPath', e.target.value)}
+                      />
+                      <input
+                        className="form-input"
+                        placeholder="STL Version"
+                        value={stlVersionValue}
+                        onChange={(e) => handleStlEditChange(job.printJobId, 'stlVersion', e.target.value)}
+                      />
+                    </div>
+                    <div className="print-job-notes">
+                      <strong>Notes</strong>
+                      <p>{job.notes || 'No notes'}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
       {activeTab === 'promo-codes' && (
         <div>
           <h2 className="section-header">PROMO CODES</h2>
