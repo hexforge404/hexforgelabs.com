@@ -8,6 +8,13 @@ const customOrderSchema = new mongoose.Schema({
     unique: true,
     index: true
   },
+  idempotencyKey: {
+    type: String,
+    trim: true,
+    unique: true,
+    sparse: true,
+    index: true
+  },
   productId: {
     type: String,
     required: true,
@@ -316,6 +323,11 @@ const customOrderSchema = new mongoose.Schema({
   stripeSessionId: {
     type: String,
     trim: true
+  },
+  paymentIntentId: {
+    type: String,
+    trim: true,
+    index: true
   },
   trackingCarrier: {
     type: String,

@@ -6,6 +6,7 @@ const path = require('path');
 const fs = require('fs/promises');
 const multer = require('multer');
 const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
 const Product = require('../models/Product');
 const ProductAsset = require('../models/ProductAsset');
 const CustomOrder = require('../models/CustomOrder');
@@ -71,6 +72,19 @@ ensureDir(CUSTOM_ORDER_UPLOAD_TMP_DIR);
 const getCustomOrderUploadDir = (orderId) => path.join(CUSTOM_ORDER_UPLOAD_DIR, orderId);
 const getCustomOrderPublicUrl = (relativePath) => `/${relativePath.replace(/^\/+/, '')}`;
 const getCustomOrderRelativePath = (orderId, filename) => `uploads/custom-orders/${orderId}/${filename}`;
+
+const getRequestIdempotencyKey = (req, fallbackData = {}) => {
+  const headerKey = String(req.headers['x-idempotency-key'] || '').trim();
+  if (headerKey) return headerKey;
+
+  const payload = {
+    sessionId: req.sessionID || '',
+    path: req.originalUrl || '',
+    method: req.method || 'POST',
+    ...fallbackData,
+  };
+  return `auto:${crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex')}`;
+};
 
 const safeCustomOrderFilename = (originalName) => {
   const ext = path.extname(originalName).toLowerCase();
@@ -1140,6 +1154,61 @@ router.post(
         shippingZip,
         shippingCountry,
       } = req.body;
+      const idempotencyKey = getRequestIdempotencyKey(req, {
+        customerEmail: customerEmail || '',
+        customerName: customerName || '',
+        productId: productId || '',
+        productType: productType || '',
+        panelCount: panelCount || '',
+        size: size || '',
+        lightType: lightType || '',
+        promoCode: promoCode || '',
+        shippingStreet: shippingStreet || '',
+        shippingCity: shippingCity || '',
+        shippingState: shippingState || '',
+        shippingZip: shippingZip || '',
+        shippingCountry: shippingCountry || '',
+      });
+
+      if (idempotencyKey) {
+        const existingCustomOrder = await CustomOrder.findOne({ idempotencyKey });
+        if (existingCustomOrder) {
+          let checkoutUrl = null;
+          if (existingCustomOrder.stripeSessionId) {
+            try {
+              const session = await stripe.checkout.sessions.retrieve(existingCustomOrder.stripeSessionId);
+              checkoutUrl = session?.url || null;
+            } catch (err) {
+              console.warn('⚠️ Failed to retrieve existing custom order Stripe session:', err.message || err);
+            }
+          }
+
+          return res.json({
+            success: true,
+            message: 'Custom order already exists',
+            orderId: existingCustomOrder.orderId,
+            productType: existingCustomOrder.productType || 'panel',
+            panelCount: existingCustomOrder.panelCount,
+            lightType: existingCustomOrder.lightType,
+            extras: existingCustomOrder.extras,
+            nightlightAddon: existingCustomOrder.nightlightAddon,
+            boxOptions: existingCustomOrder.boxOptions,
+            boxModularOptions: existingCustomOrder.boxModularOptions,
+            cylinderOptions: existingCustomOrder.cylinderOptions,
+            originalPrice: existingCustomOrder.originalPrice,
+            discountedTotal: existingCustomOrder.discountedTotal,
+            discountAmount: existingCustomOrder.discountAmount,
+            promoCode: existingCustomOrder.promoCode || null,
+            totalPrice: existingCustomOrder.totalPrice,
+            depositAmount: existingCustomOrder.depositAmount,
+            remainingBalance: existingCustomOrder.remainingBalance,
+            checkoutUrl,
+            sessionId: existingCustomOrder.stripeSessionId,
+            status: existingCustomOrder.status,
+            fulfillmentStatus: existingCustomOrder.fulfillmentStatus,
+          });
+        }
+      }
 
       const parseExtras = (value) => {
         if (!value) return [];
@@ -1505,6 +1574,7 @@ router.post(
 
       const customOrderDoc = new CustomOrder({
         orderId,
+        idempotencyKey: idempotencyKey || undefined,
         productId,
         productName: product.title,
         productType: resolvedProductType,
@@ -1598,6 +1668,15 @@ router.post(
             payment_method_types: ['card'],
             mode: 'payment',
             customer_email: customerEmail,
+            payment_intent_data: {
+              metadata: {
+                orderId: customOrderDoc.orderId,
+                type: 'custom-order-deposit',
+                promoCode: promoData?.promoCode || '',
+                discountAmount: promoData?.discountAmount?.toString() || '0',
+                idempotencyKey,
+              },
+            },
             line_items: [
               {
                 price_data: {
@@ -1618,16 +1697,19 @@ router.post(
               type: 'custom-order-deposit',
               promoCode: promoData?.promoCode || '',
               discountAmount: promoData?.discountAmount?.toString() || '0',
+              idempotencyKey,
             },
           });
 
           console.info('Stripe checkout session created', {
             orderId: customOrderDoc.orderId,
             sessionId: session.id,
+            paymentIntentId: session.payment_intent,
             amount: session.amount_total,
           });
 
           customOrderDoc.stripeSessionId = session.id;
+          customOrderDoc.paymentIntentId = session.payment_intent || undefined;
           savedOrder = await customOrderDoc.save();
           checkoutUrl = session.url;
           sessionId = session.id;
@@ -1780,10 +1862,10 @@ router.post('/custom-orders/:orderId/confirm-deposit', express.json(), async (re
       return res.status(400).json({ error: 'Stripe is not configured for deposit confirmation.' });
     }
 
-    const { sessionId } = req.body;
+    const { sessionId, paymentIntentId } = req.body;
     const { orderId } = req.params;
-    if (!sessionId) {
-      return res.status(400).json({ error: 'Stripe sessionId is required.' });
+    if (!sessionId && !paymentIntentId) {
+      return res.status(400).json({ error: 'Stripe sessionId or paymentIntentId is required.' });
     }
 
     const customOrder = await CustomOrder.findOne({ orderId });
@@ -1791,14 +1873,31 @@ router.post('/custom-orders/:orderId/confirm-deposit', express.json(), async (re
       return res.status(404).json({ error: 'Custom order not found.' });
     }
 
-    const session = await stripe.checkout.sessions.retrieve(sessionId);
+    let session = null;
+    if (sessionId) {
+      session = await stripe.checkout.sessions.retrieve(sessionId);
+    } else {
+      const sessions = await stripe.checkout.sessions.list({ payment_intent: paymentIntentId, limit: 1 });
+      session = sessions.data?.[0] || null;
+    }
+
     if (!session || session.payment_status !== 'paid') {
       return res.status(400).json({ error: 'Payment is not complete yet.' });
+    }
+
+    if (String(session.metadata?.orderId || '') !== String(orderId)) {
+      return res.status(400).json({ error: 'Stripe session does not belong to this custom order.' });
+    }
+
+    if (session.metadata?.type !== 'custom-order-deposit') {
+      return res.status(400).json({ error: 'Stripe session is not a custom order deposit session.' });
     }
 
     customOrder.paymentStatus = 'deposit_paid';
     customOrder.status = 'deposit_paid';
     customOrder.fulfillmentStatus = 'deposit_paid';
+    customOrder.stripeSessionId = session.id;
+    customOrder.paymentIntentId = session.payment_intent || customOrder.paymentIntentId;
     customOrder.depositPaidAt = new Date();
     customOrder.fulfillmentTimestamps = customOrder.fulfillmentTimestamps || {};
     customOrder.fulfillmentTimestamps.depositPaidAt = new Date();

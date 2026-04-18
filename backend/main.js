@@ -149,7 +149,10 @@ app.use(session({
 // ======================
 const productRoutes = require('./routes/products');
 const orderRoutes = require('./routes/orders');
-const adminRoutes = require('./routes/admin');const testPipelineRoutes = require('./routes/testPipeline');const paymentRoutes = require('./routes/payments');
+const adminRoutes = require('./routes/admin');
+const metricsRoutes = require('./routes/metrics');
+const testPipelineRoutes = require('./routes/testPipeline');
+const paymentRoutes = require('./routes/payments');
 const authRoutes = require('./routes/auth');
 const feedbackRoutes = require('./routes/feedback');
 const newsletterRoutes = require('./routes/newsletter');
@@ -177,6 +180,7 @@ app.use('/api/orders', apiLimiter, orderRoutes);
 app.use('/api/admin', apiLimiter, adminRoutes);
 app.use('/api/admin/test-pipeline', apiLimiter, testPipelineRoutes);
 app.use('/api/payments', apiLimiter, paymentRoutes);
+app.use('/metrics', metricsRoutes);
 app.use('/api/auth', apiLimiter, authRoutes);
 app.use('/api/feedback', feedbackRoutes);
 app.use('/api/newsletter', newsletterRoutes);

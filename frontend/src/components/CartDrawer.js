@@ -8,22 +8,40 @@ import 'react-toastify/dist/ReactToastify.css';
 
 function CartDrawer({ isOpen, onClose }) {
   const { cart, removeFromCart, clearCart } = useCart();
-  const total = cart.reduce((sum, item) => sum + item.price, 0);
+  const total = cart.reduce((sum, item) => sum + (Number(item.price) || 0) * (Number(item.quantity) || 1), 0);
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
 
-    const handleCheckout = async () => {
+  const handleCheckout = async () => {
+    if (checkoutLoading) return;
     if (cart.length === 0) {
       warningToast('⚠️ Your cart is empty!', { position: 'top-right' });
       return;
     }
 
+    setCheckoutLoading(true);
     try {
+      const sanitizedItems = cart.map((item) => ({
+        _id: item._id,
+        productId: item.productId,
+        slug: item.slug,
+        quantity: Number(item.quantity) > 0 ? Number(item.quantity) : 1,
+      }));
+
+      const idempotencyKey = window.localStorage.getItem('hexforge.checkoutIdempotencyKey')
+        || window.crypto?.randomUUID?.()
+        || `checkout-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      window.localStorage.setItem('hexforge.checkoutIdempotencyKey', idempotencyKey);
+
       const res = await fetch(`${API_BASE_URL}/payments/create-checkout-session`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Idempotency-Key': idempotencyKey,
+        },
         body: JSON.stringify({
-          items: cart,
+          items: sanitizedItems,
           email: email || undefined,
           name: name?.trim() || 'Guest',
         }),
@@ -47,8 +65,6 @@ function CartDrawer({ isOpen, onClose }) {
       }
 
       if (data && data.url) {
-        localStorage.setItem('cartItems', JSON.stringify(cart));
-        if (email) localStorage.setItem('lastOrderEmail', email);
         infoToast('🛒 Proceeding to checkout!', { position: 'top-right' });
         window.location.href = data.url;
       } else {
@@ -62,6 +78,8 @@ function CartDrawer({ isOpen, onClose }) {
       errorToast('⚠️ Something went wrong during checkout.', {
         position: 'top-right',
       });
+    } finally {
+      setCheckoutLoading(false);
     }
   };
 
@@ -104,7 +122,12 @@ function CartDrawer({ isOpen, onClose }) {
                 <div key={index} className="cart-item">
                   <div className="item-details">
                     <strong>{item.name}</strong>
-                    <div className="item-price">${item.price.toFixed(2)}</div>
+                    <div className="item-price">
+                      ${Number(item.price || 0).toFixed(2)}
+                      {item.quantity > 1 && (
+                        <span className="item-quantity"> × {item.quantity}</span>
+                      )}
+                    </div>
                   </div>
                   <button
                     onClick={() => handleRemoveFromCart(item)}
@@ -164,8 +187,9 @@ function CartDrawer({ isOpen, onClose }) {
           <button
             onClick={handleCheckout}
             className="action-button primary-button checkout-button"
+            disabled={checkoutLoading}
           >
-            ✅ Proceed to Checkout
+            {checkoutLoading ? 'Processing…' : '✅ Proceed to Checkout'}
           </button>
           <button
             onClick={handleClose}
