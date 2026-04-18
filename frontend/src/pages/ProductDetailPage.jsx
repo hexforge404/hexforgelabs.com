@@ -388,7 +388,7 @@ function ProductDetailPage() {
       notes: '',
     },
     cylinder: {
-      size: 'medium',
+      size: 'small',
       panelCount: 2,
       imageStyle: 'wrap',
       lightType: 'led',
@@ -448,6 +448,8 @@ function ProductDetailPage() {
     if (sku === 'LITHBOX05') return 'panelBox5';
     if (sku === 'LITHGLB04') return 'globeLamp';
     if (sku === 'LITHBUNDLE01') return 'familyBundle4';
+    if (sku === 'LITHNL01') return 'nightlight';
+    if (routeSlug === 'lithophane-night-light') return 'nightlight';
     if (routeSlug === 'lithophane-box') return 'fixedBox4';
     if (routeSlug === 'five-sided-lithophane-panel-box') return 'panelBox5';
     if (routeSlug === 'custom-lithophane-lamp-cylinder') return 'cylinder';
@@ -472,7 +474,7 @@ function ProductDetailPage() {
       return calculatePrice({ productType: 'familyBundle4' });
     }
     if (type === 'cylinder') {
-      return calculatePrice({ productType: 'cylinder', panelCount: 2, size: 'medium' });
+      return calculatePrice({ productType: 'cylinder', panelCount: 2, size: 'small' });
     }
     return calculatePrice({ productType: 'panel', panelCount: 2, size: 'medium' });
   };
@@ -758,7 +760,7 @@ const activeAddons = getActiveAddons();
     if (product) {
       setActiveImageIndex(0);
     }
-  }, [product?._id]);
+  }, [product]);
 
   const getImageSrc = (image) => resolveImageUrl(image);
 
@@ -888,17 +890,20 @@ const activeAddons = getActiveAddons();
     const isFixedBox4Order = customOrder.productType === 'fixedBox4';
     const isFamilyBundleOrder = customOrder.productType === 'familyBundle4';
     const isSwappableBox5Order = customOrder.productType === 'swappableBox5';
+    const isNightlightOrder = customOrder.productType === 'nightlight';
     const activePanelCount = isCylinderOrder
       ? clampPanelCount(customOrder.cylinder.panelCount)
       : isPanelOrder
         ? clampPanelCount(customOrder.lampshade.panelCount)
         : isGlobeLampOrder
           ? 1
-          : isFixedBox4Order
-            ? 4
-            : isPanelBox5Order || isSwappableBox5Order
-              ? 5
-              : 2;
+          : isNightlightOrder
+            ? 1
+            : isFixedBox4Order
+              ? 4
+              : isPanelBox5Order || isSwappableBox5Order
+                ? 5
+                : 2;
     const requiredPanels = activePanelCount;
     const panelImages = customOrder.productType === 'globeLamp'
       ? customOrder.images.filter(Boolean).slice(0, 5)
@@ -1195,8 +1200,10 @@ const activeAddons = getActiveAddons();
           ? 4
           : customOrder.productType === 'panelBox5' || customOrder.productType === 'swappableBox5'
             ? 5
-            : clampPanelCount(customOrder.lampshade.panelCount);
-  const isLamp = product.category === 'lamps';
+            : customOrder.productType === 'nightlight'
+              ? 1
+              : clampPanelCount(customOrder.lampshade.panelCount);
+  const isLamp = isLampProduct(product);
   const galleryImages = getGalleryImages(normalized);
   const heroImage = galleryImages[activeImageIndex] || normalized.image;
   const customOrderTotal = (() => {
@@ -1234,6 +1241,11 @@ const activeAddons = getActiveAddons();
         addons: customOrder.lampshade.addons,
       });
     }
+    if (customOrder.productType === 'nightlight') {
+      return calculatePrice({
+        productType: 'nightlight',
+      });
+    }
     return calculatePrice({
       productType: 'panel',
       panelCount: requiredPanelCount,
@@ -1256,6 +1268,8 @@ const activeAddons = getActiveAddons();
         return 'Box';
       case 'globeLamp':
         return 'Globe Lamp';
+      case 'nightlight':
+        return 'Night Light';
       default:
         return 'Custom Order';
     }
@@ -1322,7 +1336,7 @@ const activeAddons = getActiveAddons();
             </div>
             <div className="product-detail-hero-price">{getHeroStartText()}</div>
             <div className="product-detail-hero-subprice">
-              Full bundle total: {customOrderTotal ? `$${customOrderTotal.toFixed(2)}` : '$129.99'}
+              Full bundle total: {Number.isFinite(customOrderTotal) ? `$${customOrderTotal.toFixed(2)}` : '$0.00'}
             </div>
           </div>
         </section>
@@ -1389,7 +1403,11 @@ const activeAddons = getActiveAddons();
               Made from your photos. Designed to glow with your lamp base.
             </div>
           )}
-          <div className="product-detail-price">{normalized.priceFormatted}</div>
+          <div className="product-detail-price">
+            {customOrder.productType === 'cylinder' && Number.isFinite(customOrderTotal)
+              ? `$${customOrderTotal.toFixed(2)}`
+              : normalized.priceFormatted}
+          </div>
           {customOrder.productType === 'cylinder' && (
             <div className="product-detail-price-subtext">
               {getHeroStartText()}
@@ -1450,7 +1468,7 @@ const activeAddons = getActiveAddons();
           )}
 
           {/* Add to Cart Actions or Custom Order Form */}
-          {product.category === 'lamps' ? (
+          {isLamp ? (
             <div className="product-detail-custom-order">
               <div className="product-detail-custom-order-title">
                 {customOrder.productType === 'fixedBox4'
@@ -1463,7 +1481,9 @@ const activeAddons = getActiveAddons();
                         ? 'Custom Lithophane Cylinder Lamp'
                         : customOrder.productType === 'familyBundle4'
                           ? 'CUSTOM FAMILY LITHOPHANE BUNDLE'
-                          : 'Custom Multi-Panel Lithophane Display'}
+                          : customOrder.productType === 'nightlight'
+                            ? 'Custom Lithophane Night Light'
+                            : 'Custom Multi-Panel Lithophane Display'}
               </div>
               <div className="product-detail-custom-note">
                 {customOrder.productType === 'fixedBox4'
@@ -1476,7 +1496,9 @@ const activeAddons = getActiveAddons();
                         ? 'A custom photo lamp handcrafted to glow beautifully in your home.'
                         : customOrder.productType === 'familyBundle4'
                           ? 'A premium family bundle with matching lamps, night lights, and diffusers, handcrafted from your photos.'
-                          : 'A custom multi-panel lithophane display made from your photos.'}
+                          : customOrder.productType === 'nightlight'
+                            ? 'A custom lithophane night light made from your photo.'
+                            : 'A custom multi-panel lithophane display made from your photos.'}
               </div>
               <p className="product-detail-custom-order-copy">
                 {customOrder.productType === 'fixedBox4'
@@ -1491,6 +1513,8 @@ const activeAddons = getActiveAddons();
                           Each image is used across the full set to create a coordinated family keepsake.<br />
                           Perfect for gifts, memorials, and special celebrations.
                         </>
+                      ) : customOrder.productType === 'nightlight' ? (
+                        'Upload one photo and we will create a custom lithophane night light from your image.'
                       ) : 'Upload your favorite photos and we will craft a glowing custom lamp that looks stunning on any shelf or bedside table.'}
               </p>
               {customOrder.productType === 'cylinder' && (
@@ -1543,53 +1567,91 @@ const activeAddons = getActiveAddons();
 
               {customOrder.productType !== 'familyBundle4' && (
                 <div className="product-detail-custom-field">
-                  <label className="product-detail-custom-label">Upload Photos</label>
+                  <label className="product-detail-custom-label">
+                    {customOrder.productType === 'nightlight' ? 'Upload Your Photo' : 'Upload Photos'}
+                  </label>
                   <p className="product-detail-custom-helper">
                     {customOrder.productType === 'cylinder'
                       ? 'Use clear, high-quality images. Portraits work best. Upload 2–5 photos.'
                       : customOrder.productType === 'globeLamp'
                         ? 'Upload up to 5 images to wrap around your globe lamp. Use a moon background to fill unused sections for a unique ambient look.'
-                        : 'Upload one image per panel in the order you want them displayed.'}
+                        : customOrder.productType === 'nightlight'
+                          ? 'Upload one photo for your custom night light.'
+                          : 'Upload one image per panel in the order you want them displayed.'}
                   </p>
-                  {Array.from({ length: requiredPanelCount }, (_, index) => (
-                    <div key={`panel-${requiredPanelCount}-${index}`} className="product-detail-panel-upload-block">
-                      <div className="product-detail-panel-upload-label">
-                        {customOrder.productType === 'cylinder'
-                          ? `Photo ${index + 1}`
-                          : customOrder.productType === 'globeLamp'
-                            ? `Image ${index + 1}`
-                            : `Panel ${index + 1}`}
-                      </div>
+                  {customOrder.productType === 'nightlight' ? (
+                    <div className="product-detail-panel-upload-block">
+                      <div className="product-detail-panel-upload-label">Night Light Photo</div>
                       <input
                         type="file"
                         accept="image/*"
                         onChange={(e) => {
                           const file = e.target.files[0];
-                          handlePanelImageUpload(index, file);
+                          handlePanelImageUpload(0, file);
                         }}
                         className="product-detail-custom-file"
                       />
-                      {customOrder.images[index] && (
+                      {customOrder.images[0] && (
                         <div className="product-detail-custom-preview">
                           <img
-                            src={URL.createObjectURL(customOrder.images[index])}
-                            alt={`${customOrder.productType === 'globeLamp' ? `Image ${index + 1}` : `Panel ${index + 1}`} Preview`}
+                            src={URL.createObjectURL(customOrder.images[0])}
+                            alt="Night light preview"
                             className="product-detail-custom-preview-img"
                           />
                           <div className="product-detail-custom-filename">
-                            {customOrder.images[index].name}
+                            {customOrder.images[0].name}
                           </div>
                           <button
                             type="button"
                             className="product-detail-custom-remove"
-                            onClick={() => handleRemovePanelImage(index)}
+                            onClick={() => handleRemovePanelImage(0)}
                           >
                             Remove
                           </button>
                         </div>
                       )}
                     </div>
-                  ))}
+                  ) : (
+                    Array.from({ length: requiredPanelCount }, (_, index) => (
+                      <div key={`panel-${requiredPanelCount}-${index}`} className="product-detail-panel-upload-block">
+                        <div className="product-detail-panel-upload-label">
+                          {customOrder.productType === 'cylinder'
+                            ? `Photo ${index + 1}`
+                            : customOrder.productType === 'globeLamp'
+                              ? `Image ${index + 1}`
+                              : `Panel ${index + 1}`}
+                        </div>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => {
+                            const file = e.target.files[0];
+                            handlePanelImageUpload(index, file);
+                          }}
+                          className="product-detail-custom-file"
+                        />
+                        {customOrder.images[index] && (
+                          <div className="product-detail-custom-preview">
+                            <img
+                              src={URL.createObjectURL(customOrder.images[index])}
+                              alt={`${customOrder.productType === 'globeLamp' ? `Image ${index + 1}` : `Panel ${index + 1}`} Preview`}
+                              className="product-detail-custom-preview-img"
+                            />
+                            <div className="product-detail-custom-filename">
+                              {customOrder.images[index].name}
+                            </div>
+                            <button
+                              type="button"
+                              className="product-detail-custom-remove"
+                              onClick={() => handleRemovePanelImage(index)}
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))
+                  )}
                 </div>
               )}
 
@@ -1715,7 +1777,7 @@ const activeAddons = getActiveAddons();
                     notes={customOrder.notes}
                     onNotesChange={(value) => setCustomOrder((prev) => ({ ...prev, notes: value }))}
                   />
-                ) : (
+                ) : customOrder.productType === 'nightlight' ? null : (
                   <PanelConfigurator
                     lampshade={customOrder.lampshade}
                     onSizeChange={(value) => updateLampshade({ size: value })}

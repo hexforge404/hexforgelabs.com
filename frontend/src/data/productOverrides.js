@@ -157,22 +157,22 @@ export const productOverrides = {
     highlights: [
       'Standalone night light',
       'Warm ambient illumination',
-      'No custom image upload needed',
+      'Upload one photo to personalize it',
       'Perfect for bedside or hallway use'
     ],
     useCases: [
       'Night light',
       'Ambient décor',
       'Children’s rooms',
-      'Gift-ready accessory'
+      'Gift-ready custom keepsake'
     ],
     whatsIncluded: [
-      'Lithophane night light',
+      'Custom lithophane night light',
       'Power adapter',
       'Packaging and guide'
     ],
-    description: 'A standalone lithophane night light with warm glow and simple plug-and-play operation. Designed for easy use with no image upload required.',
-    batchNote: 'Accessory | Ready to ship'
+    description: 'A custom lithophane night light made from your photo. Upload one image and we’ll create a glowing keepsake for your bedside or hallway.',
+    batchNote: 'Custom | Made to order'
   },
   'usb-keylogger': {
     highlights: [
@@ -447,45 +447,6 @@ The modular design accommodates multiple Pi models with integrated power distrib
 
 Our design emphasizes accessibility and scalability. Whether you're learning cluster administration or deploying production systems, this rack provides the infrastructure your project needs.`
   }
-};
-
-/**
- * Generate fallback description for a product based on category
- */
-const generateDescription = (product) => {
-  const title = product.title || product.name || 'Product';
-  const categoryDescriptions = {
-    hardware: `${title} is a specialized security hardware device designed for authorized testing, research, and education. Built with professional-grade materials and engineering, this device enables hands-on exploration of security concepts in real-world scenarios.
-
-Used by security professionals, educators, and researchers worldwide, ${title} provides tangible insight into how physical security works. The carefully designed implementation supports both authorized assessments and educational demonstrations.
-
-Whether you're conducting security research, developing countermeasures, or teaching cybersecurity fundamentals, ${title} provides practical value. All use should follow authorization protocols and responsible disclosure practices.`,
-    
-    software: `${title} is a comprehensive software solution designed for authorized security professionals and educators. Built from the ground up to support systematic security testing and assessment workflows.
-
-This tool integrates seamlessly with standard security workflows and supports both individual researchers and team-based operations. The flexible design accommodates various testing methodologies and deployment scenarios.
-
-Perfect for security training, professional assessments, and research projects.`,
-    
-    'linux': `${title} is a security-focused Linux distribution optimized for authorized penetration testing and security research. This specialized operating system provides a comprehensive collection of security tools alongside a carefully-tuned system environment.
-
-Designed for security professionals, educators, and authorized testers, ${title} streamlines the process of conducting systematic security assessments. The integrated toolset supports reconnaissance, analysis, exploitation, and reporting workflows.
-
-All deployments should follow proper authorization and legal protocols.`,
-    
-    'security': `${title} is a professional-grade security assessment tool designed for authorized security professionals and researchers. This tool supports systematic evaluation of security controls and identification of potential vulnerabilities.
-
-The implementation emphasizes accuracy and reliability in security testing scenarios. Used by security consultants, incident responders, and authorized security researchers.
-
-Perfect for building effective security assessment capabilities.`
-  };
-
-  const defaultDesc = `${title} is a professional-grade tool designed for security professionals and authorized researchers. Built with careful attention to quality and usability, this product supports systematic security assessment and research activities.
-
-Whether you're involved in professional security work or educational projects, ${title} provides reliable performance and thorough capabilities. All deployments should follow applicable authorization and legal protocols.`;
-
-  const categoryKey = product.category || 'software';
-  return categoryDescriptions[categoryKey] || defaultDesc;
 };
 
 /**

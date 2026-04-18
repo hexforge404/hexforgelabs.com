@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "react-toastify";
 import {
   AlertTriangle,
@@ -437,7 +437,6 @@ export default function SurfacePage() {
   const [error, setError] = useState("");
   const [artifactWarning, setArtifactWarning] = useState("");
   const [missingRequiredOutputs, setMissingRequiredOutputs] = useState([]);
-  const [outputsCheckedAt, setOutputsCheckedAt] = useState(null);
   const [timeoutHit, setTimeoutHit] = useState(false);
   const [startedAt, setStartedAt] = useState(null);
   const [previewBust, setPreviewBust] = useState(Date.now());
@@ -462,10 +461,6 @@ export default function SurfacePage() {
   const { adminStatus, isAdmin, refreshAdmin } = useAdmin();
   const adminChecking = adminStatus === "checking" || adminStatus === "unknown";
   const adminKnown = adminStatus === "admin" || adminStatus === "not_admin";
-  const debugPromote = useMemo(
-    () => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("debugPromote") === "1",
-    []
-  );
 
   const effectiveJobId = useMemo(() => {
     return (
@@ -536,6 +531,103 @@ export default function SurfacePage() {
       assetsRoot,
     };
   }, [adminKnown, isAdmin, isComplete, manifest, effectiveJobId]);
+
+  const fetchAndApplyManifest = useCallback(
+    async function fetchAndApplyManifest(
+      manifestHint,
+      manifestDataOverride = null,
+      stateHint = statusLabel,
+      { allowMissing = false } = {}
+    ) {
+      const manifestUrlResolved = manifestHint ? resolveSurfaceUrl(manifestHint) : "";
+      let mf = manifestDataOverride || null;
+      let lastError = null;
+
+      if (!mf) {
+        try {
+          mf = await getSurfaceManifest(jobId);
+        } catch (err) {
+          lastError = err;
+          if (manifestUrlResolved) {
+            try {
+              const res = await fetch(manifestUrlResolved);
+              if (res.ok) {
+                mf = await res.json();
+              } else {
+                lastError = new Error(`Manifest fetch failed (${res.status})`);
+              }
+            } catch (e) {
+              lastError = e;
+            }
+          }
+        }
+      }
+
+      if (!mf) {
+        if (allowMissing) return null;
+        throw lastError || new Error("Manifest missing after job completion.");
+      }
+
+      const resolvedManifestUrl =
+        manifestUrlResolved ||
+        resolveSurfaceUrl(mf.manifest_url || mf.meta?.manifest_url || mf.public?.job_manifest || manifestUrl || "");
+
+      const derived = deriveOutputs(mf, jobId, manifestUrlResolved || manifestHint || "");
+      const targetForChecks = mf?.target || mf?.meta?.target || form.target;
+      const assetsRoot = computeAssetsRoot(mf);
+      setManifestUrl(resolvedManifestUrl || "");
+      setManifest({ ...mf, assetsRoot });
+      setOutputs(derived);
+      setPreviewBust(Date.now());
+
+      if (DEBUG_MODE) {
+        // eslint-disable-next-line no-console
+        console.warn("surface: preview resolution", {
+          job_id: jobId,
+          manifest_public_root: mf?.public_root || mf?.public?.public_root,
+          manifest_subfolder: mf?.subfolder,
+          manifest_public_previews: mf?.public?.previews || mf?.public?.blender_previews_urls,
+          computed_hero_url: derived.heroUrl,
+          outputs_sample: derived.list?.slice(0, 3),
+        });
+      }
+
+      const requiredWarnings = stateHint === "complete" ? summarizeMissingOutputs(derived, targetForChecks, { includeOptional: false }) : [];
+      setMissingRequiredOutputs(requiredWarnings);
+      const normalizedTarget = String(targetForChecks || "").toLowerCase();
+
+      if (stateHint === "complete") {
+        const validationTargets = [];
+        if (derived.heroUrl) validationTargets.push({ label: "preview", url: derived.heroUrl });
+
+        if (normalizedTarget === "board_case" || normalizedTarget.endsWith("_case")) {
+          if (derived.caseBaseUrl) validationTargets.push({ label: "case base", url: derived.caseBaseUrl });
+          if (derived.caseLidUrl) validationTargets.push({ label: "case lid", url: derived.caseLidUrl });
+        }
+
+        if (normalizedTarget === "globe_lamp") {
+          if (derived.partyGlowUrl) validationTargets.push({ label: "party glow", url: derived.partyGlowUrl });
+        }
+
+        if (normalizedTarget === "desk_planter") {
+          if (derived.ledLightUrl) validationTargets.push({ label: "LED light", url: derived.ledLightUrl });
+        }
+
+        if (validationTargets.length > 0) {
+          const failedTargets = [];
+          for (const targetCandidate of validationTargets) {
+            if (!targetCandidate.url) failedTargets.push(targetCandidate.label);
+          }
+          if (failedTargets.length > 0) {
+            setArtifactWarning(`Missing outputs: ${failedTargets.join(", ")}`);
+          }
+        }
+      }
+
+      return { derived, manifest: mf };
+    },
+    [form.target, jobId, manifestUrl, statusLabel]
+  );
 
   useEffect(() => {
     if (!jobId || !polling) return undefined;
@@ -611,7 +703,7 @@ export default function SurfacePage() {
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [jobId, polling, startedAt, manifest, manifestUrl]);
+  }, [jobId, polling, startedAt, manifest, manifestUrl, fetchAndApplyManifest]);
 
   useEffect(() => {
     try {
@@ -761,7 +853,6 @@ export default function SurfacePage() {
   async function startJob() {
     setError("");
     setArtifactWarning("");
-    setOutputsCheckedAt(null);
     setManifest(null);
     setManifestUrl("");
     setOutputs({
@@ -814,134 +905,6 @@ export default function SurfacePage() {
     } finally {
       setLoading(false);
     }
-  }
-
-  async function validateAsset(url) {
-    if (!url) return { ok: false, reason: "missing" };
-    try {
-      const resp = await fetch(url, { method: "HEAD" });
-      if (!resp.ok) return { ok: false, reason: String(resp.status) };
-      const len = Number(resp.headers.get("content-length") || 0);
-      if (Number.isFinite(len) && len <= 0) {
-        return { ok: false, reason: "empty" };
-      }
-      return { ok: true };
-    } catch (err) {
-      return { ok: false, reason: err?.message || "unreachable" };
-    }
-  }
-
-  async function fetchAndApplyManifest(
-    manifestHint,
-    manifestDataOverride = null,
-    stateHint = statusLabel,
-    { allowMissing = false } = {}
-  ) {
-    const manifestUrlResolved = manifestHint ? resolveSurfaceUrl(manifestHint) : "";
-    let mf = manifestDataOverride || null;
-    let lastError = null;
-
-    if (!mf) {
-      try {
-        mf = await getSurfaceManifest(jobId);
-      } catch (err) {
-        lastError = err;
-        if (manifestUrlResolved) {
-          try {
-            const res = await fetch(manifestUrlResolved);
-            if (res.ok) {
-              mf = await res.json();
-            } else {
-              lastError = new Error(`Manifest fetch failed (${res.status})`);
-            }
-          } catch (e) {
-            lastError = e;
-          }
-        }
-      }
-    }
-
-    if (!mf) {
-      if (allowMissing) return null;
-      throw lastError || new Error("Manifest missing after job completion.");
-    }
-
-    const resolvedManifestUrl =
-      manifestUrlResolved ||
-      resolveSurfaceUrl(mf.manifest_url || mf.meta?.manifest_url || mf.public?.job_manifest || manifestUrl || "");
-
-    const derived = deriveOutputs(mf, jobId, manifestUrlResolved || manifestHint || "");
-    const targetForChecks = mf?.target || mf?.meta?.target || form.target;
-    const assetsRoot = computeAssetsRoot(mf);
-    setManifestUrl(resolvedManifestUrl || "");
-    setManifest({ ...mf, assetsRoot });
-    setOutputs(derived);
-    setPreviewBust(Date.now());
-    setOutputsCheckedAt(Date.now());
-
-    if (DEBUG_MODE) {
-      // eslint-disable-next-line no-console
-      console.warn("surface: preview resolution", {
-        job_id: jobId,
-        manifest_public_root: mf?.public_root || mf?.public?.public_root,
-        manifest_subfolder: mf?.subfolder,
-        manifest_public_previews: mf?.public?.previews || mf?.public?.blender_previews_urls,
-        computed_hero_url: derived.heroUrl,
-        outputs_sample: derived.list?.slice(0, 3),
-      });
-    }
-
-    const requiredWarnings = stateHint === "complete" ? summarizeMissingOutputs(derived, targetForChecks, { includeOptional: false }) : [];
-    const optionalWarnings = summarizeMissingOutputs(derived, targetForChecks, { includeOptional: true }).filter(
-      (item) => !requiredWarnings.includes(item)
-    );
-
-    const normalizedTarget = String(targetForChecks || "").toLowerCase();
-
-    if (stateHint === "complete") {
-      const validationTargets = [];
-      if (derived.heroUrl) validationTargets.push({ label: "preview", url: derived.heroUrl });
-
-      if (normalizedTarget === "board_case" || normalizedTarget.endsWith("_case")) {
-        if (derived.caseBaseUrl) validationTargets.push({ label: "case base", url: derived.caseBaseUrl });
-        if (derived.caseLidUrl) validationTargets.push({ label: "case lid", url: derived.caseLidUrl });
-      } else if (derived.stlUrl) {
-        validationTargets.push({ label: "stl", url: derived.stlUrl });
-      }
-
-      const checks = await Promise.all(
-        validationTargets.map((item) =>
-          validateAsset(item.url)
-            .then((res) => ({ item, res }))
-            .catch((err) => ({ item, res: { ok: false, reason: err?.message || "error" } }))
-        )
-      );
-
-      checks.forEach(({ item, res }) => {
-        if (!res.ok) {
-          const label = `${item.label} ${res.reason}`.trim();
-          if (!requiredWarnings.includes(label)) requiredWarnings.push(label);
-        }
-      });
-    }
-
-    const warningText = [...requiredWarnings, ...optionalWarnings].join("; ");
-    setArtifactWarning(warningText);
-    setMissingRequiredOutputs(requiredWarnings);
-
-    if (stateHint === "complete") {
-      if (requiredWarnings.length > 0) {
-        setJobStatus((prev) => ({ ...(prev || {}), state: "failed", status: "failed", progress: deriveProgress("failed") }));
-        setError(warningText || "Manifest outputs are missing or invalid.");
-      } else {
-        setJobStatus((prev) => ({ ...(prev || {}), state: "complete", status: "complete", progress: deriveProgress("complete", prev?.progress) }));
-        setError(optionalWarnings.length ? optionalWarnings.join("; ") : "");
-      }
-    } else if (requiredWarnings.length === 0) {
-      setError(optionalWarnings.length ? optionalWarnings.join("; ") : "");
-    }
-
-    return mf;
   }
 
   async function recheckOutputs() {

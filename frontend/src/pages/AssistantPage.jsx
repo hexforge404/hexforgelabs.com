@@ -50,6 +50,42 @@ const AssistantPage = () => {
 
   // Which session's overflow menu is open (for ⋯ menu)
   const [sessionMenuOpenId, setSessionMenuOpenId] = useState(null);
+
+  const normalizeBrowserUrl = useCallback((rawUrl) => {
+    if (!rawUrl) return null;
+    let url = rawUrl.trim();
+    if (!/^https?:\/\//i.test(url)) {
+      url = `https://${url}`;
+    }
+    return url;
+  }, []);
+
+  const parseAssistantBrowserAction = useCallback(
+    (text) => {
+      if (!text) return null;
+
+      // Explicit JSON action block
+      const jsonMatch = text.match(/```json\n([\s\S]*?)```/i);
+      const rawJson = jsonMatch ? jsonMatch[1] : text;
+      try {
+        const payload = JSON.parse(rawJson);
+        if (payload?.action === "open_url" && payload.url) {
+          return normalizeBrowserUrl(payload.url);
+        }
+      } catch (err) {
+        // ignore invalid JSON
+      }
+
+      // Explicit browser action command
+      const actionMatch = text.match(/(?:OPEN_URL|BROWSER_URL|NAVIGATE_TO):\s*(\S+)/i);
+      if (actionMatch) {
+        return normalizeBrowserUrl(actionMatch[1]);
+      }
+
+      return null;
+    },
+    [normalizeBrowserUrl]
+  );
   const [projectMenuOpenId, setProjectMenuOpenId] = useState(null);
 
   // 🔹 Session management hook (Mongo-backed)
@@ -74,12 +110,10 @@ const AssistantPage = () => {
   projectSessions,
   projectSessionsLoading,
   projectSessionsError,
-  loadProjects,
   createProject,
   renameProject,
   deleteProject,
   selectProject,
-  clearProjectsError: clearProjectsApiError,
 } = useAssistantProjects();
 
 
@@ -123,8 +157,15 @@ const AssistantPage = () => {
 
     if (!lastAssistant) return;
 
+    const explicitUrl = parseAssistantBrowserAction(lastAssistant.content);
+    if (explicitUrl && explicitUrl !== browserUrl) {
+      setBrowserUrl(explicitUrl);
+      setBrowserInput(explicitUrl);
+      return;
+    }
+
     const urlMatch = lastAssistant.content.match(
-      /(https?:\/\/[^\s,)>\\]]+)|(hexforgelabs\.com[^\s,)>\\]]*)/i
+      /(https?:\/\/[^\s,)>\\]]+)|(www\.[^\s,)>\\]]+)|(hexforgelabs\.com[^\s,)>\\]]*)/i
     );
 
     if (!urlMatch) return;
@@ -138,7 +179,7 @@ const AssistantPage = () => {
       setBrowserUrl(url);
       setBrowserInput(url);
     }
-  }, [messages, browserUrl]);
+  }, [messages, browserUrl, parseAssistantBrowserAction]);
 
   const handleChange = useCallback(
     (e) => {
@@ -301,7 +342,7 @@ const handleAttachCurrentSession = useCallback(
     setAttachLoading(true);
     try {
       const res = await fetch(
-        `/api/assistant/sessions/${encodeURIComponent(
+        `/api/assistant-sessions/${encodeURIComponent(
           activeSessionId
         )}/metadata`,
         {

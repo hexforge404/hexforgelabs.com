@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import './BlogPage.css';
 import BlogCard from '../components/BlogCard'; // adjust path if needed
-import { Link } from 'react-router-dom';
 
 function BlogPage() {
   const [posts, setPosts] = useState([]);
