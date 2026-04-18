@@ -80,6 +80,23 @@ const formatLightTypeForDisplay = (lightType, { internal = false } = {}) => {
   return lightType;
 };
 
+const getOrderAuditWarnings = (order) => {
+  const warnings = [];
+  const paymentStatus = String(order.paymentStatus || '').toLowerCase();
+  const createdAt = order.createdAt ? new Date(order.createdAt) : null;
+  const pendingThresholdMinutes = Number(process.env.REACT_APP_PAYMENT_PENDING_THRESHOLD_MINUTES || 30);
+  const thresholdDate = new Date(Date.now() - pendingThresholdMinutes * 60 * 1000);
+
+  if (!order.stripeSessionId && !order.paymentIntentId) {
+    warnings.push('Missing Stripe linkage');
+  }
+  if (paymentStatus === 'pending' && createdAt && createdAt < thresholdDate) {
+    warnings.push(`Pending payment > ${pendingThresholdMinutes} min`);
+  }
+
+  return warnings;
+};
+
 const normalizeCustomOrderImageUrl = (rawPath) => {
   if (!rawPath) return '';
   const raw = String(rawPath).trim();
@@ -143,6 +160,11 @@ export default function AdminPage() {
   const [promoAuditTotal, setPromoAuditTotal] = useState(0);
   const [isLoadingPromoAudit, setIsLoadingPromoAudit] = useState(false);
   const [promoAuditQueryToken, setPromoAuditQueryToken] = useState(0);
+  const [webhookEvents, setWebhookEvents] = useState([]);
+  const [paymentAuditItems, setPaymentAuditItems] = useState([]);
+  const [monitoringSummary, setMonitoringSummary] = useState(null);
+  const [isLoadingMonitoring, setIsLoadingMonitoring] = useState(false);
+  const [monitoringError, setMonitoringError] = useState(null);
 
   // Gallery Manager
   const [galleryProductId, setGalleryProductId] = useState('');
@@ -254,6 +276,35 @@ export default function AdminPage() {
 
     loadPromoCodes();
   }, [canManagePromos]);
+
+  useEffect(() => {
+    if (activeTab !== 'monitoring') return;
+
+    const loadMonitoring = async () => {
+      setIsLoadingMonitoring(true);
+      setMonitoringError(null);
+      try {
+        const [webhookRes, paymentRes, summaryRes] = await Promise.all([
+          axios.get(`${API_BASE_URL}/admin/webhook-events?limit=60`, { withCredentials: true }),
+          axios.get(`${API_BASE_URL}/admin/orders/payment-status?type=all&limit=60`, { withCredentials: true }),
+          axios.get(`${API_BASE_URL}/admin/monitoring/summary`, { withCredentials: true }),
+        ]);
+
+        setWebhookEvents(webhookRes.data?.data || []);
+        setPaymentAuditItems(paymentRes.data?.data || []);
+        setMonitoringSummary(summaryRes.data?.summary || null);
+      } catch (err) {
+        console.error('Failed to load monitoring data:', err);
+        setMonitoringError(err.response?.data?.error || err.message || 'Failed to load monitoring data');
+      } finally {
+        setIsLoadingMonitoring(false);
+      }
+    };
+
+    loadMonitoring();
+    const intervalId = setInterval(loadMonitoring, 15000);
+    return () => clearInterval(intervalId);
+  }, [activeTab]);
 
   useEffect(() => {
     if (activeTab !== 'promo-audit' || !canManagePromos) return;
@@ -1366,7 +1417,7 @@ export default function AdminPage() {
 
       resetBlogForm();
     } catch (err) {
-      
+
       console.error(err);
       errorToast(err.response?.data?.error || err.message);
     }
@@ -1941,6 +1992,12 @@ export default function AdminPage() {
           Batches
         </button>
         <button
+          className={activeTab === 'monitoring' ? 'tab active' : 'tab'}
+          onClick={() => setActiveTab('monitoring')}
+        >
+          Monitoring
+        </button>
+        <button
           className={activeTab === 'test-pipeline' ? 'tab active' : 'tab'}
           onClick={() => setActiveTab('test-pipeline')}
         >
@@ -2406,6 +2463,9 @@ export default function AdminPage() {
                               {order.customer.email}
                             </span>
                           )}
+                          <span className={getOrderAuditWarnings(order).length ? 'audit-badge warning' : 'audit-badge ok'}>
+                            {getOrderAuditWarnings(order).length ? 'Attention' : 'Healthy'}
+                          </span>
                         </div>
                       </div>
 
@@ -2469,6 +2529,140 @@ export default function AdminPage() {
                 );
               })}
             </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'monitoring' && (
+        <div className="monitoring-tab">
+          <h2 className="section-header">MONITORING</h2>
+          {monitoringError && (
+            <div className="status-message error-message">
+              <span>{monitoringError}</span>
+              <button onClick={() => setMonitoringError(null)} className="close-button">
+                ×
+              </button>
+            </div>
+          )}
+
+          {isLoadingMonitoring ? (
+            <div>Loading monitoring data…</div>
+          ) : (
+            <>
+              {monitoringSummary && (
+                <section className="monitoring-summary-grid">
+                  <div className="monitoring-summary-card">
+                    <span className="summary-label">Total Webhooks</span>
+                    <span className="summary-value">{monitoringSummary.totalWebhooks}</span>
+                  </div>
+                  <div className="monitoring-summary-card">
+                    <span className="summary-label">Failed Webhooks</span>
+                    <span className="summary-value">{monitoringSummary.failedWebhooks}</span>
+                  </div>
+                  <div className="monitoring-summary-card">
+                    <span className="summary-label">Pending Orders</span>
+                    <span className="summary-value">{monitoringSummary.standardPendingAgedOrders + monitoringSummary.customPendingAgedOrders}</span>
+                  </div>
+                  <div className="monitoring-summary-card">
+                    <span className="summary-label">Missing Stripe Linkage</span>
+                    <span className="summary-value">{monitoringSummary.standardMissingStripeLinkage + monitoringSummary.customMissingStripeLinkage}</span>
+                  </div>
+                  <div className="monitoring-summary-card">
+                    <span className="summary-label">Duplicate Payment Intents</span>
+                    <span className="summary-value">{monitoringSummary.duplicatePaymentIntentEvents}</span>
+                  </div>
+                  <div className={`monitoring-summary-card summary-status ${
+                    monitoringSummary.failedWebhooks > 0 ||
+                    monitoringSummary.standardPendingAgedOrders + monitoringSummary.customPendingAgedOrders > 0 ||
+                    monitoringSummary.standardMissingStripeLinkage + monitoringSummary.customMissingStripeLinkage > 0 ||
+                    monitoringSummary.duplicatePaymentIntentEvents > 0
+                      ? 'issue'
+                      : 'normal'
+                  }`}>
+                    <span className="summary-label">Alert State</span>
+                    <span className="summary-value">
+                      {monitoringSummary.failedWebhooks > 0 ||
+                      monitoringSummary.standardPendingAgedOrders + monitoringSummary.customPendingAgedOrders > 0 ||
+                      monitoringSummary.standardMissingStripeLinkage + monitoringSummary.customMissingStripeLinkage > 0 ||
+                      monitoringSummary.duplicatePaymentIntentEvents > 0
+                        ? 'Attention'
+                        : 'OK'}
+                    </span>
+                  </div>
+                </section>
+              )}
+              <section className="monitoring-block">
+                <h3>Webhook Audit Events</h3>
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>Event ID</th>
+                      <th>Type</th>
+                      <th>Status</th>
+                      <th>Order ID</th>
+                      <th>Timestamp</th>
+                      <th>Error</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {webhookEvents.length === 0 ? (
+                      <tr>
+                        <td colSpan="6">No webhook events found.</td>
+                      </tr>
+                    ) : (
+                      webhookEvents.map((event) => (
+                        <tr key={event.eventId} className={event.status === 'failed' ? 'row-error' : ''}>
+                          <td>{event.eventId}</td>
+                          <td>{event.type}</td>
+                          <td>{event.status}</td>
+                          <td>{event.orderId || '—'}</td>
+                          <td>{new Date(event.timestamp).toLocaleString()}</td>
+                          <td>{event.errorMessage || event.resultMessage || '—'}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </section>
+
+              <section className="monitoring-block">
+                <h3>Order Payment Audit</h3>
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>Order ID</th>
+                      <th>Type</th>
+                      <th>Payment Status</th>
+                      <th>Stripe Session</th>
+                      <th>Payment Intent</th>
+                      <th>Last Checked</th>
+                      <th>Mismatch</th>
+                      <th>Attention</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paymentAuditItems.length === 0 ? (
+                      <tr>
+                        <td colSpan="8">No payment audit entries found.</td>
+                      </tr>
+                    ) : (
+                      paymentAuditItems.map((item) => (
+                        <tr key={`${item.orderId}-${item.orderType}`} className={item.requiresAttention ? 'row-error' : ''}>
+                          <td>{item.orderId}</td>
+                          <td>{item.orderType}</td>
+                          <td>{item.paymentStatus}</td>
+                          <td>{item.stripeSessionId || '—'}</td>
+                          <td>{item.paymentIntentId || '—'}</td>
+                          <td>{item.lastCheckedAt ? new Date(item.lastCheckedAt).toLocaleString() : '—'}</td>
+                          <td>{item.mismatch ? 'Yes' : 'No'}</td>
+                          <td>{item.requiresAttention ? item.attentionReasons.join(', ') : 'No'}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </section>
+            </>
           )}
         </div>
       )}

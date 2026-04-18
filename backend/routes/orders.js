@@ -5,6 +5,7 @@ const rateLimit = require('express-rate-limit');
 const Order = require('../models/Order');
 const Product = require('../models/Product');
 const mongoose = require('mongoose');
+const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 const { calculateSubtotal, calculateTax, roundMoney } = require('../utils/pricing');
 const { requireAdmin } = require('../middleware/requireAdmin');
@@ -25,6 +26,19 @@ const orderLimiter = rateLimit({
   max: 100, // limit each IP to 100 requests per windowMs
   message: 'Too many order requests, please try again later'
 });
+
+const getRequestIdempotencyKey = (req, fallbackData = {}) => {
+  const headerKey = String(req.headers['x-idempotency-key'] || '').trim();
+  if (headerKey) return headerKey;
+
+  const payload = {
+    sessionId: req.sessionID || '',
+    path: req.originalUrl || '',
+    method: req.method || 'POST',
+    ...fallbackData,
+  };
+  return `auto:${crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex')}`;
+};
 
 // Order validation rules
 const validateOrder = [
@@ -127,13 +141,34 @@ router.post('/', orderLimiter, validateOrder, async (req, res) => {
       return res.status(400).json({ errors: errors.array() });
     }
 
+    const idempotencyKey = getRequestIdempotencyKey(req, {
+      customerEmail: req.body.customer?.email || '',
+      customerName: req.body.customer?.name || '',
+      items: Array.isArray(req.body.items)
+        ? req.body.items.map((item) => ({
+            productId: item.productId || item._id,
+            slug: item.slug,
+            quantity: Number(item.quantity) || 1,
+          }))
+        : [],
+      paymentMethod: req.body.paymentMethod || 'stripe',
+    });
+
     console.log('📦 Incoming Order:', {
       items: req.body.items.map(i => i.productId || i._id || i.slug),
-      customer: req.body.customer?.email
+      customer: req.body.customer?.email,
+      idempotencyKey
     });
     console.log('📦 Order session ID:', req.sessionID);
     console.log('📦 Order IP:', req.ip);
     
+    if (idempotencyKey) {
+      const existing = await Order.findOne({ idempotencyKey });
+      if (existing) {
+        console.log(`🔁 Reusing existing order for idempotency key ${idempotencyKey}`);
+        return res.status(200).json(existing);
+      }
+    }
 
     const resolvedItems = await resolveOrderItems(req.body.items);
     const subtotal = calculateSubtotal(resolvedItems);
@@ -145,6 +180,7 @@ router.post('/', orderLimiter, validateOrder, async (req, res) => {
     // Create order
     const order = new Order({
       ...req.body,
+      idempotencyKey: idempotencyKey || undefined,
       items: resolvedItems.map((item) => ({
         productId: item.productId,
         name: item.name,

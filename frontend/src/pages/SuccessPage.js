@@ -39,21 +39,26 @@ function SuccessPage() {
 
         const data = await res.json();
         setOrder(data);
-        successToast('✅ Order confirmed!');
         window.scrollTo(0, 0);
 
-        if (!didCelebrate) {
-          try {
-            confetti({ particleCount: 80, spread: 70, origin: { y: 0.6 } });
-            setDidCelebrate(true);
-          } catch (confettiErr) {
-            console.warn('Confetti failed:', confettiErr);
+        if (data.paymentStatus === 'paid') {
+          successToast('✅ Order confirmed!');
+          if (!didCelebrate) {
+            try {
+              confetti({ particleCount: 80, spread: 70, origin: { y: 0.6 } });
+              setDidCelebrate(true);
+            } catch (confettiErr) {
+              console.warn('Confetti failed:', confettiErr);
+            }
           }
+          setTimeout(() => {
+            clearCart();
+          }, 300);
+        } else {
+          warningToast('⚠️ Your order is saved, but payment is still pending.', {
+            position: 'top-right',
+          });
         }
-
-        setTimeout(() => {
-          clearCart();
-        }, 300);
 
         localStorage.removeItem('lastOrderEmail');
       } catch (err) {
@@ -173,8 +178,14 @@ function SuccessPage() {
 
         {hasOrder ? (
           <>
-            <h2 className="success-title">🎉 Order Confirmed</h2>
-            <p className="success-message">Thank you! Your payment is complete and your order is now being processed.</p>
+            <h2 className="success-title">
+              {order.paymentStatus === 'paid' ? '🎉 Order Confirmed' : '⚠️ Payment Pending'}
+            </h2>
+            <p className="success-message">
+              {order.paymentStatus === 'paid'
+                ? 'Thank you! Your payment is complete and your order is now being processed.'
+                : 'We have received your order, but payment is not confirmed yet. Please complete checkout to finalize the order.'}
+            </p>
 
             <section className="order-summary">
               <h3>Order Summary</h3>

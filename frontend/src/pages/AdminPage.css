@@ -379,6 +379,97 @@
   font-size: 0.9rem;
 }
 
+.audit-badge {
+  display: inline-block;
+  margin-left: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.audit-badge.ok {
+  background: rgba(0, 255, 200, 0.12);
+  color: #00ffb3;
+}
+
+.audit-badge.warning {
+  background: rgba(255, 77, 77, 0.12);
+  color: #ff8b8b;
+}
+
+.monitoring-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.monitoring-summary-card {
+  padding: 18px 16px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(0, 255, 200, 0.05);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.monitoring-summary-card.summary-status.normal {
+  border-color: rgba(0, 255, 200, 0.2);
+}
+
+.monitoring-summary-card.summary-status.issue {
+  border-color: rgba(255, 77, 77, 0.3);
+  background: rgba(255, 77, 77, 0.08);
+}
+
+.summary-label {
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #aab8c9;
+}
+
+.summary-value {
+  font-size: 1.45rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.monitoring-tab {
+  margin-top: 20px;
+}
+
+.monitoring-block {
+  margin-bottom: 30px;
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 16px;
+  background: #111;
+}
+
+.admin-table th,
+.admin-table td {
+  padding: 12px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  text-align: left;
+  color: #e6f1ff;
+}
+
+.admin-table th {
+  background: rgba(0, 255, 200, 0.08);
+}
+
+.row-error {
+  background: rgba(255, 77, 77, 0.08);
+}
+
 .gallery-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));

@@ -174,7 +174,13 @@ const ProductSection = ({ title, subtitle, products, addToCart }) => {
         marginTop: '20px',
         animation: 'fadeIn 0.5s ease-out'
       }}>
-        {products.map((product) => {
+        {products.length === 0 ? (
+          <div style={{ width: '100%', textAlign: 'center', color: '#ccc', marginTop: '40px' }}>
+            <h3>No products found</h3>
+            <p>Try clearing your search or selecting another category.</p>
+          </div>
+        ) : (
+          products.map((product) => {
           const meta = getProductCardMeta(product);
           const cardHighlight = product.sku?.toUpperCase() === 'LITHBUNDLE01' ? {
             boxShadow: '0 0 20px rgba(255, 209, 102, 0.25)',
@@ -286,7 +292,7 @@ const ProductSection = ({ title, subtitle, products, addToCart }) => {
               </button>
             </div>
           );
-        })}
+        }))}
       </div>
     </div>
   );
@@ -298,6 +304,7 @@ function ProductList() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [activeFilter, setActiveFilter] = useState('all');
+  const [searchTerm, setSearchTerm] = useState('');
   const [isTransitioning, setIsTransitioning] = useState(false);
 
   useEffect(() => {
@@ -334,32 +341,39 @@ function ProductList() {
   };
 
   const getFilteredProducts = () => {
+    const normalizedSearch = searchTerm.trim().toLowerCase();
+    const inSearch = (product) => {
+      if (!normalizedSearch) return true;
+      const text = `${product.name || ''} ${product.description || ''} ${product.category || ''} ${product.sku || ''}`.toLowerCase();
+      return text.includes(normalizedSearch);
+    };
+
     switch (activeFilter) {
       case 'tech':
         return products.filter((p) => {
           const categories = getProductCategories(p);
-          return !isLampProduct(p) && !categories.includes('surface');
+          return !isLampProduct(p) && !categories.includes('surface') && inSearch(p);
         });
       case 'lamps':
-        return products.filter((p) => isLampProduct(p));
+        return products.filter((p) => isLampProduct(p) && inSearch(p));
       case 'all':
       default:
         return products.filter((p) => {
           const categories = getProductCategories(p);
-          return !categories.includes('surface');
+          return !categories.includes('surface') && inSearch(p);
         });
     }
   };
 
   const getTechProducts = () => {
-    return products.filter((p) => {
+    return getFilteredProducts().filter((p) => {
       const categories = getProductCategories(p);
       return !isLampProduct(p) && !categories.includes('surface');
     });
   };
 
   const getLampProducts = () => {
-    return products.filter((p) => isLampProduct(p));
+    return getFilteredProducts().filter((p) => isLampProduct(p));
   };
 
   const getSectionTitle = () => {
@@ -510,6 +524,42 @@ function ProductList() {
           Live catalog unavailable. Showing fallback products.
         </div>
       )}
+
+      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px', width: '100%', gap: '12px', flexWrap: 'wrap' }}>
+        <input
+          type="search"
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          placeholder="Search products, lamps, and tools"
+          style={{
+            width: '100%',
+            maxWidth: '420px',
+            padding: '14px 18px',
+            borderRadius: '999px',
+            border: '1px solid rgba(255, 255, 255, 0.12)',
+            background: '#111',
+            color: '#fff',
+            outline: 'none',
+          }}
+        />
+        {searchTerm && (
+          <button
+            type="button"
+            onClick={() => setSearchTerm('')}
+            style={{
+              padding: '14px 18px',
+              backgroundColor: '#333',
+              color: '#fff',
+              border: '1px solid rgba(255, 255, 255, 0.12)',
+              borderRadius: '999px',
+              cursor: 'pointer',
+              fontWeight: '700',
+            }}
+          >
+            Clear
+          </button>
+        )}
+      </div>
 
       {/* Products Sections */}
       <div style={{

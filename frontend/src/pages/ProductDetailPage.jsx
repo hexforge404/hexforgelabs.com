@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useCart } from 'context/CartContext';
 import { toast } from 'react-toastify';
@@ -255,6 +255,7 @@ function BoxConfigurator({
 function FamilyBundleConfigurator({
   images,
   onImageUpload,
+  onRemoveImage,
   notes,
   onNotesChange,
 }) {
@@ -289,7 +290,30 @@ function FamilyBundleConfigurator({
             />
             {image && (
               <div style={{ marginTop: '8px', color: '#ccc' }}>
-                Selected file: {image.name}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <img
+                      src={URL.createObjectURL(image)}
+                      alt={`Bundle preview ${index + 1}`}
+                      style={{ width: '72px', height: '72px', objectFit: 'cover', borderRadius: '8px' }}
+                    />
+                    <span>{image.name}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onRemoveImage(index)}
+                    style={{
+                      background: 'transparent',
+                      color: '#ff6b6b',
+                      border: '1px solid rgba(255, 107, 107, 0.4)',
+                      borderRadius: '8px',
+                      padding: '6px 10px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Remove
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -427,6 +451,9 @@ function ProductDetailPage() {
   });
   const [customOrderResult, setCustomOrderResult] = useState(null);
   const [isSubmittingCustomOrder, setIsSubmittingCustomOrder] = useState(false);
+  const [uploadError, setUploadError] = useState('');
+  const [uploadProgressMessage, setUploadProgressMessage] = useState('');
+  const customOrderIdempotencyKey = useRef(null);
 
   // Promo code state
   const [promoCode, setPromoCode] = useState('');
@@ -651,8 +678,33 @@ const activeAddons = getActiveAddons();
     }
   };
 
+  const MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024;
+  const RECOMMENDED_UPLOAD_TEXT = 'Recommended: 3000×3000 px or larger, JPG/PNG.';
+
+  const validateUploadFile = (file) => {
+    if (!file) return ['No file selected.'];
+    const errors = [];
+    if (!file.type.startsWith('image/')) {
+      errors.push('Upload must be an image file.');
+    }
+    if (file.size > MAX_UPLOAD_SIZE_BYTES) {
+      errors.push('Image must be 10 MB or smaller.');
+    }
+    return errors;
+  };
+
+  const recordUploadError = (errors) => {
+    setUploadError(errors.length > 0 ? errors.join(' ') : '');
+  };
+
   const handlePanelImageUpload = (index, file) => {
     if (!file) return;
+    const errors = validateUploadFile(file);
+    if (errors.length) {
+      recordUploadError(errors);
+      return;
+    }
+    recordUploadError([]);
     setCustomOrder(prev => {
       const nextImages = [...prev.images];
       nextImages[index] = file;
@@ -671,6 +723,13 @@ const activeAddons = getActiveAddons();
   };
 
   const handleNightlightImageUpload = (file) => {
+    if (!file) return;
+    const errors = validateUploadFile(file);
+    if (errors.length) {
+      recordUploadError(errors);
+      return;
+    }
+    recordUploadError([]);
     setCustomOrder(prev => ({
       ...prev,
       nightlightAddon: {
@@ -700,6 +759,12 @@ const activeAddons = getActiveAddons();
 
   const handleBundleImageUpload = (index, file) => {
     if (!file) return;
+    const errors = validateUploadFile(file);
+    if (errors.length) {
+      recordUploadError(errors);
+      return;
+    }
+    recordUploadError([]);
     setCustomOrder(prev => {
       const nextImages = [...prev.images];
       while (nextImages.length < 4) nextImages.push(null);
@@ -709,6 +774,24 @@ const activeAddons = getActiveAddons();
         images: nextImages,
       };
     });
+  };
+
+  const handleRemoveBundleImage = (index) => {
+    setCustomOrder(prev => {
+      const nextImages = [...prev.images];
+      nextImages[index] = null;
+      return {
+        ...prev,
+        images: nextImages,
+      };
+    });
+  };
+
+  const getOrCreateCustomOrderIdempotencyKey = () => {
+    if (!customOrderIdempotencyKey.current) {
+      customOrderIdempotencyKey.current = window.crypto?.randomUUID?.() || `custom-order-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    }
+    return customOrderIdempotencyKey.current;
   };
 
   useEffect(() => {
@@ -1034,8 +1117,13 @@ const activeAddons = getActiveAddons();
     });
 
     try {
+      setUploadProgressMessage('Uploading images and preparing your custom order...');
+      const idempotencyKey = getOrCreateCustomOrderIdempotencyKey();
       const response = await fetch('/api/products/custom-orders', {
         method: 'POST',
+        headers: {
+          'X-Idempotency-Key': idempotencyKey,
+        },
         body: formData,
       });
       const data = await response.json();
@@ -1118,6 +1206,7 @@ const activeAddons = getActiveAddons();
       }
     } finally {
       setIsSubmittingCustomOrder(false);
+      setUploadProgressMessage('');
     }
   };
 
@@ -1451,6 +1540,21 @@ const activeAddons = getActiveAddons();
             </div>
           )}
 
+          {isLamp && (
+            <div className="product-detail-upload-guidance">
+              <div className="product-detail-section-title">Photo Upload Guidance</div>
+              <ul>
+                <li>Upload clear, high-resolution images (3000px or larger recommended).</li>
+                <li>Use well-lit, in-focus photos with good contrast for best lithophane detail.</li>
+                <li>JPG/PNG images are recommended. Avoid screenshots, social-media overlays, or text-heavy images.</li>
+                <li>For multi-panel orders, match each photo to the panel order shown on screen.</li>
+              </ul>
+              <div className="product-detail-custom-helper" style={{ marginTop: '12px' }}>
+                Expected production time: 7–10 business days after deposit. We verify each image before printing.
+              </div>
+            </div>
+          )}
+
           {/* Highlights */}
           <ul className="product-detail-highlights">
             {productContent.highlights.map((highlight, idx) => (
@@ -1579,6 +1683,14 @@ const activeAddons = getActiveAddons();
                           ? 'Upload one photo for your custom night light.'
                           : 'Upload one image per panel in the order you want them displayed.'}
                   </p>
+                  <p className="product-detail-custom-helper" style={{ fontStyle: 'italic', marginTop: '6px' }}>
+                    {RECOMMENDED_UPLOAD_TEXT} Max 10 MB per file.
+                  </p>
+                  {uploadError && (
+                    <div className="product-detail-custom-error" style={{ marginTop: '10px' }}>
+                      {uploadError}
+                    </div>
+                  )}
                   {customOrder.productType === 'nightlight' ? (
                     <div className="product-detail-panel-upload-block">
                       <div className="product-detail-panel-upload-label">Night Light Photo</div>
@@ -1774,6 +1886,7 @@ const activeAddons = getActiveAddons();
                   <FamilyBundleConfigurator
                     images={customOrder.images}
                     onImageUpload={handleBundleImageUpload}
+                    onRemoveImage={handleRemoveBundleImage}
                     notes={customOrder.notes}
                     onNotesChange={(value) => setCustomOrder((prev) => ({ ...prev, notes: value }))}
                   />
@@ -2008,6 +2121,12 @@ const activeAddons = getActiveAddons();
                       : 'Designed for use with a compatible lamp base. This listing is for the custom shade only.'}
               </div>
 
+              {uploadProgressMessage && (
+                <div className="product-detail-custom-helper" style={{ marginBottom: '12px', color: '#b9f6ca' }}>
+                  {uploadProgressMessage}
+                </div>
+              )}
+
               <button
                 onClick={handleCustomOrderSubmit}
                 className="product-detail-custom-submit"
@@ -2067,6 +2186,30 @@ const activeAddons = getActiveAddons();
                 <div className="product-detail-meta-value">{product.sku}</div>
               </div>
             )}
+            {(product.dimensions || product.dimensionsText) && (
+              <div className="product-detail-meta-item">
+                <div className="product-detail-meta-label">Dimensions</div>
+                <div className="product-detail-meta-value">{product.dimensions || product.dimensionsText}</div>
+              </div>
+            )}
+            {(product.materials || product.material) && (
+              <div className="product-detail-meta-item">
+                <div className="product-detail-meta-label">Materials</div>
+                <div className="product-detail-meta-value">{product.materials || product.material}</div>
+              </div>
+            )}
+            {(product.leadTime || product.lead_time) && (
+              <div className="product-detail-meta-item">
+                <div className="product-detail-meta-label">Lead Time</div>
+                <div className="product-detail-meta-value">{product.leadTime || product.lead_time}</div>
+              </div>
+            )}
+            {(product.estimatedBuildTime || product.buildTime) && (
+              <div className="product-detail-meta-item">
+                <div className="product-detail-meta-label">Build Time</div>
+                <div className="product-detail-meta-value">{product.estimatedBuildTime || product.buildTime}</div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -2092,6 +2235,18 @@ const activeAddons = getActiveAddons();
             <li>Professional quality assurance</li>
             {product.category && <li>Category: {getCategoryLabel(product.category)}</li>}
             {product.version && <li>Version: {product.version}</li>}
+            {(product.dimensions || product.dimensionsText) && (
+              <li>Dimensions: {product.dimensions || product.dimensionsText}</li>
+            )}
+            {(product.materials || product.material) && (
+              <li>Materials: {product.materials || product.material}</li>
+            )}
+            {(product.leadTime || product.lead_time) && (
+              <li>Lead time: {product.leadTime || product.lead_time}</li>
+            )}
+            {(product.estimatedBuildTime || product.buildTime) && (
+              <li>Estimated build time: {product.estimatedBuildTime || product.buildTime}</li>
+            )}
             <li>Full technical support</li>
           </ul>
         </div>

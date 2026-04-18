@@ -9,6 +9,8 @@ const PrintJob = require('../models/PrintJob');
 const Batch = require('../models/Batch');
 const PromoCode = require('../models/PromoCode');
 const PromoAuditLog = require('../models/PromoAuditLog');
+const StripeWebhookEvent = require('../models/StripeWebhookEvent');
+const stripe = process.env.STRIPE_SECRET_KEY ? require('stripe')(process.env.STRIPE_SECRET_KEY) : null;
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -595,6 +597,230 @@ router.get('/orders', async (req, res) => {
     res.status(500).json({
       error: 'Failed to fetch orders',
       details: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
+  }
+});
+
+router.get('/webhook-events', async (req, res) => {
+  try {
+    const { status, limit = 100, offset = 0 } = req.query;
+    const filter = {};
+
+    if (status) filter.status = status;
+
+    const [events, total] = await Promise.all([
+      StripeWebhookEvent.find(filter)
+        .sort({ receivedAt: -1 })
+        .skip(Number(offset))
+        .limit(Number(limit)),
+      StripeWebhookEvent.countDocuments(filter),
+    ]);
+
+    res.json({
+      data: events.map((event) => ({
+        eventId: event.stripeEventId,
+        type: event.type,
+        status: event.status,
+        orderId: event.orderId || event.customOrderId || null,
+        timestamp: event.receivedAt,
+        errorMessage: event.errorMessage || null,
+        resultMessage: event.resultMessage || null,
+      })),
+      pagination: {
+        total,
+        offset: Number(offset),
+        limit: Number(limit),
+        hasMore: Number(offset) + Number(limit) < total,
+      },
+    });
+  } catch (err) {
+    console.error('❌ Failed to fetch webhook events:', err);
+    res.status(500).json({
+      error: 'Failed to fetch webhook events',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined,
+    });
+  }
+});
+
+router.get('/orders/payment-status', async (req, res) => {
+  try {
+    const { type = 'standard', limit = 50, offset = 0 } = req.query;
+    const pendingThresholdMinutes = Number(process.env.PAYMENT_PENDING_THRESHOLD_MINUTES || 30);
+    const thresholdDate = new Date(Date.now() - pendingThresholdMinutes * 60 * 1000);
+
+    const includeStandard = type !== 'custom';
+    const includeCustom = type !== 'standard';
+
+    const [orders, customOrders] = await Promise.all([
+      includeStandard
+        ? Order.find({})
+            .sort({ createdAt: -1 })
+            .skip(Number(offset))
+            .limit(Number(limit))
+        : [],
+      includeCustom
+        ? CustomOrder.find({})
+            .sort({ createdAt: -1 })
+            .skip(Number(offset))
+            .limit(Number(limit))
+        : [],
+    ]);
+
+    const items = [];
+
+    const buildItem = async (doc, orderType) => {
+      const orderId = doc.orderId;
+      const stripeSessionId = doc.stripeSessionId || null;
+      const paymentIntentId = doc.paymentIntentId || null;
+      const payments = [];
+      let stripeStatus = null;
+      let lastCheckedAt = null;
+      let mismatched = false;
+      const attentionReasons = [];
+
+      if (!stripeSessionId && !paymentIntentId) {
+        attentionReasons.push('missing_stripe_linkage');
+      }
+
+      if (stripe && (stripeSessionId || paymentIntentId)) {
+        try {
+          let session = null;
+          let paymentIntent = null;
+
+          if (stripeSessionId) {
+            session = await stripe.checkout.sessions.retrieve(stripeSessionId, { expand: ['payment_intent'] });
+          }
+          if (!paymentIntent && session?.payment_intent) {
+            paymentIntent = session.payment_intent;
+          }
+          if (!paymentIntent && paymentIntentId) {
+            paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+          }
+
+          stripeStatus = session?.payment_status || paymentIntent?.status || null;
+          lastCheckedAt = new Date();
+
+          const paidOnStripe = ['paid', 'succeeded'].includes(String(stripeStatus || '').toLowerCase());
+          const paidInDb = ['paid', 'completed', 'deposit_paid', 'paid_in_full'].includes(String(doc.paymentStatus || '').toLowerCase());
+          if (paidOnStripe !== paidInDb) {
+            mismatched = true;
+            attentionReasons.push('stripe_db_payment_mismatch');
+          }
+        } catch (err) {
+          console.warn('⚠️ Failed to fetch Stripe payment status for admin payment audit:', err.message || err);
+          attentionReasons.push('stripe_status_unavailable');
+        }
+      }
+
+      if (doc.createdAt && String(doc.paymentStatus).toLowerCase() === 'pending' && doc.createdAt < thresholdDate) {
+        attentionReasons.push('pending_payment_delay');
+      }
+
+      const duplicateCount = await StripeWebhookEvent.countDocuments({
+        orderId: orderId,
+        paymentIntentId,
+      });
+      if (duplicateCount > 1) {
+        attentionReasons.push('duplicate_webhook_attempts');
+      }
+
+      return {
+        orderId,
+        orderType,
+        paymentStatus: doc.paymentStatus,
+        stripeSessionId,
+        paymentIntentId,
+        lastCheckedAt,
+        mismatch: mismatched,
+        requiresAttention: attentionReasons.length > 0,
+        attentionReasons,
+        stripeStatus,
+      };
+    };
+
+    const resultItems = [];
+    for (const order of orders) {
+      resultItems.push(await buildItem(order, 'standard'));
+    }
+    for (const customOrder of customOrders) {
+      resultItems.push(await buildItem(customOrder, 'custom'));
+    }
+
+    res.json({
+      data: resultItems,
+      pagination: {
+        limit: Number(limit),
+        offset: Number(offset),
+        hasMore: resultItems.length === Number(limit),
+      },
+    });
+  } catch (err) {
+    console.error('❌ Failed to fetch payment status audit:', err);
+    res.status(500).json({
+      error: 'Failed to fetch payment status audit',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined,
+    });
+  }
+});
+
+router.get('/monitoring/summary', async (req, res) => {
+  try {
+    const pendingThresholdMinutes = Number(process.env.PAYMENT_PENDING_THRESHOLD_MINUTES || 30);
+    const thresholdDate = new Date(Date.now() - pendingThresholdMinutes * 60 * 1000);
+
+    const [totalWebhooks, processedWebhooks, failedWebhooks, ignoredWebhooks, recentFailed, standardPendingAged, customPendingAged, standardMissingLinkage, customMissingLinkage, duplicatePaymentIntents] = await Promise.all([
+      StripeWebhookEvent.countDocuments(),
+      StripeWebhookEvent.countDocuments({ status: 'processed' }),
+      StripeWebhookEvent.countDocuments({ status: 'failed' }),
+      StripeWebhookEvent.countDocuments({ status: 'ignored' }),
+      StripeWebhookEvent.find({ status: 'failed' })
+        .sort({ receivedAt: -1 })
+        .limit(5)
+        .select('stripeEventId type orderId customOrderId receivedAt errorMessage resultMessage paymentIntentId stripeSessionId'),
+      Order.countDocuments({ paymentStatus: 'pending', createdAt: { $lt: thresholdDate } }),
+      CustomOrder.countDocuments({ paymentStatus: 'pending', createdAt: { $lt: thresholdDate } }),
+      Order.countDocuments({ $and: [{ stripeSessionId: { $in: [null, ''] } }, { paymentIntentId: { $in: [null, ''] } }] }),
+      CustomOrder.countDocuments({ $and: [{ stripeSessionId: { $in: [null, ''] } }, { paymentIntentId: { $in: [null, ''] } }] }),
+      StripeWebhookEvent.aggregate([
+        { $match: { paymentIntentId: { $exists: true, $ne: null } } },
+        { $group: { _id: '$paymentIntentId', count: { $sum: 1 } } },
+        { $match: { count: { $gt: 1 } } },
+        { $count: 'duplicateCount' },
+      ]),
+    ]);
+
+    const duplicateCount = Array.isArray(duplicatePaymentIntents) && duplicatePaymentIntents[0]
+      ? duplicatePaymentIntents[0].duplicateCount
+      : 0;
+
+    res.json({
+      summary: {
+        totalWebhooks,
+        processedWebhooks,
+        failedWebhooks,
+        ignoredWebhooks,
+        duplicatePaymentIntentEvents: duplicateCount,
+        standardPendingAgedOrders: standardPendingAged,
+        customPendingAgedOrders: customPendingAged,
+        standardMissingStripeLinkage: standardMissingLinkage,
+        customMissingStripeLinkage: customMissingLinkage,
+        recentFailedEvents: recentFailed.map((event) => ({
+          eventId: event.stripeEventId,
+          type: event.type,
+          orderId: event.orderId || event.customOrderId || null,
+          timestamp: event.receivedAt,
+          errorMessage: event.errorMessage || event.resultMessage || null,
+          paymentIntentId: event.paymentIntentId || null,
+          stripeSessionId: event.stripeSessionId || null,
+        })),
+        thresholdMinutes: pendingThresholdMinutes,
+      },
+    });
+  } catch (err) {
+    console.error('❌ Failed to fetch monitoring summary:', err);
+    res.status(500).json({
+      error: 'Failed to fetch monitoring summary',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined,
     });
   }
 });
