@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import './AdminPage.css';
@@ -44,6 +44,32 @@ const EMPTY_PROMO = {
   allowedCategories: '',
   allowedProducts: '',
   expiresAt: '',
+};
+
+const FULFILLMENT_STAGES = [
+  'awaiting_deposit',
+  'deposit_paid',
+  'reviewing_assets',
+  'print_ready',
+  'in_production',
+  'printed',
+  'assembled',
+  'packed',
+  'shipped',
+  'completed',
+];
+
+const FULFILLMENT_STAGE_LABELS = {
+  awaiting_deposit: 'Awaiting Deposit',
+  deposit_paid: 'Deposit Paid',
+  reviewing_assets: 'Reviewing Assets',
+  print_ready: 'Print Ready',
+  in_production: 'In Production',
+  printed: 'Printed',
+  assembled: 'Assembled',
+  packed: 'Packed',
+  shipped: 'Shipped',
+  completed: 'Completed',
 };
 
 const formatLightTypeForDisplay = (lightType, { internal = false } = {}) => {
@@ -97,7 +123,6 @@ export default function AdminPage() {
   const [isLoadingLithophaneJobs, setIsLoadingLithophaneJobs] = useState(false);
   const [isLoadingBatches, setIsLoadingBatches] = useState(false);
   const [stlEditsByJob, setStlEditsByJob] = useState({});
-  const [imageModalState, setImageModalState] = useState({ open: false, order: null, index: 0 });
   const [posts, setPosts] = useState([]);
   const [promoCodes, setPromoCodes] = useState([]);
 
@@ -131,6 +156,24 @@ export default function AdminPage() {
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
   const [adminRoles, setAdminRoles] = useState([]);
+
+  const [testPipelineLoading, setTestPipelineLoading] = useState(false);
+  const [testPipelineStatus, setTestPipelineStatus] = useState('');
+  const [testPipelineLog, setTestPipelineLog] = useState([]);
+  const [testPipelineTestRunId, setTestPipelineTestRunId] = useState('');
+  const [testPipelineOrderId, setTestPipelineOrderId] = useState('');
+  const [testPipelinePrintJobId, setTestPipelinePrintJobId] = useState('');
+  const [testPipelineBatchId, setTestPipelineBatchId] = useState('');
+  const [testPipelineResult, setTestPipelineResult] = useState(null);
+  const [testPipelineStepStates, setTestPipelineStepStates] = useState({
+    createOrder: 'idle',
+    simulatePayment: 'idle',
+    createPrintJob: 'idle',
+    applyStl: 'idle',
+    createBatch: 'idle',
+    assignJob: 'idle',
+  });
+  const [isResultExpanded, setIsResultExpanded] = useState(true);
 
   // preview-only images for drag & drop
   const [productPreviewImage, setProductPreviewImage] = useState(null);
@@ -243,7 +286,15 @@ export default function AdminPage() {
     };
 
     loadPromoAudit();
-  }, [activeTab, canManagePromos, promoAuditPage, promoAuditQueryToken]);
+  }, [
+    activeTab,
+    canManagePromos,
+    promoAuditPage,
+    promoAuditQueryToken,
+    promoAuditFilters.promoCode,
+    promoAuditFilters.action,
+    promoAuditFilters.actor,
+  ]);
 
   useEffect(() => {
     if (activeTab !== 'custom-orders' && activeTab !== 'production-queue') return;
@@ -307,31 +358,6 @@ export default function AdminPage() {
     cancelled: 'Cancelled',
   };
 
-  const FULFILLMENT_STAGES = [
-    'awaiting_deposit',
-    'deposit_paid',
-    'reviewing_assets',
-    'print_ready',
-    'in_production',
-    'printed',
-    'assembled',
-    'packed',
-    'shipped',
-    'completed',
-  ];
-
-  const FULFILLMENT_STAGE_LABELS = {
-    awaiting_deposit: 'Awaiting Deposit',
-    deposit_paid: 'Deposit Paid',
-    reviewing_assets: 'Reviewing Assets',
-    print_ready: 'Print Ready',
-    in_production: 'In Production',
-    printed: 'Printed',
-    assembled: 'Assembled',
-    packed: 'Packed',
-    shipped: 'Shipped',
-    completed: 'Completed',
-  };
 
   const ALLOWED_FULFILLMENT_TRANSITIONS = {
     awaiting_deposit: ['deposit_paid'],
@@ -370,7 +396,7 @@ export default function AdminPage() {
     }
   };
 
-  const fetchPrintJobs = async (status = 'all') => {
+  const fetchPrintJobs = useCallback(async (status = 'all') => {
     try {
       const params = {};
       if (status && status !== 'all') {
@@ -385,14 +411,14 @@ export default function AdminPage() {
       console.error('Failed to fetch print jobs:', err);
       return [];
     }
-  };
+  }, []);
 
-  const fetchLithophaneJobs = async (status = 'all') => {
+  const fetchLithophaneJobs = useCallback(async (status = 'all') => {
     if (status === 'all') {
       return fetchPrintJobs('queued_for_generation,generating_stl,stl_ready,queued_for_slicing');
     }
     return fetchPrintJobs(status);
-  };
+  }, [fetchPrintJobs]);
 
   const fetchBatches = async (status = 'all') => {
     try {
@@ -421,7 +447,7 @@ export default function AdminPage() {
     };
 
     loadPrintJobs();
-  }, [activeTab, printJobStatusFilter]);
+  }, [activeTab, printJobStatusFilter, fetchPrintJobs]);
 
   useEffect(() => {
     if (activeTab !== 'lithophane') return;
@@ -433,7 +459,7 @@ export default function AdminPage() {
     };
 
     loadLithophaneJobs();
-  }, [activeTab, lithophaneStatusFilter]);
+  }, [activeTab, lithophaneStatusFilter, fetchLithophaneJobs]);
 
   useEffect(() => {
     if (activeTab !== 'batches' && activeTab !== 'print-jobs') return;
@@ -517,180 +543,6 @@ export default function AdminPage() {
     }
   };
 
-  const renderPrintJobCard = (job) => {
-    const stlEdits = stlEditsByJob[job.printJobId] || {};
-    const stlFilenameValue = stlEdits.stlFilename !== undefined ? stlEdits.stlFilename : job.stlFilename || '';
-    const stlPathValue = stlEdits.stlPath !== undefined ? stlEdits.stlPath : job.stlPath || '';
-    const stlVersionValue = stlEdits.stlVersion !== undefined ? stlEdits.stlVersion : job.stlVersion || '';
-    const generationNotesValue = stlEdits.generationNotes !== undefined ? stlEdits.generationNotes : job.generationNotes || '';
-
-    return (
-      <div key={job.printJobId} className="print-job-card">
-        <div className="print-job-card-header">
-          <div>
-            <div className="print-job-title">{job.printJobId}</div>
-            <div className="print-job-subtitle">Order: {job.orderId}</div>
-          </div>
-          <div>
-            <div className={`print-job-status print-job-status-${job.status}`}>{job.status.replace(/_/g, ' ')}</div>
-            <select
-              value={job.status}
-              onChange={(e) => handleUpdatePrintJob(job.printJobId, { status: e.target.value })}
-              className="admin-order-status-select"
-              style={{ marginTop: '10px', minWidth: '180px' }}
-            >
-              <option value="queued_for_generation">Queued for Generation</option>
-              <option value="generating_stl">Generating STL</option>
-              <option value="stl_ready">STL Ready</option>
-              <option value="queued_for_slicing">Queued for Slicing</option>
-              <option value="sliced">Sliced</option>
-              <option value="queued_for_batch">Queued for Batch</option>
-              <option value="assigned_to_printer">Assigned to Printer</option>
-              <option value="printing">Printing</option>
-              <option value="printed">Printed</option>
-              <option value="failed">Failed</option>
-              <option value="cancelled">Cancelled</option>
-            </select>
-          </div>
-        </div>
-        <div className="print-job-meta">
-          <div><strong>Printer:</strong> {job.printerProfile || 'TBD'}</div>
-          <div><strong>Material:</strong> {job.materialProfile || 'TBD'}</div>
-          <div><strong>Slicer:</strong> {job.slicerProfile || 'TBD'}</div>
-          <div><strong>Nozzle:</strong> {job.nozzle || 'TBD'}</div>
-          <div><strong>Layer Height:</strong> {job.layerHeight || 'TBD'}</div>
-          <div><strong>Generation Method:</strong> {job.generationMethod || 'Manual'}</div>
-          <div><strong>Lithophane Type:</strong> {job.lithophaneType || 'Custom'}</div>
-          <div><strong>Target WxHxD:</strong> {job.targetWidthMm || 'N/A'} x {job.targetHeightMm || 'N/A'} x {job.targetDepthMm || 'N/A'} mm</div>
-          <div><strong>Panel Count:</strong> {job.panelCount || 1}</div>
-          <div><strong>Infill:</strong> {job.infill || 'TBD'}%</div>
-          <div><strong>Walls:</strong> {job.wallCount || 'TBD'}</div>
-          <div><strong>Estimated Hours:</strong> {job.estimatedPrintHours || 0}</div>
-        </div>
-        <div className="print-job-links">
-          <div><strong>STL:</strong> {job.stlPath ? 'Attached' : 'Missing'}</div>
-          <div><strong>Filename:</strong> {job.stlFilename || 'Not set'}</div>
-          <div><strong>Version:</strong> {job.stlVersion || 'Not set'}</div>
-          <div><strong>Project:</strong> {job.projectFilePath ? 'Attached' : 'Missing'}</div>
-          <div><strong>G-code:</strong> {job.gcodePath ? 'Attached' : 'Missing'}</div>
-        </div>
-        <div className="print-job-actions">
-          <button
-            type="button"
-            className="secondary-button small-button"
-            onClick={() => handleExportSlicerPacket(job.printJobId)}
-          >
-            Export Slicer Packet
-          </button>
-          <button
-            type="button"
-            className="secondary-button small-button"
-            onClick={() => handleExportLithophanePacket(job.printJobId)}
-          >
-            Export Lithophane Packet
-          </button>
-          <button
-            type="button"
-            className="secondary-button small-button"
-            onClick={() => handleCreateBatchFromPrintJob(job)}
-          >
-            New Batch from Job
-          </button>
-          {batches.length > 0 && (
-            <select
-              value={job.assignedBatchId || ''}
-              onChange={(e) => {
-                const batchId = e.target.value;
-                if (!batchId) return;
-                handleAssignPrintJobToBatch(job, batchId);
-              }}
-              className="admin-order-status-select"
-              style={{ minWidth: '170px' }}
-            >
-              <option value="">Assign to batch...</option>
-              {batches.map((batch) => (
-                <option key={batch.batchId} value={batch.batchId}>
-                  {batch.batchId} • {batch.status || 'pending'}
-                </option>
-              ))}
-            </select>
-          )}
-          <button
-            type="button"
-            className="secondary-button small-button"
-            onClick={() => handleUpdateStlHandoff(job)}
-          >
-            Save STL Handoff
-          </button>
-          <button
-            type="button"
-            className="secondary-button small-button"
-            onClick={() => handleUpdateStlHandoff(job, { status: 'stl_ready' })}
-          >
-            Mark STL Ready
-          </button>
-        </div>
-        <div className="print-job-notes">
-          <strong>Generation Notes</strong>
-          <textarea
-            className="form-input print-job-textarea"
-            value={generationNotesValue}
-            onChange={(e) => handleStlEditChange(job.printJobId, 'generationNotes', e.target.value)}
-            rows={3}
-          />
-        </div>
-        <div className="print-job-edit-row">
-          <input
-            className="form-input"
-            placeholder="STL Filename"
-            value={stlFilenameValue}
-            onChange={(e) => handleStlEditChange(job.printJobId, 'stlFilename', e.target.value)}
-          />
-          <input
-            className="form-input"
-            placeholder="STL Path"
-            value={stlPathValue}
-            onChange={(e) => handleStlEditChange(job.printJobId, 'stlPath', e.target.value)}
-          />
-          <input
-            className="form-input"
-            placeholder="STL Version"
-            value={stlVersionValue}
-            onChange={(e) => handleStlEditChange(job.printJobId, 'stlVersion', e.target.value)}
-          />
-        </div>
-        <div className="print-job-notes">
-          <strong>Notes</strong>
-          <p>{job.notes || 'No notes'}</p>
-        </div>
-      </div>
-    );
-  };
-
-  const openCustomOrderImageModal = (order, index) => {
-    setImageModalState({ open: true, order, index });
-  };
-
-  const closeCustomOrderImageModal = () => {
-    setImageModalState({ open: false, order: null, index: 0 });
-  };
-
-  const showNextCustomOrderImage = () => {
-    setImageModalState((prev) => {
-      if (!prev.order) return prev;
-      const nextIndex = (prev.index + 1) % (prev.order.images?.length || 1);
-      return { ...prev, index: nextIndex };
-    });
-  };
-
-  const showPreviousCustomOrderImage = () => {
-    setImageModalState((prev) => {
-      if (!prev.order) return prev;
-      const length = prev.order.images?.length || 1;
-      const prevIndex = (prev.index - 1 + length) % length;
-      return { ...prev, index: prevIndex };
-    });
-  };
 
   const isCustomOrderPrintReady = (order) => {
     if (order?.isPrintReady !== undefined) {
@@ -816,9 +668,6 @@ export default function AdminPage() {
     }
   };
 
-  const handleProductionQuickStatus = async (orderId, status) => {
-    return handleCustomOrderStatusChange(orderId, status);
-  };
 
   const handleProductChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -1703,8 +1552,6 @@ export default function AdminPage() {
       if (item.expiresat) item.expiresAt = item.expiresat;
       if (item.discountvalue !== undefined) item.discountValue = Number(item.discountvalue);
       if (item.discounttype !== undefined) item.discountType = item.discounttype;
-      if (item.code !== undefined) item.code = item.code;
-      if (item.description !== undefined) item.description = item.description;
       return item;
     });
   };
@@ -1778,6 +1625,260 @@ export default function AdminPage() {
     setPromoAuditQueryToken((prev) => prev + 1);
   };
 
+  const appendLog = (message) => {
+    setTestPipelineLog((prev) => [
+      ...prev,
+      `${new Date().toLocaleTimeString()}: ${message}`,
+    ]);
+  };
+
+  const setStepState = (stepKey, value) => {
+    setTestPipelineStepStates((prev) => ({
+      ...prev,
+      [stepKey]: value,
+    }));
+  };
+
+  const extractApiError = (err) => {
+    if (!err) return 'Unknown error';
+    if (err.response?.data?.error) return err.response.data.error;
+    if (err.response?.data?.message) return err.response.data.message;
+    return err.message || 'Unknown error';
+  };
+
+  const mergePipelineIds = (result) => {
+    if (!result || typeof result !== 'object') return;
+
+    if (result.testRunId) setTestPipelineTestRunId(result.testRunId);
+    if (result.orderId) setTestPipelineOrderId(result.orderId);
+    if (result.printJobId) setTestPipelinePrintJobId(result.printJobId);
+    if (result.batchId) setTestPipelineBatchId(result.batchId);
+
+    if (result.result?.order?.orderId) setTestPipelineOrderId(result.result.order.orderId);
+    if (result.result?.printJob?.printJobId) setTestPipelinePrintJobId(result.result.printJob.printJobId);
+    if (result.result?.batch?.batchId) setTestPipelineBatchId(result.result.batch.batchId);
+  };
+
+  const runPipelineAction = async (path, payload, statusLabel, stepKey) => {
+    if (stepKey) setStepState(stepKey, 'running');
+    setTestPipelineLoading(true);
+    setTestPipelineStatus(statusLabel);
+    appendLog(statusLabel);
+    try {
+      const response = await axios.post(`${API_BASE_URL}/admin/test-pipeline/${path}`, payload, {
+        withCredentials: true,
+      });
+      const result = response.data || {};
+      mergePipelineIds(result);
+      appendLog(`Success: ${statusLabel}`);
+      if (stepKey) setStepState(stepKey, 'success');
+      setTestPipelineResult(result);
+      setTestPipelineStatus(`${statusLabel} completed`);
+      return result;
+    } catch (err) {
+      const message = extractApiError(err);
+      appendLog(`Error: ${statusLabel} failed — ${message}`);
+      if (stepKey) setStepState(stepKey, 'error');
+      setTestPipelineStatus(`Failed: ${message}`);
+      throw err;
+    } finally {
+      setTestPipelineLoading(false);
+    }
+  };
+
+  const resetPipelineState = ({ preserveTestRunId = false } = {}) => {
+    setTestPipelineStatus('');
+    setTestPipelineLog([]);
+    setTestPipelineOrderId('');
+    setTestPipelinePrintJobId('');
+    setTestPipelineBatchId('');
+    setTestPipelineResult(null);
+    if (!preserveTestRunId) {
+      setTestPipelineTestRunId('');
+    }
+    setTestPipelineStepStates({
+      createOrder: 'idle',
+      simulatePayment: 'idle',
+      createPrintJob: 'idle',
+      applyStl: 'idle',
+      createBatch: 'idle',
+      assignJob: 'idle',
+    });
+  };
+
+  const resetPipelineSteps = () => {
+    setTestPipelineStepStates({
+      createOrder: 'idle',
+      simulatePayment: 'idle',
+      createPrintJob: 'idle',
+      applyStl: 'idle',
+      createBatch: 'idle',
+      assignJob: 'idle',
+    });
+  };
+
+  const handleCreateTestOrder = async () => {
+    try {
+      resetPipelineState({ preserveTestRunId: true });
+      const payload = testPipelineTestRunId ? { testRunId: testPipelineTestRunId } : {};
+      const result = await runPipelineAction('create-order', payload, 'Creating test order', 'createOrder');
+      setTestPipelineTestRunId(result.testRunId || testPipelineTestRunId);
+      setTestPipelineOrderId(result.orderId || '');
+      return result;
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleSimulateTestPayment = async () => {
+    try {
+      if (!testPipelineOrderId && !testPipelineTestRunId) {
+        appendLog('ERROR: Order ID or Test Run ID is required');
+        return;
+      }
+      const payload = {
+        orderId: testPipelineOrderId || undefined,
+        testRunId: testPipelineTestRunId || undefined,
+      };
+      const result = await runPipelineAction('simulate-payment', payload, 'Simulating deposit payment', 'simulatePayment');
+      setTestPipelineOrderId(result.orderId || testPipelineOrderId);
+      return result;
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleCreateTestPrintJob = async () => {
+    try {
+      if (!testPipelineOrderId && !testPipelineTestRunId) {
+        appendLog('ERROR: Order ID or Test Run ID is required');
+        return;
+      }
+      const payload = {
+        orderId: testPipelineOrderId || undefined,
+        testRunId: testPipelineTestRunId || undefined,
+      };
+      const result = await runPipelineAction('create-print-job', payload, 'Creating test print job', 'createPrintJob');
+      setTestPipelinePrintJobId(result.printJobId || '');
+      return result;
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleApplyTestStl = async () => {
+    try {
+      if (!testPipelinePrintJobId && !testPipelineTestRunId) {
+        appendLog('ERROR: Print Job ID or Test Run ID is required');
+        return;
+      }
+      const payload = {
+        printJobId: testPipelinePrintJobId || undefined,
+        testRunId: testPipelineTestRunId || undefined,
+        stlFilename: `pipeline-${Date.now()}.stl`,
+        stlPath: `/uploads/test-pipeline/stl-${Date.now()}.stl`,
+        stlVersion: 'v1',
+        generationNotes: 'STL handoff applied by test pipeline',
+      };
+      return await runPipelineAction('apply-stl', payload, 'Applying STL handoff', 'applyStl');
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleCreateTestBatch = async () => {
+    try {
+      if (!testPipelinePrintJobId && !testPipelineTestRunId) {
+        appendLog('ERROR: Print Job ID or Test Run ID is required');
+        return;
+      }
+      const payload = {
+        printJobId: testPipelinePrintJobId || undefined,
+        testRunId: testPipelineTestRunId || undefined,
+      };
+      const result = await runPipelineAction('create-batch', payload, 'Creating batch from print job', 'createBatch');
+      setTestPipelineBatchId(result.batchId || '');
+      return result;
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleAssignTestJob = async () => {
+    try {
+      if (!testPipelinePrintJobId || !testPipelineBatchId) {
+        appendLog('ERROR: Batch ID and Print Job ID are required');
+        return;
+      }
+      return await runPipelineAction('assign-job', {
+        printJobId: testPipelinePrintJobId,
+        batchId: testPipelineBatchId,
+        testRunId: testPipelineTestRunId || undefined,
+      }, 'Assigning test job to batch');
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleRunFullTestPipeline = async () => {
+    try {
+      resetPipelineSteps();
+      setTestPipelineLog([]);
+      setTestPipelineStatus('');
+      const result = await runPipelineAction('run', {
+        testRunId: testPipelineTestRunId || undefined,
+      }, 'Running full test pipeline');
+      setTestPipelineTestRunId(result.testRunId || testPipelineTestRunId);
+      setTestPipelineOrderId(result.result?.order?.orderId || '');
+      setTestPipelinePrintJobId(result.result?.printJob?.printJobId || '');
+      setTestPipelineBatchId(result.result?.batch?.batchId || '');
+      return result;
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleCleanupTestData = async () => {
+    try {
+      if (!testPipelineTestRunId) {
+        appendLog('ERROR: Test Run ID is required for cleanup');
+        return;
+      }
+      const result = await runPipelineAction('cleanup', { testRunId: testPipelineTestRunId }, 'Cleaning up test pipeline data');
+      if (result.success) {
+        resetPipelineState();
+      }
+      return result;
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const exportSlicerPacket = () => {
+    if (!testPipelinePrintJobId) {
+      appendLog('ERROR: Print Job ID is required to export a packet');
+      return;
+    }
+    window.open(`${API_BASE_URL}/admin/print-jobs/${testPipelinePrintJobId}/slicer-packet.zip`, '_blank');
+  };
+
+  const exportLithophanePacket = () => {
+    if (!testPipelinePrintJobId) {
+      appendLog('ERROR: Print Job ID is required to export a packet');
+      return;
+    }
+    window.open(`${API_BASE_URL}/admin/print-jobs/${testPipelinePrintJobId}/lithophane-packet.zip`, '_blank');
+  };
+
+  const formatJsonPreview = (data) => {
+    if (!data) return '{}';
+    try {
+      return JSON.stringify(data, null, 2);
+    } catch (err) {
+      return String(data);
+    }
+  };
+
   // ---------- RENDER ----------
   if (loading) {
     return (
@@ -1837,6 +1938,12 @@ export default function AdminPage() {
           onClick={() => setActiveTab('batches')}
         >
           Batches
+        </button>
+        <button
+          className={activeTab === 'test-pipeline' ? 'tab active' : 'tab'}
+          onClick={() => setActiveTab('test-pipeline')}
+        >
+          Test Pipeline
         </button>
         {canManagePromos && (
           <button
@@ -3122,6 +3229,172 @@ export default function AdminPage() {
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {activeTab === 'test-pipeline' && (
+        <div className="test-pipeline-panel">
+          <h2 className="section-header">TEST PIPELINE</h2>
+          <div className="admin-order-filter-controls">
+            <label>
+              Test Run ID:
+              <input
+                type="text"
+                value={testPipelineTestRunId}
+                onChange={(e) => setTestPipelineTestRunId(e.target.value)}
+                placeholder="Optional test run ID"
+              />
+            </label>
+            <label>
+              Order ID:
+              <input
+                type="text"
+                value={testPipelineOrderId}
+                onChange={(e) => setTestPipelineOrderId(e.target.value)}
+                placeholder="Optional order ID"
+              />
+            </label>
+            <label>
+              Print Job ID:
+              <input
+                type="text"
+                value={testPipelinePrintJobId}
+                onChange={(e) => setTestPipelinePrintJobId(e.target.value)}
+                placeholder="Optional print job ID"
+              />
+            </label>
+            <label>
+              Batch ID:
+              <input
+                type="text"
+                value={testPipelineBatchId}
+                onChange={(e) => setTestPipelineBatchId(e.target.value)}
+                placeholder="Optional batch ID"
+              />
+            </label>
+          </div>
+
+          <div className="test-pipeline-actions">
+            <button type="button" className="primary-button" onClick={handleCreateTestOrder} disabled={testPipelineLoading}>
+              Create Test Order
+            </button>
+            <button
+              type="button"
+              className="primary-button"
+              onClick={handleSimulateTestPayment}
+              disabled={testPipelineLoading || !testPipelineOrderId}
+            >
+              Simulate Payment
+            </button>
+            <button
+              type="button"
+              className="primary-button"
+              onClick={handleCreateTestPrintJob}
+              disabled={testPipelineLoading || !testPipelineOrderId}
+            >
+              Create Print Job
+            </button>
+            <button
+              type="button"
+              className="primary-button"
+              onClick={handleApplyTestStl}
+              disabled={testPipelineLoading || !testPipelinePrintJobId}
+            >
+              Apply STL Handoff
+            </button>
+            <button
+              type="button"
+              className="primary-button"
+              onClick={handleCreateTestBatch}
+              disabled={testPipelineLoading || !testPipelinePrintJobId}
+            >
+              Create Batch
+            </button>
+            <button
+              type="button"
+              className="primary-button"
+              onClick={handleAssignTestJob}
+              disabled={testPipelineLoading || !testPipelinePrintJobId || !testPipelineBatchId}
+            >
+              Assign Job
+            </button>
+            <button type="button" className="primary-button" onClick={handleRunFullTestPipeline} disabled={testPipelineLoading}>
+              Run Full Pipeline
+            </button>
+          </div>
+
+          <div className="test-pipeline-actions" style={{ marginTop: '12px' }}>
+            <button type="button" className="secondary-button" onClick={exportSlicerPacket} disabled={!testPipelinePrintJobId}>
+              Export Slicer Packet
+            </button>
+            <button type="button" className="secondary-button" onClick={exportLithophanePacket} disabled={!testPipelinePrintJobId}>
+              Export Lithophane Packet
+            </button>
+            <button type="button" className="secondary-button danger-button" onClick={handleCleanupTestData} disabled={testPipelineLoading || !testPipelineTestRunId}>
+              Cleanup Test Data
+            </button>
+          </div>
+
+          <div className="test-pipeline-summary-row">
+            <div><strong>Test Run ID:</strong> {testPipelineTestRunId || 'None'}</div>
+            <div><strong>Order ID:</strong> {testPipelineOrderId || 'None'}</div>
+            <div><strong>Print Job ID:</strong> {testPipelinePrintJobId || 'None'}</div>
+            <div><strong>Batch ID:</strong> {testPipelineBatchId || 'None'}</div>
+          </div>
+
+          <div className="test-pipeline-steps-grid">
+            {[
+              { key: 'createOrder', label: 'Create Test Order' },
+              { key: 'simulatePayment', label: 'Simulate Payment' },
+              { key: 'createPrintJob', label: 'Create Print Job' },
+              { key: 'applyStl', label: 'Apply STL Handoff' },
+              { key: 'createBatch', label: 'Create Batch' },
+              { key: 'assignJob', label: 'Assign Job' },
+            ].map((step) => (
+              <div key={step.key} className={`step-card step-${testPipelineStepStates[step.key]}`}>
+                <div className="step-label">{step.label}</div>
+                <div className="step-state">{testPipelineStepStates[step.key]}</div>
+              </div>
+            ))}
+          </div>
+
+          <div className="test-pipeline-status">
+            <strong>Status:</strong> {testPipelineStatus || 'Idle'}
+          </div>
+          <div className="test-pipeline-log">
+            <strong>Pipeline Log</strong>
+            <pre>{testPipelineLog.join('\n')}</pre>
+          </div>
+
+          <div className={`test-pipeline-result ${isResultExpanded ? 'expanded' : 'collapsed'}`}>
+            <div className="result-header">
+              <h3>Structured Result</h3>
+              <div className="result-actions">
+                <button
+                  type="button"
+                  className="secondary-button small-button"
+                  onClick={() => setIsResultExpanded((prev) => !prev)}
+                  disabled={!testPipelineResult}
+                >
+                  {isResultExpanded ? 'Collapse' : 'Expand'}
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button small-button"
+                  onClick={() => {
+                    const text = formatJsonPreview(testPipelineResult);
+                    navigator.clipboard.writeText(text).then(() => successToast('Result JSON copied.')).catch(() => errorToast('Failed to copy JSON.'));
+                  }}
+                  disabled={!testPipelineResult}
+                >
+                  Copy JSON
+                </button>
+              </div>
+            </div>
+            <pre className="result-json">
+              {testPipelineResult ? formatJsonPreview(testPipelineResult) : 'No result data available yet.'}
+            </pre>
+          </div>
         </div>
       )}
 

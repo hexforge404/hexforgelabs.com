@@ -16,7 +16,6 @@ const {
   setInput,
   isLoading,
   sendMessage,
-  resetSession,
 } = useContentEngineChat({
   mode: "assistant",
   sessionId: chatSessionIdRef.current,

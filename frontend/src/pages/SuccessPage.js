@@ -6,28 +6,26 @@ import 'react-toastify/dist/ReactToastify.css';
 import confetti from 'canvas-confetti';
 
 function SuccessPage() {
-  const [hasFetched, setHasFetched] = useState(false);
-  const [didCelebrate, setDidCelebrate] = useState(false);
   const [order, setOrder] = useState(null);
-  const [error, setError] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [didCelebrate, setDidCelebrate] = useState(false);
   const [feedback, setFeedback] = useState('');
   const [newsletter, setNewsletter] = useState('');
   const { clearCart } = useCart();
 
   useEffect(() => {
-    if (hasFetched) return;
-
     const fetchOrder = async () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const orderId = urlParams.get('orderId');
+
+      if (!orderId) {
+        setErrorMessage('Missing order ID in the URL.');
+        setLoading(false);
+        return;
+      }
+
       try {
-        const urlParams = new URLSearchParams(window.location.search);
-
-        // ✅ Accept both new and old param names
-        const orderId = urlParams.get('orderId');
-
-        if (!orderId) {
-          throw new Error('Missing orderId in URL');
-        }
-
         const res = await fetch(`/api/orders/${encodeURIComponent(orderId)}`, {
           method: 'GET',
           credentials: 'include',
@@ -35,53 +33,46 @@ function SuccessPage() {
         });
 
         if (!res.ok) {
-          throw new Error(`Failed to fetch order: ${res.status}`);
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.message || body.error || `Unable to load order (${res.status}).`);
         }
 
         const data = await res.json();
-        console.log('✅ Order loaded:', data);
         setOrder(data);
-        setHasFetched(true);
-
         successToast('✅ Order confirmed!');
         window.scrollTo(0, 0);
 
-        // Clear cart shortly after success
-        setTimeout(() => {
-          clearCart();
-        }, 300);
-
-        // 🎉 Launch confetti once
         if (!didCelebrate) {
           try {
-            confetti({
-              particleCount: 80,
-              spread: 70,
-              origin: { y: 0.6 },
-            });
+            confetti({ particleCount: 80, spread: 70, origin: { y: 0.6 } });
             setDidCelebrate(true);
           } catch (confettiErr) {
             console.warn('Confetti failed:', confettiErr);
           }
         }
 
-        // Clean up stored email (if any)
+        setTimeout(() => {
+          clearCart();
+        }, 300);
+
         localStorage.removeItem('lastOrderEmail');
       } catch (err) {
         console.error('❌ Order fetch failed:', err);
-        setError(true);
-        setHasFetched(true);
+        setErrorMessage(err.message || 'Failed to retrieve your order details.');
+      } finally {
+        setLoading(false);
       }
     };
 
     fetchOrder();
-  }, [hasFetched, didCelebrate, clearCart]);
+  }, [clearCart, didCelebrate]);
 
   const handleFeedbackSubmit = async () => {
     if (!feedback.trim()) {
       warningToast('Please enter your feedback before submitting.');
       return;
     }
+
     try {
       const res = await fetch('/api/feedback', {
         method: 'POST',
@@ -103,6 +94,7 @@ function SuccessPage() {
       warningToast('Please enter a valid email.');
       return;
     }
+
     try {
       const res = await fetch('/api/newsletter', {
         method: 'POST',
@@ -119,103 +111,169 @@ function SuccessPage() {
     }
   };
 
-  if (!order && !error) {
+  const formatMoney = (value) => {
+    if (value == null || Number.isNaN(Number(value))) return '—';
+    return `$${Number(value).toFixed(2)}`;
+  };
+
+  const formatDate = (value) => {
+    if (!value) return 'Not available';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return 'Not available';
+    return date.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+  };
+
+  const getImageCount = () => {
+    if (Array.isArray(order?.images)) {
+      return order.images.filter(Boolean).length;
+    }
+    if (Number.isFinite(order?.imagesCount)) {
+      return order.imagesCount;
+    }
+    return undefined;
+  };
+
+  const renderShippingAddress = () => {
+    const address = order?.customer?.shippingAddress;
+    if (!address || !Object.values(address).some(Boolean)) return null;
+    return (
+      <div>
+        <div>{address.street || 'Street address not provided'}</div>
+        <div>
+          {address.city || 'City'}, {address.state || 'State'} {address.zipCode || 'ZIP'}
+        </div>
+        <div>{address.country || 'Country not provided'}</div>
+      </div>
+    );
+  };
+
+  if (loading) {
     return (
       <div className="success-container">
         <div className="loading-spinner">
           <div className="spinner"></div>
-          <p>Loading your order...</p>
+          <p>Loading your order details...</p>
         </div>
       </div>
     );
   }
 
-  const estimateDelivery = () => {
-    if (!order?.createdAt) return null;
-    const created = new Date(order.createdAt);
-    const min = new Date(created);
-    const max = new Date(created);
-    min.setDate(min.getDate() + 3);
-    max.setDate(max.getDate() + 7);
-    return `📦 Estimated Delivery: ${min.toLocaleDateString()} – ${max.toLocaleDateString()}`;
-  };
+  const hasOrder = Boolean(order && order.orderId);
+  const imagesCount = getImageCount();
+  const invoiceItems = Array.isArray(order?.items) ? order.items : [];
 
   return (
     <div className="success-container">
       <div className="success-card">
         <img
-  src={process.env.PUBLIC_URL + '/images/hexforge-logo-removebg.png'}
-  alt="HexForge Labs Logo"
-  style={{ width: '160px', marginBottom: '1rem' }}
-/>
+          src={process.env.PUBLIC_URL + '/images/hexforge-logo-removebg.png'}
+          alt="HexForge Labs Logo"
+          style={{ width: '160px', marginBottom: '1rem' }}
+        />
 
-        <h2>🎉 Order Received</h2>
-        <p style={{ color: '#52e3c2', fontSize: '0.95rem' }}>✅ Your transaction has been securely processed.</p>
-        <p style={{ color: '#8892b0', fontSize: '0.85rem' }}>🔒 SSL Secured — Your data is encrypted and safe.</p>
-
-        {error || !order ? (
+        {hasOrder ? (
           <>
-            <p>Your order was placed successfully, but we couldn’t retrieve the full details.</p>
-            <p>If you entered an email, you should receive a confirmation shortly.</p>
-            <p>Need assistance? We’re here to help — just reach out anytime.</p>
-            <p>Thank you for your support!</p>
+            <h2 className="success-title">🎉 Order Confirmed</h2>
+            <p className="success-message">Thank you! Your payment is complete and your order is now being processed.</p>
+
+            <section className="order-summary">
+              <h3>Order Summary</h3>
+              <div className="order-id"><strong>Order ID:</strong> {order.orderId}</div>
+              <div><strong>Payment Status:</strong> {order.paymentStatus || 'Unknown'}</div>
+              <div><strong>Order Status:</strong> {order.status || 'Unknown'}</div>
+              <div><strong>Order Date:</strong> {formatDate(order.createdAt)}</div>
+              <div><strong>Customer Email:</strong> {order.customer?.email || 'Not provided'}</div>
+              <div><strong>Payment Method:</strong> {order.paymentMethod || 'Stripe'}</div>
+            </section>
+
+            <section className="order-summary">
+              <h3>Items</h3>
+              {invoiceItems.length > 0 ? (
+                <ul className="order-items">
+                  {invoiceItems.map((item, index) => (
+                    <li key={index}>
+                      <div>{item.name || 'Unnamed item'}</div>
+                      <div>
+                        {formatMoney(item.price)} × {item.quantity || 1} = {formatMoney((item.price || 0) * (item.quantity || 1))}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p>No item details are available for this order.</p>
+              )}
+            </section>
+
+            <section className="order-summary">
+              <h3>Pricing</h3>
+              <div><strong>Subtotal:</strong> {formatMoney(order.subtotal)}</div>
+              <div><strong>Shipping:</strong> {formatMoney(order.shippingCost)}</div>
+              <div><strong>Tax:</strong> {formatMoney(order.tax)}</div>
+              {order.discountAmount != null && Number(order.discountAmount) > 0 && (
+                <div><strong>Discount:</strong> -{formatMoney(order.discountAmount)}</div>
+              )}
+              {order.depositAmount != null && (
+                <div><strong>Deposit Paid:</strong> {formatMoney(order.depositAmount)}</div>
+              )}
+              {order.remainingBalance != null && (
+                <div><strong>Remaining Balance:</strong> {formatMoney(order.remainingBalance)}</div>
+              )}
+              <p className="order-total"><strong>Total Paid:</strong> {formatMoney(order.total)}</p>
+            </section>
+
+            {(imagesCount != null || order.productType || order.notes) && (
+              <section className="order-summary">
+                <h3>Order Details</h3>
+                {order.productType && <div><strong>Product Type:</strong> {order.productType}</div>}
+                {imagesCount != null && <div><strong>Uploaded Images:</strong> {imagesCount}</div>}
+                {order.notes && <div><strong>Notes:</strong> {order.notes}</div>}
+              </section>
+            )}
+
+            {order.customer?.shippingAddress && (
+              <section className="order-summary">
+                <h3>Shipping Summary</h3>
+                {renderShippingAddress()}
+              </section>
+            )}
+
+            <section className="disclaimer">
+              <h3>What happens next</h3>
+              <p>We have received your paid order and are preparing it for production. You will receive email updates when your order ships.</p>
+              <p>If you do not receive a confirmation email within a few minutes, please contact us at <a href="mailto:support@hexforgelabs.com">support@hexforgelabs.com</a>.</p>
+            </section>
+
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem', flexWrap: 'wrap', marginTop: '1.5rem' }}>
+              <a href="/" className="back-button"><span style={{ marginRight: '8px' }}>←</span>Back to Store</a>
+              <button onClick={() => window.print()} className="return-button">🧾 Print Receipt</button>
+            </div>
           </>
         ) : (
           <>
-            <p>Your order has been confirmed. Below are your secure order details:</p>
-            <p><strong>Order ID:</strong> {order.orderId}</p>
-            <p><strong>Name:</strong> {order.customer?.name}</p>
-            <p><strong>Email:</strong> {order.customer?.email}</p>
-            <ul className="order-item-list">
-              {order.items?.map((item, i) => (
-                <li key={i}>{item.name} – ${item.price.toFixed(2)} × {item.quantity}</li>
-              ))}
-            </ul>
-            <p><strong>Total:</strong> ${order.total.toFixed(2)}</p>
-            <p style={{ marginTop: '1rem', color: '#52e3c2' }}>{estimateDelivery()}</p>
+            <h2 className="success-title">Order Confirmation Error</h2>
+            <p className="success-message">We could not retrieve confirmation details for this order.</p>
+            <p>{errorMessage || 'Please verify your order link or contact support for help.'}</p>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem', flexWrap: 'wrap', marginTop: '1.5rem' }}>
+              <a href="/" className="back-button"><span style={{ marginRight: '8px' }}>←</span>Return to Store</a>
+            </div>
           </>
         )}
 
-        <p style={{ marginTop: '1.5rem', fontSize: '1.2rem', color: '#64ffda' }}>✨ Happy Hacking — and thank you for supporting HexForge Labs!</p>
-
-        <div className="feedback">
-          <h3>💬 Got feedback?</h3>
-          <textarea rows="4" value={feedback} onChange={(e) => setFeedback(e.target.value)} placeholder="Let us know what you think..." />
-          <button type="button" onClick={handleFeedbackSubmit}>Send Feedback</button>
-        </div>
-
-        <div className="newsletter">
-          <h3>📬 Join Our Newsletter</h3>
-          <input type="email" value={newsletter} onChange={(e) => setNewsletter(e.target.value)} placeholder="Get updates, discounts, and more" />
-          <button type="button" onClick={handleNewsletterSignup}>Sign Up</button>
-        </div>
-
-        <div className="footer-grid">
-          <div className="support-contact">
-            <h3>Need Help?</h3>
-            <p>Email us at <a href="mailto:support@hexforgelabs.com">support@hexforgelabs.com</a> or message us via our site.</p>
-            <p>We’re here to assist you with any questions or concerns.</p>
-            <p>Thank you for being a part of the HexForge community!</p>
+        {hasOrder && (
+          <div className="feedback" style={{ marginTop: '2rem' }}>
+            <h3>💬 Got feedback?</h3>
+            <textarea rows="4" value={feedback} onChange={(e) => setFeedback(e.target.value)} placeholder="Let us know what you think..." />
+            <button type="button" onClick={handleFeedbackSubmit}>Send Feedback</button>
           </div>
+        )}
 
-          <div className="legal-social">
-            <h3>Legal & Links</h3>
-            <a href="/terms">Terms</a>
-            <a href="/privacy">Privacy</a>
-            <a href="/shipping">Shipping</a>
-            <a href="/returns">Returns</a>
-            <a href="/contact">Contact</a>
+        {hasOrder && (
+          <div className="newsletter">
+            <h3>📬 Join Our Newsletter</h3>
+            <input type="email" value={newsletter} onChange={(e) => setNewsletter(e.target.value)} placeholder="Get updates, discounts, and more" />
+            <button type="button" onClick={handleNewsletterSignup}>Sign Up</button>
           </div>
-        </div>
-
-        <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem', flexWrap: 'wrap', marginTop: '2rem' }}>
-          <a href="/" className="back-button">
-            <span style={{ marginRight: '8px' }}>←</span>Back to Store
-          </a>
-          <button onClick={() => window.print()} className="return-button">🧾 Print Receipt</button>
-          <button className="return-button" disabled>📦 Track Order</button>
-        </div>
-
+        )}
       </div>
     </div>
   );

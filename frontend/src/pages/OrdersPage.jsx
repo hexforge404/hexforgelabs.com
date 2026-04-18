@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
-import { successToast, errorToast, warningToast, infoToast } from '../utils/toastUtils';
+import { successToast, errorToast, infoToast } from '../utils/toastUtils';
 import './OrdersPage.css';
 
 const OrdersPage = () => {
