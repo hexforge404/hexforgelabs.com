@@ -1,9 +1,9 @@
 // frontend/src/hooks/useAssistantChat.js
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import axios from "axios";
-import { API_URL, ASSISTANT_URL } from "../config";
+import { API_BASE_URL, ASSISTANT_URL } from "../config";
 
-const apiBase = API_URL.replace(/\/$/, "");
+const apiBase = API_BASE_URL.replace(/\/$/, "");
 const assistantBase = ASSISTANT_URL.replace(/\/$/, "");
 
 // Simple ID generator
@@ -38,6 +38,9 @@ export function useAssistantChat({ model, sessionId, mode = "assistant" }) {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [status, setStatus] = useState("idle");
+  const chatRef = useRef(null);
+  const inputRef = useRef(null);
 
   const resetError = useCallback(() => setError(""), []);
 
@@ -56,7 +59,7 @@ export function useAssistantChat({ model, sessionId, mode = "assistant" }) {
       try {
         const sid = encodeURIComponent(sessionId);
         const res = await axios.get(
-          `${apiBase}/assistant/sessions/${sid}`
+          `${apiBase}/assistant-sessions/${sid}`
         );
         const data = res.data || {};
 
@@ -99,6 +102,7 @@ export function useAssistantChat({ model, sessionId, mode = "assistant" }) {
 
       setLoading(true);
       setError("");
+      setStatus("busy");
 
       // 1) Optimistically add user message to UI
       const userMsg = {
@@ -157,7 +161,7 @@ export function useAssistantChat({ model, sessionId, mode = "assistant" }) {
             normalizeAssistantPayloadForStorage(displayContent);
 
           await axios.post(
-            `${apiBase}/assistant/sessions/${encodeURIComponent(sid)}/append`,
+            `${apiBase}/assistant-sessions/${encodeURIComponent(sid)}/append`,
             {
               model,
               messages: [
@@ -184,8 +188,11 @@ export function useAssistantChat({ model, sessionId, mode = "assistant" }) {
         }
 
         setError(msg);
+        setStatus("error");
+      } finally {
+        setLoading(false);
+        setStatus((prev) => (prev === "error" ? "error" : "idle"));
       }
-      setLoading(false);
     },
     [input, loading, sessionId, mode, model]
   );
@@ -193,13 +200,21 @@ export function useAssistantChat({ model, sessionId, mode = "assistant" }) {
   // ---------------------------------------------------------
   // Exported API
   // ---------------------------------------------------------
+  useEffect(() => {
+    if (!chatRef.current) return;
+    chatRef.current.scrollTop = chatRef.current.scrollHeight;
+  }, [messages, loading]);
+
   return {
     messages,
     input,
     setInput,
     loading,
     error,
-    send,
+    status,
+    sendMessage: send,
     resetError,
+    chatRef,
+    inputRef,
   };
 }

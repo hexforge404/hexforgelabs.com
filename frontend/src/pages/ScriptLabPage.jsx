@@ -18,6 +18,7 @@ const ScriptLabPage = () => {
   const [aiInput, setAiInput] = useState('');
   const [aiOutput, setAiOutput] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
+  const [suggestedCode, setSuggestedCode] = useState(null);
 
   const outputRef = useRef(null);
 
@@ -84,18 +85,41 @@ const ScriptLabPage = () => {
     }
   };
 
+  const extractCodeSuggestions = (text) => {
+    if (!text) return null;
+    const blocks = [];
+    const re = /```(?:[\w-]*)?\n([\s\S]*?)```/g;
+    let match;
+    while ((match = re.exec(text))) {
+      blocks.push(match[1].trim());
+    }
+    return blocks.length > 0 ? blocks.join('\n\n') : null;
+  };
+
+  const handleCopySuggestion = async () => {
+    if (!suggestedCode) return;
+    try {
+      await navigator.clipboard.writeText(suggestedCode);
+      setStatus('✅ Suggested code copied to clipboard');
+    } catch (err) {
+      console.error('Copy suggestion failed', err);
+      setStatus('❌ Failed to copy suggestion');
+    }
+  };
+
   const handleAskAI = async () => {
-  if (!selectedScript && !aiInput.trim()) return;
+    if (!selectedScript && !aiInput.trim()) return;
 
-  setAiLoading(true);
-  setStatus('Talking to assistant…');
-  setAiOutput('');
+    setAiLoading(true);
+    setStatus('Talking to assistant…');
+    setAiOutput('');
+    setSuggestedCode(null);
 
-  const fileName = selectedScript ? selectedScript.name : '(none)';
-  const fullPath = selectedScript ? selectedScript.path : '(no file selected)';
+    const fileName = selectedScript ? selectedScript.name : '(none)';
+    const fullPath = selectedScript ? selectedScript.path : '(no file selected)';
 
-  try {
-    const prompt = `
+    try {
+      const prompt = `
 You are helping a user understand and safely use HexForge product scripts.
 
 Current device: ${selectedScript?.device || '(unknown / not set)'}
@@ -109,45 +133,47 @@ ${code}
 
 User question:
 ${aiInput || '(no explicit question – explain how this script works and how to customize it safely for Skull BadUSB / other devices)'}
-    `.trim();
+      `.trim();
 
-    const res = await axios.post('/mcp/chat', {
-      // ✅ Backend requirement: must have prompt or message
-      prompt,
-      mode: 'script-lab',
+      const res = await axios.post('/mcp/chat', {
+        // ✅ Backend requirement: must have prompt or message
+        prompt,
+        mode: 'script-lab',
 
-      // ✅ Extra context the backend can use if it wants
-      messages: [
-        {
-          role: 'system',
-          content:
-            'You are helping a user understand and safely use HexForge product scripts. Explain clearly, avoid dangerous or destructive instructions, and assume this is for user-owned hardware.',
-        },
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ],
-    });
+        // ✅ Extra context the backend can use if it wants
+        messages: [
+          {
+            role: 'system',
+            content:
+              'You are helping a user understand and safely use HexForge product scripts. Explain clearly, avoid dangerous or destructive instructions, and assume this is for user-owned hardware.',
+          },
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+      });
 
-    const data = res.data || {};
-    const out =
-      data.output ??
-      data.response ??
-      (typeof data === 'string'
-        ? data
-        : JSON.stringify(data, null, 2));
+      const data = res.data || {};
+      const out =
+        data.output ??
+        data.response ??
+        (typeof data === 'string'
+          ? data
+          : JSON.stringify(data, null, 2));
 
-    setAiOutput(out);
-    setStatus('✅ Assistant response ready');
-  } catch (err) {
-    console.error('AI helper error', err);
-    setAiOutput('❌ Failed to contact assistant');
-    setStatus('❌ Assistant error');
-  } finally {
-    setAiLoading(false);
-  }
-};
+      setAiOutput(out);
+      const suggestion = extractCodeSuggestions(out);
+      setSuggestedCode(suggestion);
+      setStatus('✅ Assistant response ready');
+    } catch (err) {
+      console.error('AI helper error', err);
+      setAiOutput('❌ Failed to contact assistant');
+      setStatus('❌ Assistant error');
+    } finally {
+      setAiLoading(false);
+    }
+  };
 
 
   // --- Effects ---
@@ -315,6 +341,14 @@ ${aiInput || '(no explicit question – explain how this script works and how to
             }
             value={aiInput}
             onChange={(e) => setAiInput(e.target.value)}
+            onKeyDown={(e) => {
+              if ((e.key === 'Enter' || e.code === 'NumpadEnter') && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault();
+                if (!aiLoading) {
+                  handleAskAI();
+                }
+              }
+            }}
             className="terminal-input"
           />
 
@@ -323,6 +357,7 @@ ${aiInput || '(no explicit question – explain how this script works and how to
               onClick={() => {
                 setAiInput('');
                 setAiOutput('');
+                setSuggestedCode(null);
               }}
               className="btn-ghost"
             >
@@ -336,6 +371,20 @@ ${aiInput || '(no explicit question – explain how this script works and how to
               {aiLoading ? 'Thinking…' : 'Ask Assistant'}
             </button>
           </div>
+
+          {suggestedCode && (
+            <div className="terminal-suggestion-bar">
+              <button
+                onClick={handleCopySuggestion}
+                className="btn-primary"
+              >
+                Copy suggested code
+              </button>
+              <span style={{ marginLeft: '10px' }}>
+                Assistant found a code suggestion in the output.
+              </span>
+            </div>
+          )}
 
           <pre ref={outputRef} className="terminal-output">
             {aiOutput || 'No assistant output yet.'}

@@ -25,7 +25,7 @@ const FALLBACK_PRODUCTS = [
 const getLampBasePrice = (product) => {
   const sku = String(product.sku || '').toUpperCase();
   if (sku === 'LITHCYL01') {
-    return calculatePrice({ productType: 'cylinder', panelCount: 2, size: 'medium' });
+    return calculatePrice({ productType: 'cylinder', panelCount: 2, size: 'small' });
   }
   if (sku === 'LITHMUL02') {
     return calculatePrice({ productType: 'panel', panelCount: 2, size: 'medium' });
@@ -41,6 +41,9 @@ const getLampBasePrice = (product) => {
   }
   if (sku === 'LITHBUNDLE01') {
     return calculatePrice({ productType: 'familyBundle4' });
+  }
+  if (sku === 'LITHNL01') {
+    return calculatePrice({ productType: 'nightlight' });
   }
   return null;
 };
@@ -82,8 +85,8 @@ const getImageSrc = (image) => resolveImageUrl(image);
 
 const getProductCardMeta = (product) => {
   const sku = String(product.sku || '').toUpperCase();
-  const isCustomKeepsake = ['LITHCYL01', 'LITHMUL02', 'LITHGLB04', 'LITHBOX03', 'LITHBOX05', 'LITHBUNDLE01'].includes(sku);
-  const isSimpleAddOn = ['LITHNL01', 'LITHDF01'].includes(sku);
+  const isCustomKeepsake = ['LITHCYL01', 'LITHMUL02', 'LITHGLB04', 'LITHBOX03', 'LITHBOX05', 'LITHBUNDLE01', 'LITHNL01'].includes(sku);
+  const isSimpleAddOn = ['LITHDF01'].includes(sku);
   const isBundle = sku === 'LITHBUNDLE01';
 
   const microcopyMap = {

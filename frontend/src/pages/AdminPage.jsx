@@ -1366,6 +1366,7 @@ export default function AdminPage() {
 
       resetBlogForm();
     } catch (err) {
+      
       console.error(err);
       errorToast(err.response?.data?.error || err.message);
     }

@@ -5,6 +5,7 @@ const rateLimit = require('express-rate-limit');
 const path = require('path');
 const fs = require('fs/promises');
 const multer = require('multer');
+const { v4: uuidv4 } = require('uuid');
 const Product = require('../models/Product');
 const ProductAsset = require('../models/ProductAsset');
 const CustomOrder = require('../models/CustomOrder');
@@ -12,6 +13,9 @@ const PromoCode = require('../models/PromoCode');
 const { requireAdmin } = require('../middleware/requireAdmin');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const { roundMoney, calculateDeposit, applyPromo } = require('../utils/pricing');
+const {
+  normalizeCustomOrderImagePath,
+} = require('../utils/customOrderUtils');
 const formData = require('form-data');
 const Mailgun = require('mailgun.js');
 const mailgun = new Mailgun(formData);
@@ -28,8 +32,17 @@ const STATUS_VALUES = ['draft', 'active', 'archived'];
 const REQUEST_TIMEOUT_MS = 8000;
 
 // Configure multer for custom order photo uploads
+const customOrderStorage = multer.diskStorage({
+  destination(req, file, cb) {
+    cb(null, CUSTOM_ORDER_UPLOAD_TMP_DIR);
+  },
+  filename(req, file, cb) {
+    cb(null, safeCustomOrderFilename(file.originalname));
+  }
+});
+
 const customOrderUpload = multer({
-  dest: path.join(__dirname, '../uploads/custom-orders'),
+  storage: customOrderStorage,
   limits: {
     fileSize: 10 * 1024 * 1024, // 10MB limit
   },
@@ -41,6 +54,67 @@ const customOrderUpload = multer({
     }
   }
 });
+
+const CUSTOM_ORDER_UPLOAD_DIR = path.join(__dirname, '../uploads/custom-orders');
+const CUSTOM_ORDER_UPLOAD_TMP_DIR = path.join(CUSTOM_ORDER_UPLOAD_DIR, 'tmp');
+
+const ensureDir = async (dirPath) => {
+  try {
+    await fs.mkdir(dirPath, { recursive: true });
+  } catch (err) {
+    // ignore if already exists
+  }
+};
+
+ensureDir(CUSTOM_ORDER_UPLOAD_TMP_DIR);
+
+const getCustomOrderUploadDir = (orderId) => path.join(CUSTOM_ORDER_UPLOAD_DIR, orderId);
+const getCustomOrderPublicUrl = (relativePath) => `/${relativePath.replace(/^\/+/, '')}`;
+const getCustomOrderRelativePath = (orderId, filename) => `uploads/custom-orders/${orderId}/${filename}`;
+
+const safeCustomOrderFilename = (originalName) => {
+  const ext = path.extname(originalName).toLowerCase();
+  const base = path.basename(originalName, ext)
+    .replace(/[^a-z0-9-_]+/gi, '-')
+    .replace(/(^-|-$)/g, '')
+    .slice(0, 120) || 'image';
+  return `${base}-${Date.now()}${ext}`;
+};
+
+const buildCustomOrderImageMeta = (file, orderId, panel) => {
+  const filename = path.basename(file.path);
+  const relativePath = getCustomOrderRelativePath(orderId, filename);
+  return {
+    path: getCustomOrderPublicUrl(relativePath),
+    publicUrl: getCustomOrderPublicUrl(relativePath),
+    relativePath,
+    originalName: file.originalname,
+    mimeType: file.mimetype,
+    size: file.size,
+    uploadedAt: new Date(),
+    panel,
+    panelLabel: `Panel ${panel}`,
+  };
+};
+
+const normalizePersistedCustomOrder = (customOrder) => {
+  const obj = customOrder.toObject ? customOrder.toObject({ getters: true, virtuals: false }) : { ...customOrder };
+  if (Array.isArray(obj.images)) {
+    obj.images = obj.images.map((img) => ({
+      ...img,
+      path: normalizeCustomOrderImagePath(img.path || img.publicUrl || img.relativePath),
+      publicUrl: normalizeCustomOrderImagePath(img.publicUrl || img.path || img.relativePath),
+      relativePath: img.relativePath || String(img.path || img.publicUrl || '').replace(/^\//, ''),
+    }));
+  }
+  if (obj.nightlightAddon?.separateImage) {
+    obj.nightlightAddon.separateImage.path = normalizeCustomOrderImagePath(obj.nightlightAddon.separateImage.path || obj.nightlightAddon.separateImage.publicUrl || obj.nightlightAddon.separateImage.relativePath);
+    obj.nightlightAddon.separateImage.publicUrl = normalizeCustomOrderImagePath(obj.nightlightAddon.separateImage.publicUrl || obj.nightlightAddon.separateImage.path || obj.nightlightAddon.separateImage.relativePath);
+    obj.nightlightAddon.separateImage.relativePath = obj.nightlightAddon.separateImage.relativePath || String(obj.nightlightAddon.separateImage.path || obj.nightlightAddon.separateImage.publicUrl || '').replace(/^\//, '');
+  }
+  obj.imagesCount = Array.isArray(obj.images) ? obj.images.length : 0;
+  return obj;
+};
 
 const productLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -834,6 +908,7 @@ const getRequiredPanelCount = ({ productType, panels, panelCount }) => {
   if (productType === 'fixedBox4') return 4;
   if (productType === 'panelBox5' || productType === 'swappableBox5') return 5;
   if (productType === 'familyBundle4') return 4;
+  if (productType === 'nightlight') return 1;
 
   const labelCount = PANEL_COUNT_MAP[String(panels || '').toLowerCase()] ?? null;
   const minPanels = productType === 'panel' || productType === 'cylinder' ? 2 : productType === 'globeLamp' ? 1 : 1;
@@ -849,7 +924,10 @@ const SIZE_PRICE_MAP = {
 const calculateCustomOrderPrice = ({ productType, panelCount, size = 'small', addons = {} }) => {
   let basePrice = 0;
   const sizeAdjustment = SIZE_PRICE_MAP[String(size).toLowerCase()] || 0;
-  if (productType === 'panel' || productType === 'cylinder') {
+  if (productType === 'cylinder') {
+    const count = Math.max(2, Number(panelCount) || 2);
+    basePrice = 35 + sizeAdjustment + Math.max(0, count - 2) * 10;
+  } else if (productType === 'panel') {
     const count = Math.max(2, Number(panelCount) || 2);
     basePrice = 50 + sizeAdjustment + Math.max(0, count - 2) * 10;
   } else if (productType === 'globeLamp') {
@@ -859,7 +937,9 @@ const calculateCustomOrderPrice = ({ productType, panelCount, size = 'small', ad
   } else if (productType === 'panelBox5' || productType === 'swappableBox5') {
     basePrice = 55;
   } else if (productType === 'familyBundle4') {
-    basePrice = 299.99;
+    basePrice = 129.99;
+  } else if (productType === 'nightlight') {
+    basePrice = 10;
   }
 
   let total = basePrice;
@@ -1161,10 +1241,13 @@ router.post(
           ? undefined
           : Number(nightlightSelectedMainImageIndex),
         separateImage: nightlightImageFile ? {
-          path: nightlightImageFile.path,
+          path: '',
+          publicUrl: '',
+          relativePath: '',
           originalName: nightlightImageFile.originalname,
           mimeType: nightlightImageFile.mimetype,
           size: nightlightImageFile.size,
+          uploadedAt: new Date(),
         } : undefined,
       };
 
@@ -1220,7 +1303,34 @@ router.post(
         });
       }
 
-      const allowedProductTypes = new Set(['panel', 'cylinder', 'globeLamp', 'fixedBox4', 'panelBox5', 'swappableBox5', 'familyBundle4']);
+      const orderFolder = getCustomOrderUploadDir(req.body?.orderId || 'pending');
+      await ensureDir(orderFolder);
+
+      const normalizeImageDestination = async (file, panel) => {
+        const targetFolder = orderFolder;
+        const targetName = path.basename(file.path);
+        const targetPath = path.join(targetFolder, targetName);
+        try {
+          await fs.rename(file.path, targetPath);
+        } catch (err) {
+          // if rename fails, continue with original path stored as fallback
+          console.warn('Failed to move custom order upload:', err.message || err);
+        }
+        const relativePath = getCustomOrderRelativePath(req.body?.orderId || 'pending', targetName);
+        return {
+          path: getCustomOrderPublicUrl(relativePath),
+          publicUrl: getCustomOrderPublicUrl(relativePath),
+          relativePath,
+          originalName: file.originalname,
+          mimeType: file.mimetype,
+          size: file.size,
+          uploadedAt: new Date(),
+          panel,
+          panelLabel: `Panel ${panel}`,
+        };
+      };
+
+      const allowedProductTypes = new Set(['panel', 'cylinder', 'globeLamp', 'fixedBox4', 'panelBox5', 'swappableBox5', 'familyBundle4', 'nightlight']);
       if (!allowedProductTypes.has(resolvedProductType)) {
         return res.status(400).json({
           error: 'Invalid product type for custom order.',
@@ -1344,13 +1454,46 @@ router.post(
         }
       });
 
-      const images = uploadedFiles.map((file, index) => ({
-        path: file.path,
-        originalName: file.originalname,
-        mimeType: file.mimetype,
-        size: file.size,
-        panel: imageOrderMap[index] !== undefined ? imageOrderMap[index] : index + 1,
-      })).sort((a, b) => a.panel - b.panel);
+      const orderId = uuidv4();
+      const orderFolderPath = getCustomOrderUploadDir(orderId);
+      await ensureDir(orderFolderPath);
+
+      const images = await Promise.all(uploadedFiles.map(async (file, index) => {
+        const panelNumber = imageOrderMap[index] !== undefined ? imageOrderMap[index] : index + 1;
+        const filename = path.basename(file.path);
+        const targetPath = path.join(orderFolderPath, filename);
+        try {
+          await fs.rename(file.path, targetPath);
+        } catch (err) {
+          console.warn('Failed to move custom order upload:', err.message || err);
+        }
+        const relativePath = getCustomOrderRelativePath(orderId, filename);
+        return {
+          path: getCustomOrderPublicUrl(relativePath),
+          publicUrl: getCustomOrderPublicUrl(relativePath),
+          relativePath,
+          originalName: file.originalname,
+          mimeType: file.mimetype,
+          size: file.size,
+          uploadedAt: new Date(),
+          panel: panelNumber,
+          panelLabel: `Panel ${panelNumber}`,
+        };
+      }));
+
+      if (resolvedNightlightAddon.separateImage && nightlightImageFile) {
+        const nightlightFilename = path.basename(nightlightImageFile.path);
+        const nightlightTargetPath = path.join(orderFolderPath, nightlightFilename);
+        try {
+          await fs.rename(nightlightImageFile.path, nightlightTargetPath);
+        } catch (err) {
+          console.warn('Failed to move nightlight image upload:', err.message || err);
+        }
+        const relativePath = getCustomOrderRelativePath(orderId, nightlightFilename);
+        resolvedNightlightAddon.separateImage.path = getCustomOrderPublicUrl(relativePath);
+        resolvedNightlightAddon.separateImage.publicUrl = getCustomOrderPublicUrl(relativePath);
+        resolvedNightlightAddon.separateImage.relativePath = relativePath;
+      }
 
       const panelNumbers = images.map((img) => img.panel);
       const expectedPanels = Array.from({ length: requiredPanels }, (_, idx) => idx + 1);
@@ -1361,6 +1504,7 @@ router.post(
       }
 
       const customOrderDoc = new CustomOrder({
+        orderId,
         productId,
         productName: product.title,
         productType: resolvedProductType,
@@ -1407,6 +1551,10 @@ router.post(
         paymentMethod: 'stripe',
         paymentStatus: 'pending',
         status: 'awaiting_deposit',
+        fulfillmentStatus: 'awaiting_deposit',
+        fulfillmentTimestamps: {
+          awaitingDepositAt: new Date()
+        },
         customer: {
           name: customerName,
           email: customerEmail,
@@ -1536,6 +1684,7 @@ router.post(
         checkoutUrl,
         sessionId,
         status: savedOrder.status,
+        fulfillmentStatus: savedOrder.fulfillmentStatus,
       };
 
       return res.json(responsePayload);
@@ -1571,10 +1720,24 @@ router.get('/custom-orders/:orderId', async (req, res) => {
         diffuser: customOrder.extras?.includes('diffuser') || false,
         moonBackground: customOrder.extras?.includes('moonBackground') || false,
       },
-      nightlightAddon: customOrder.extras?.includes('nightlight') ? customOrder.nightlightAddon : undefined,
+      nightlightAddon: customOrder.extras?.includes('nightlight') ? {
+        ...customOrder.nightlightAddon,
+        separateImage: customOrder.nightlightAddon?.separateImage
+          ? {
+              ...customOrder.nightlightAddon.separateImage,
+              path: normalizeCustomOrderImagePath(customOrder.nightlightAddon.separateImage.path),
+            }
+          : undefined,
+      } : undefined,
       boxOptions: customOrder.productType === 'fixedBox4' || customOrder.productType === 'panelBox5' ? customOrder.boxOptions : undefined,
       boxModularOptions: customOrder.productType === 'swappableBox5' ? customOrder.boxModularOptions : undefined,
       cylinderOptions: customOrder.productType === 'cylinder' ? customOrder.cylinderOptions : undefined,
+      images: Array.isArray(customOrder.images)
+        ? customOrder.images.map((img) => ({
+            ...img,
+            path: normalizeCustomOrderImagePath(img.path),
+          }))
+        : [],
       imagesCount: customOrder.images?.length || 0,
       totalPrice: customOrder.totalPrice,
       originalPrice: customOrder.originalPrice,
@@ -1587,11 +1750,15 @@ router.get('/custom-orders/:orderId', async (req, res) => {
       remainingBalance: customOrder.remainingBalance,
       paymentStatus: customOrder.paymentStatus,
       status: customOrder.status,
+      fulfillmentStatus: customOrder.fulfillmentStatus,
       trackingCarrier: customOrder.trackingCarrier,
       trackingNumber: customOrder.trackingNumber,
       trackingUrl: customOrder.trackingUrl,
       customer: {
         name: customOrder.customer?.name || '',
+        email: customOrder.customer?.email || '',
+        phone: customOrder.customer?.phone || '',
+        shippingAddress: customOrder.customer?.shippingAddress || undefined,
       },
       createdAt: customOrder.createdAt,
       updatedAt: customOrder.updatedAt,
@@ -1631,7 +1798,10 @@ router.post('/custom-orders/:orderId/confirm-deposit', express.json(), async (re
 
     customOrder.paymentStatus = 'deposit_paid';
     customOrder.status = 'deposit_paid';
+    customOrder.fulfillmentStatus = 'deposit_paid';
     customOrder.depositPaidAt = new Date();
+    customOrder.fulfillmentTimestamps = customOrder.fulfillmentTimestamps || {};
+    customOrder.fulfillmentTimestamps.depositPaidAt = new Date();
     await customOrder.save();
 
     await sendCustomOrderDepositConfirmation(customOrder);

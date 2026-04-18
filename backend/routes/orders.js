@@ -73,6 +73,51 @@ const resolveOrderItems = async (items = []) => {
   return resolved;
 };
 
+const buildPublicOrderPayload = (order) => {
+  const source = order.toObject ? order.toObject({ getters: true, virtuals: false }) : order;
+  const images = Array.isArray(source.images) ? source.images.filter(Boolean) : undefined;
+  const imagesCount = images?.length ?? (Number.isFinite(source.imagesCount) ? source.imagesCount : undefined);
+
+  return {
+    orderId: source.orderId,
+    paymentStatus: source.paymentStatus,
+    status: source.status,
+    createdAt: source.createdAt,
+    updatedAt: source.updatedAt,
+    items: Array.isArray(source.items)
+      ? source.items.map((item) => ({
+          name: item.name,
+          price: item.price,
+          quantity: item.quantity,
+          image: item.image,
+          sku: item.sku,
+        }))
+      : [],
+    subtotal: source.subtotal,
+    shippingCost: source.shippingCost,
+    tax: source.tax,
+    total: source.total,
+    discountAmount: source.discountAmount,
+    couponCode: source.couponCode,
+    paymentMethod: source.paymentMethod,
+    customer: {
+      name: source.customer?.name || 'Guest',
+      email: source.customer?.email || '',
+      phone: source.customer?.phone || '',
+      shippingAddress: source.customer?.shippingAddress || undefined,
+    },
+    shippingMethod: source.shippingMethod,
+    trackingNumber: source.trackingNumber,
+    notes: source.notes,
+    depositAmount: source.depositAmount,
+    remainingBalance: source.remainingBalance,
+    images,
+    imagesCount,
+    productType: source.productType,
+    orderType: source.orderType,
+  };
+};
+
 // Create a new order with validation and rate limiting
 router.post('/', orderLimiter, validateOrder, async (req, res) => {
   try {
@@ -262,21 +307,27 @@ router.delete('/:id', orderLimiter, requireAdmin, async (req, res) => {
 // Get an order by its orderId (used on success page)
 router.get('/:orderId', async (req, res) => {
   try {
-    if (!req.session?.admin?.loggedIn) {
-      const order = await Order.findOne({ orderId: req.params.orderId, sessionId: req.sessionID });
-      if (!order) {
-        return res.status(401).json({ message: 'Unauthorized' });
-      }
-      return res.json(order);
-    }
-
     const order = await Order.findOne({ orderId: req.params.orderId });
 
     if (!order) {
       return res.status(404).json({ message: 'Order not found' });
     }
 
-    res.json(order);
+    if (req.session?.admin?.loggedIn) {
+      return res.json(buildPublicOrderPayload(order));
+    }
+
+    // Allow the success page to load paid orders after Stripe redirect,
+    // even if the original session cookie did not match.
+    const isSameSession = order.sessionId && req.sessionID && order.sessionId === req.sessionID;
+    const isPaidOrder = order.paymentStatus === 'paid';
+
+    if (isSameSession || isPaidOrder) {
+      return res.json(buildPublicOrderPayload(order));
+    }
+
+    console.warn(`⚠️ Unauthorized order access attempt: orderId=${req.params.orderId} sessionId=${req.sessionID}`);
+    return res.status(401).json({ message: 'Unauthorized' });
   } catch (err) {
     console.error('❌ Error fetching order by ID:', err);
     res.status(500).json({ error: 'Failed to fetch order' });

@@ -80,7 +80,8 @@ services:
     networks:
       - hexforge-network
     volumes:
-      - ./backend:/app
+      - ./backend:/app:delegated
+      - backend_node_modules:/app/node_modules
       # Shared surface assets (read-only) for manifest/debug inspection
       - /mnt/hdd-storage/ai-tools/engines/hexforge3d/surface:/var/www/hexforge3d/surface:ro
       - /mnt/hdd-storage:/mnt/hdd-storage
@@ -322,6 +323,8 @@ volumes:
   mongo_data:
     driver: local
   ollama-data:
+    driver: local
+  backend_node_modules:
     driver: local
   
 

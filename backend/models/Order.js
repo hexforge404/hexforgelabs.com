@@ -85,7 +85,7 @@ const orderSchema = new mongoose.Schema({
   },
   paymentStatus: {
     type: String,
-    enum: ['pending', 'completed', 'failed', 'refunded'],
+    enum: ['pending', 'paid', 'completed', 'failed', 'refunded'],
     default: 'pending'
   },
   status: {
@@ -105,7 +105,9 @@ const orderSchema = new mongoose.Schema({
     default: 0,
     min: 0
   },
-  sessionId: { type: String, index: true }
+  sessionId: { type: String, index: true },
+  stripeSessionId: { type: String, index: true },
+  paymentIntentId: { type: String, index: true }
 }, {
   timestamps: true,
   toJSON: { virtuals: true },

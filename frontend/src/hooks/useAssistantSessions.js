@@ -1,9 +1,9 @@
 // frontend/src/hooks/useAssistantSessions.js
 import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
-import { API_URL } from "../config";
+import { API_BASE_URL } from "../config";
 
-const apiBase = API_URL.replace(/\/$/, "");
+const apiBase = API_BASE_URL.replace(/\/$/, "");
 
 // These are your “pinned” starter sessions
 const DEFAULT_SESSIONS = [
@@ -56,7 +56,7 @@ export function useAssistantSessions() {
       setError("");
 
       try {
-        const res = await axios.get(`${apiBase}/assistant/sessions`);
+        const res = await axios.get(`${apiBase}/assistant-sessions`);
         const serverSessions = (res.data?.sessions || []).map(normaliseSession);
 
         // If DB is empty, seed the default four and save them to backend
@@ -65,7 +65,7 @@ export function useAssistantSessions() {
 
           for (const sess of DEFAULT_SESSIONS) {
             try {
-              const createRes = await axios.post(`${apiBase}/assistant/sessions`, {
+              const createRes = await axios.post(`${apiBase}/assistant-sessions`, {
                 sessionId: sess.id,
                 title: sess.title,
                 model: sess.model,
@@ -109,7 +109,7 @@ export function useAssistantSessions() {
     return () => {
       cancelled = true;
     };
-  }, []); // run once
+  }, [activeSessionId]); // run once and keep fallback logic aligned with active session
 
   // ➕ Create a new session
   const createNewSession = useCallback(
@@ -121,7 +121,7 @@ export function useAssistantSessions() {
       const model = opts.model || "HexForge Scribe";
 
       try {
-        const res = await axios.post(`${apiBase}/assistant/sessions`, {
+        const res = await axios.post(`${apiBase}/assistant-sessions`, {
           sessionId,
           title,
           model,
@@ -147,7 +147,7 @@ export function useAssistantSessions() {
 
     try {
       const res = await axios.patch(
-        `${apiBase}/assistant/sessions/${sessionId}`,
+        `${apiBase}/assistant-sessions/${sessionId}`,
         { title: newTitle }
       );
       const updated = normaliseSession(res.data.session);
@@ -172,7 +172,7 @@ export function useAssistantSessions() {
       }
 
       try {
-        await axios.delete(`${apiBase}/assistant/sessions/${sessionId}`);
+        await axios.delete(`${apiBase}/assistant-sessions/${sessionId}`);
         setSessions((prev) => prev.filter((s) => s.id !== sessionId));
 
         if (activeSessionId === sessionId) {
@@ -197,7 +197,7 @@ export function useAssistantSessions() {
 
 const reloadSessions = useCallback(async () => {
   try {
-    const res = await axios.get(`${apiBase}/assistant/sessions`);
+    const res = await axios.get(`${apiBase}/assistant-sessions`);
     const serverSessions = (res.data?.sessions || []).map(normaliseSession);
 
     setSessions(serverSessions);

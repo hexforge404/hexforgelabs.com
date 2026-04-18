@@ -4,17 +4,19 @@
 // ASSISTANT_BASE defaults to "/mcp" so the React hook
 // will call POST /mcp/chat by default.
 const ASSISTANT_BASE =
-  process.env.REACT_APP_ASSISTANT_BASE || "/mcp"; // <- changed default
+  process.env.REACT_APP_ASSISTANT_BASE_URL ||
+  process.env.REACT_APP_ASSISTANT_BASE ||
+  "/mcp";
 
 const API_BASE =
-  process.env.REACT_APP_API_BASE || "https://hexforgelabs.com/api";
+  process.env.REACT_APP_API_BASE_URL ||
+  process.env.REACT_APP_API_BASE ||
+  "/api";
 const SITE_BASE =
   process.env.REACT_APP_SITE_BASE || "https://hexforgelabs.com";
 
-  // Base for backend API routes (nginx proxies /api → backend)
-export const API_BASE_URL =
-  process.env.REACT_APP_API_BASE_URL || "/api";
-
+// Base for backend API routes (nginx proxies /api → backend)
+export const API_BASE_URL = API_BASE;
 export const ASSISTANT_URL = ASSISTANT_BASE;
 export const API_URL = API_BASE;
 

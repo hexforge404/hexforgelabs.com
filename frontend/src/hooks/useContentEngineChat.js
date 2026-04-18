@@ -2,7 +2,9 @@ import { useState, useCallback } from "react";
 
 // NGINX proxies /mcp → hexforge-assistant in your stack
 const API_BASE =
-  process.env.REACT_APP_ASSISTANT_BASE_URL || "/mcp";
+  process.env.REACT_APP_ASSISTANT_BASE_URL ||
+  process.env.REACT_APP_ASSISTANT_BASE ||
+  "/mcp";
 
 export function useContentEngineChat(_config = {}) {
   const [messages, setMessages] = useState([]); // { role: 'user' | 'assistant', content: string }

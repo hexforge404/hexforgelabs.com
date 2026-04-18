@@ -24,6 +24,7 @@ import LoginPage from 'pages/LoginPage';          // admin login
 import BlogPage from 'pages/BlogPage';
 import HomePage from 'pages/HomePage';
 import BlogPost from 'pages/BlogPost';
+import AdminWorkOrderPrintPage from 'pages/AdminWorkOrderPrintPage';
 import ChatPage from 'pages/ChatPage';
 import FloatingChatButton from 'components/FloatingChatButton';
 import ScriptLabPage from 'pages/ScriptLabPage';
@@ -260,6 +261,16 @@ const MainApp = () => {
               element={
                 isAuthenticated ? (
                   <AdminPage />
+                ) : (
+                  <Navigate to="/admin-login" />
+                )
+              }
+            />
+            <Route
+              path="/admin/work-order/:orderId"
+              element={
+                isAuthenticated ? (
+                  <AdminWorkOrderPrintPage />
                 ) : (
                   <Navigate to="/admin-login" />
                 )

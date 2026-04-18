@@ -22,19 +22,26 @@ const ChatAssistant = ({ onClose }) => {
     input,
     setInput,
     loading,
+    error,
     status,
     sendMessage,
     chatRef,
     inputRef,
-  } = useAssistantChat("hexforge_chat_drawer");
+  } = useAssistantChat({
+    sessionId: "hexforge_chat_drawer",
+    model: "HexForge Scribe",
+    mode: "assistant",
+  });
 
   const tools = ["!os", "!usb", "!logs", "!ping 8.8.8.8", "!uptime", "!df", "!docker"];
   const [showHistory, setShowHistory] = React.useState(true);
 
   const handleKeyDown = (e) => {
-    if (e.key === "Enter") {
+    if ((e.key === "Enter" || e.code === "NumpadEnter") && !e.shiftKey) {
       e.preventDefault();
-      sendMessage();
+      if (!loading && input.trim()) {
+        sendMessage();
+      }
     }
   };
 
@@ -95,6 +102,12 @@ const ChatAssistant = ({ onClose }) => {
             </div>
           );
         })}
+
+        {error && (
+          <div className="chat-error" role="status">
+            {error}
+          </div>
+        )}
 
         {loading && (
           <div className="chat-msg assistant">
