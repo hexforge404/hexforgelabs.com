@@ -106,9 +106,15 @@ const customOrderSchema = new mongoose.Schema({
       },
       separateImage: {
         path: String,
+        publicUrl: String,
+        relativePath: String,
         originalName: String,
         mimeType: String,
-        size: Number
+        size: Number,
+        uploadedAt: {
+          type: Date,
+          default: Date.now
+        }
       }
     }, { _id: false }),
     default: undefined
@@ -195,9 +201,15 @@ const customOrderSchema = new mongoose.Schema({
     },
     separateImage: {
       path: String,
+      publicUrl: String,
+      relativePath: String,
       originalName: String,
       mimeType: String,
-      size: Number
+      size: Number,
+      uploadedAt: {
+        type: Date,
+        default: Date.now
+      }
     }
   },
   notes: {
@@ -207,14 +219,21 @@ const customOrderSchema = new mongoose.Schema({
   },
   images: [{
     path: String,
+    publicUrl: String,
+    relativePath: String,
     originalName: String,
     mimeType: String,
     size: Number,
+    uploadedAt: {
+      type: Date,
+      default: Date.now
+    },
     panel: {
       type: Number,
       min: 1,
       max: 5
-    }
+    },
+    panelLabel: String
   }],
   totalPrice: {
     type: Number,
@@ -268,6 +287,29 @@ const customOrderSchema = new mongoose.Schema({
     default: 'pending',
     index: true
   },
+  fulfillmentStatus: {
+    type: String,
+    enum: ['submitted', 'awaiting_deposit', 'deposit_paid', 'reviewing_assets', 'print_ready', 'ready_to_ship', 'in_production', 'printed', 'assembled', 'packed', 'shipped', 'completed', 'cancelled'],
+    default: 'submitted',
+    index: true
+  },
+  fulfillmentTimestamps: {
+    type: new mongoose.Schema({
+      submittedAt: { type: Date },
+      awaitingDepositAt: { type: Date },
+      depositPaidAt: { type: Date },
+      reviewingAssetsAt: { type: Date },
+      printReadyAt: { type: Date },
+      inProductionAt: { type: Date },
+      printedAt: { type: Date },
+      assembledAt: { type: Date },
+      packedAt: { type: Date },
+      shippedAt: { type: Date },
+      completedAt: { type: Date },
+      cancelledAt: { type: Date }
+    }, { _id: false }),
+    default: {}
+  },
   depositPaidAt: {
     type: Date
   },
@@ -292,7 +334,7 @@ const customOrderSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['submitted', 'awaiting_deposit', 'deposit_paid', 'reviewing_assets', 'in_production', 'ready_to_ship', 'shipped', 'completed', 'cancelled'],
+    enum: ['submitted', 'awaiting_deposit', 'deposit_paid', 'reviewing_assets', 'print_ready', 'ready_to_ship', 'in_production', 'printed', 'assembled', 'packed', 'shipped', 'completed', 'cancelled'],
     default: 'submitted',
     index: true
   },
@@ -312,6 +354,16 @@ const customOrderSchema = new mongoose.Schema({
   adminNotificationSent: {
     type: Boolean,
     default: false
+  },
+  isTest: {
+    type: Boolean,
+    default: false,
+    index: true
+  },
+  testRunId: {
+    type: String,
+    trim: true,
+    default: ''
   },
   lastEmailSentAt: {
     type: Date
@@ -335,11 +387,19 @@ customOrderSchema.pre('save', function(next) {
   } else if (typeof this.totalPrice === 'number' && typeof this.depositAmount === 'number') {
     this.remainingBalance = Number(Math.max(0, this.totalPrice - this.depositAmount).toFixed(2));
   }
+
+  if (this.fulfillmentStatus && this.status !== this.fulfillmentStatus) {
+    this.status = this.fulfillmentStatus;
+  } else if (!this.fulfillmentStatus && this.status) {
+    this.fulfillmentStatus = this.status;
+  }
+
   next();
 });
 
 // Index for admin dashboard queries
 customOrderSchema.index({ status: 1, createdAt: -1 });
+customOrderSchema.index({ fulfillmentStatus: 1 });
 customOrderSchema.index({ panels: 1, status: 1 });
 customOrderSchema.index({ paymentStatus: 1 });
 customOrderSchema.index({ 'customer.email': 1 });

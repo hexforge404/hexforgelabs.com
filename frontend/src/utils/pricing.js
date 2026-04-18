@@ -12,6 +12,9 @@ export function calculatePrice({ productType, panelCount = 2, size = 'small', ad
 
   switch (productType) {
     case 'cylinder':
+      base = 35 + sizeAdjustment;
+      base += Math.max(0, count - 2) * 10;
+      break;
     case 'panel':
       base = 50 + sizeAdjustment;
       base += Math.max(0, count - 2) * 10;
@@ -28,6 +31,9 @@ export function calculatePrice({ productType, panelCount = 2, size = 'small', ad
       break;
     case 'familyBundle4':
       base = 129.99;
+      break;
+    case 'nightlight':
+      base = 10;
       break;
     default:
       base = 0;

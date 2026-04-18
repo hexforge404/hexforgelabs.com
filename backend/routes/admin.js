@@ -1530,6 +1530,8 @@ router.patch('/print-jobs/:printJobId', async (req, res) => {
     } = req.body;
 
     const validStatuses = ['queued_for_slicing', 'sliced', 'queued_for_batch', 'assigned_to_printer', 'printing', 'printed', 'failed', 'cancelled'];
+    const update = {};
+
     if (printerProfile !== undefined) update.printerProfile = printerProfile;
     if (materialProfile !== undefined) update.materialProfile = materialProfile;
     if (slicerProfile !== undefined) update.slicerProfile = slicerProfile;
@@ -1537,7 +1539,16 @@ router.patch('/print-jobs/:printJobId', async (req, res) => {
     if (layerHeight !== undefined) update.layerHeight = layerHeight;
     if (infill !== undefined) update.infill = infill;
     if (wallCount !== undefined) update.wallCount = wallCount;
-    if (status !== undefined) update.status = status;
+
+    if (status !== undefined) {
+      if (!validStatuses.includes(status)) {
+        return res.status(400).json({
+          error: `Invalid status. Valid values: ${validStatuses.join(', ')}`
+        });
+      }
+      update.status = status;
+    }
+
     if (assignedBatchId !== undefined) update.assignedBatchId = assignedBatchId;
     if (stlPath !== undefined) update.stlPath = stlPath;
     if (projectFilePath !== undefined) update.projectFilePath = projectFilePath;

@@ -185,13 +185,13 @@ router.post(
 
           // Session linkage
           sessionId: req.sessionID,
-          // Optional: keep Stripe session id if you add it to schema
-          // stripeSessionId: session.id,
+          stripeSessionId: session.id,
+          paymentIntentId: session.payment_intent || undefined,
 
           // Customer object required by schema
           customer: {
             name: safeName || 'Guest',
-            email: safeEmail || 'missing@hexforgelabs.local',
+            email: safeEmail || 'missing@hexforge-labs.local',
             ip: req.ip,
             // shippingAddress can stay empty for now
           },
@@ -218,5 +218,76 @@ router.post(
     }
   }
 );
+
+// Stripe Webhook Endpoint
+// -----------------------
+// Use Stripe webhooks to update order state after payment completes.
+// Local testing:
+//   stripe listen --forward-to localhost:8000/api/payments/webhook
+// Stripe dashboard setup:
+//   endpoint: https://hexforgelabs.com/api/payments/webhook
+//   events: checkout.session.completed
+
+router.post('/webhook', async (req, res) => {
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  const signature = req.headers['stripe-signature'];
+
+  if (!webhookSecret) {
+    console.error('❌ Stripe webhook secret is not configured');
+    return res.status(500).send('Stripe webhook secret not configured');
+  }
+
+  if (!signature) {
+    console.error('❌ Missing Stripe signature header');
+    return res.status(400).send('Missing Stripe signature');
+  }
+
+  let event;
+  try {
+    event = stripe.webhooks.constructEvent(req.rawBody || req.body, signature, webhookSecret);
+  } catch (err) {
+    console.error('❌ Stripe webhook signature verification failed:', err.message);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
+
+  console.log(`➡️ Stripe webhook event received: ${event.type}`);
+
+  if (event.type === 'checkout.session.completed') {
+    const session = event.data.object;
+    const orderId = session.metadata?.orderId;
+
+    if (!orderId) {
+      console.error('❌ Missing orderId in Stripe session metadata');
+      return res.status(400).send('Missing orderId');
+    }
+
+    try {
+      const order = await Order.findOne({ orderId });
+
+      if (!order) {
+        console.error(`❌ Order not found for orderId=${orderId}`);
+        return res.status(404).send('Order not found');
+      }
+
+      order.paymentStatus = 'paid';
+      order.status = 'processing';
+      order.stripeSessionId = session.id;
+      if (session.payment_intent) {
+        order.paymentIntentId = session.payment_intent;
+      }
+
+      await order.save();
+
+      console.log(`✅ Order updated from Stripe webhook: orderId=${orderId} sessionId=${session.id}`);
+      return res.json({ received: true });
+    } catch (err) {
+      console.error(`❌ Failed to update order for orderId=${orderId}:`, err);
+      return res.status(500).send('Order update failed');
+    }
+  }
+
+  console.log(`ℹ️ Event type ${event.type} is not handled by this webhook.`);
+  return res.json({ received: true });
+});
 
 module.exports = router;

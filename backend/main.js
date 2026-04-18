@@ -106,7 +106,14 @@ const apiLimiter = rateLimit({
 // ======================
 // BODY PARSING
 // ======================
-app.use(express.json({ limit: '10kb' }));
+app.use(express.json({
+  limit: '10kb',
+  verify: (req, res, buf) => {
+    if (req.originalUrl && req.originalUrl.startsWith('/api/payments/webhook')) {
+      req.rawBody = buf;
+    }
+  }
+}));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 app.use(mongoSanitize());
@@ -142,8 +149,7 @@ app.use(session({
 // ======================
 const productRoutes = require('./routes/products');
 const orderRoutes = require('./routes/orders');
-const adminRoutes = require('./routes/admin');
-const paymentRoutes = require('./routes/payments');
+const adminRoutes = require('./routes/admin');const testPipelineRoutes = require('./routes/testPipeline');const paymentRoutes = require('./routes/payments');
 const authRoutes = require('./routes/auth');
 const feedbackRoutes = require('./routes/feedback');
 const newsletterRoutes = require('./routes/newsletter');
@@ -164,10 +170,12 @@ app.use('/api/heightmap', apiLimiter, heightmapRoutes);
 app.use("/api/media", apiLimiter, mediaRoutes);
 app.use("/api/assistant/projects", assistantProjectsRouter);
 app.use("/api/assistant-sessions", apiLimiter, assistantSessionsRouter);
+app.use("/api/assistant/sessions", apiLimiter, assistantSessionsRouter);
 app.use('/api/mcp', mcpRoutes);
 app.use('/api/products', apiLimiter, productRoutes);
 app.use('/api/orders', apiLimiter, orderRoutes);
 app.use('/api/admin', apiLimiter, adminRoutes);
+app.use('/api/admin/test-pipeline', apiLimiter, testPipelineRoutes);
 app.use('/api/payments', apiLimiter, paymentRoutes);
 app.use('/api/auth', apiLimiter, authRoutes);
 app.use('/api/feedback', feedbackRoutes);
