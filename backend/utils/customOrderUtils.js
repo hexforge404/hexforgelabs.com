@@ -107,6 +107,18 @@ const isCustomOrderPrintReady = (customOrder) => {
   return paid && imageCount > 0 && validStatus;
 };
 
+const isProductionCustomOrderEligible = (customOrder) => {
+  if (!customOrder) return false;
+  if (customOrder.isTest) return false;
+  const paid = ['deposit_paid', 'paid_in_full'].includes(customOrder.paymentStatus);
+  const status = customOrder.fulfillmentStatus || customOrder.status;
+  const validStatus = status && !['cancelled', 'completed'].includes(status);
+  const imageCount = Array.isArray(customOrder.images)
+    ? customOrder.images.length
+    : Number(customOrder.imagesCount || 0);
+  return paid && validStatus && imageCount > 0;
+};
+
 const normalizeCustomOrder = (customOrder) => {
   const obj = customOrder.toObject ? customOrder.toObject({ getters: true, virtuals: false }) : { ...customOrder };
 
@@ -145,6 +157,7 @@ module.exports = {
   normalizeCustomOrderImagePath,
   resolveCustomOrderImageDiskPath,
   isCustomOrderPrintReady,
+  isProductionCustomOrderEligible,
   normalizeCustomOrder,
   FULFILLMENT_STAGES,
   ALLOWED_FULFILLMENT_TRANSITIONS,

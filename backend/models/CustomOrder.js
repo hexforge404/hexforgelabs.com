@@ -375,6 +375,12 @@ const customOrderSchema = new mongoose.Schema({
   testRunId: {
     type: String,
     trim: true,
+    default: '',
+    index: true
+  },
+  createdBy: {
+    type: String,
+    trim: true,
     default: ''
   },
   lastEmailSentAt: {
