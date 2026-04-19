@@ -86,6 +86,7 @@ services:
       - /mnt/hdd-storage/ai-tools/engines/hexforge3d/surface:/var/www/hexforge3d/surface:ro
       - /mnt/hdd-storage:/mnt/hdd-storage
       - ./uploads:/app/uploads
+      - /mnt/hdd-storage/litho-handoff:/shared/litho-handoff
     environment:
       MEDIA_API_URL: http://hexforge-media-api:8700
       MEDIA_API_KEY: ${MEDIA_API_KEY}

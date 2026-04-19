@@ -10,6 +10,7 @@ const crypto = require('crypto');
 const Product = require('../models/Product');
 const ProductAsset = require('../models/ProductAsset');
 const CustomOrder = require('../models/CustomOrder');
+const PrintJob = require('../models/PrintJob');
 const PromoCode = require('../models/PromoCode');
 const { requireAdmin } = require('../middleware/requireAdmin');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
@@ -17,6 +18,7 @@ const { roundMoney, calculateDeposit, applyPromo } = require('../utils/pricing')
 const {
   normalizeCustomOrderImagePath,
 } = require('../utils/customOrderUtils');
+const { copyOrExportSourceImagesToSharedFolder } = require('../utils/sourceAssetUtils');
 const formData = require('form-data');
 const Mailgun = require('mailgun.js');
 const mailgun = new Mailgun(formData);
@@ -1733,6 +1735,35 @@ router.post(
         totalPrice: savedOrder.totalPrice,
         checkoutUrl: Boolean(checkoutUrl),
       });
+
+      try {
+        const existingJob = await PrintJob.findOne({ orderId: savedOrder.orderId, isTest: { $ne: true } });
+        if (existingJob) {
+          console.info('[SOURCE PIPELINE] existing production job found while saving custom order', {
+            printJobId: existingJob.printJobId,
+            orderId: savedOrder.orderId,
+          });
+          const exportResult = await copyOrExportSourceImagesToSharedFolder({ printJob: existingJob, customOrder: savedOrder });
+          if (exportResult.sharedSourceFolder) {
+            existingJob.sharedSourceFolder = exportResult.sharedSourceFolder;
+          }
+          if (Array.isArray(exportResult.sourceImages) && exportResult.sourceImages.length) {
+            existingJob.sourceImages = exportResult.sourceImages;
+          }
+          if (!Array.isArray(exportResult.sourceImages) || exportResult.sourceImages.length === 0) {
+            console.info('[SOURCE PIPELINE] no source images exported for existing production job', {
+              printJobId: existingJob.printJobId,
+              orderId: savedOrder.orderId,
+              sourceDir: exportResult.sharedSourceFolder,
+            });
+          }
+          if (exportResult.sharedSourceFolder || (Array.isArray(exportResult.sourceImages) && exportResult.sourceImages.length)) {
+            await existingJob.save();
+          }
+        }
+      } catch (exportErr) {
+        console.warn('⚠️ Failed to export source images for existing print job:', exportErr.message || exportErr);
+      }
 
       await sendCustomOrderNotification(savedOrder).catch((emailErr) => {
         console.warn('⚠️ Custom order notification failed:', emailErr.message || emailErr);

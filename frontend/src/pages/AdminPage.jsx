@@ -141,8 +141,280 @@ export default function AdminPage() {
   const [fulfillmentStlFilename, setFulfillmentStlFilename] = useState('');
   const [fulfillmentStlPath, setFulfillmentStlPath] = useState('');
   const [fulfillmentStlVersion, setFulfillmentStlVersion] = useState('');
+  const [showLegacyStlFields, setShowLegacyStlFields] = useState(false);
+  const [isApplyingLegacyStl, setIsApplyingLegacyStl] = useState(false);
+  const [lastActivePrintJobId, setLastActivePrintJobId] = useState('');
   const [printJobStatusFilter, setPrintJobStatusFilter] = useState('all');
   const selectedFulfillmentJob = (fulfillmentPanelJobs || []).find((j) => j.printJobId === selectedFulfillmentJobId) || null;
+  const [stlCandidates, setStlCandidates] = useState([]);
+  const [selectedStlCandidatePath, setSelectedStlCandidatePath] = useState('');
+  const [stlRegistrationVersion, setStlRegistrationVersion] = useState('');
+  const [isLoadingSharedStlCandidates, setIsLoadingSharedStlCandidates] = useState(false);
+  const [isRegisteringStl, setIsRegisteringStl] = useState(false);
+  const [isCopyingStl, setIsCopyingStl] = useState(false);
+  const [isStartingPrint, setIsStartingPrint] = useState(false);
+  const [isCompletingPrint, setIsCompletingPrint] = useState(false);
+  const [isFailingPrint, setIsFailingPrint] = useState(false);
+  const [stlCandidateFetchError, setStlCandidateFetchError] = useState('');
+
+  const STATUS_LABELS = {
+    queued_for_generation: 'Queued for generation',
+    generating_stl: 'Generating STL',
+    stl_ready: 'STL ready',
+    queued_for_slicing: 'Queued for slicing',
+    sliced: 'Sliced',
+    queued_for_batch: 'Queued for batch',
+    assigned_to_printer: 'Assigned to printer',
+    printing: 'Printing',
+    printed: 'Printed',
+    print_failed: 'Print Failed',
+    failed: 'Failed',
+    cancelled: 'Cancelled',
+    ready_to_ship: 'Ready to ship',
+    shipped: 'Shipped',
+    completed: 'Completed',
+    qa_review: 'QA review',
+    qa_failed: 'QA failed',
+  };
+
+  const STATUS_VARIANTS = {
+    queued_for_generation: 'pending',
+    generating_stl: 'info',
+    stl_ready: 'success',
+    queued_for_slicing: 'info',
+    sliced: 'success',
+    queued_for_batch: 'warning',
+    assigned_to_printer: 'info',
+    printing: 'info',
+    printed: 'success',
+    print_failed: 'danger',
+    failed: 'danger',
+    cancelled: 'danger',
+    ready_to_ship: 'success',
+    shipped: 'success',
+    completed: 'success',
+    qa_review: 'warning',
+    qa_failed: 'danger',
+  };
+
+  const NEXT_STAGE_BY_STATUS = {
+    queued_for_generation: 'Generate STL',
+    generating_stl: 'Finish STL generation',
+    stl_ready: 'Prepare for batch',
+    queued_for_slicing: 'Slice STL',
+    sliced: 'Queue for batch',
+    queued_for_batch: 'Assign to batch',
+    assigned_to_printer: 'Start printing',
+    printing: 'Complete print or mark failed',
+    printed: 'Move to QA or ready-to-ship',
+    print_failed: 'Investigate failure and rerun or replace',
+    qa_review: 'Complete QA',
+    qa_failed: 'Resolve QA issue',
+    ready_to_ship: 'Ship order',
+    shipped: 'Complete delivery',
+    completed: 'Close order',
+    failed: 'Investigate failure',
+    cancelled: 'No further action',
+  };
+
+  const getStatusLabel = (status) => STATUS_LABELS[status] || String(status || 'Unknown').replace(/_/g, ' ');
+  const getStatusVariant = (status) => STATUS_VARIANTS[status] || 'pending';
+  const getNextExpectedStep = (status) => NEXT_STAGE_BY_STATUS[status] || 'Review status';
+  const selectedFulfillmentJobTimeline = (selectedFulfillmentJob?.lifecycleEvents || []).slice().sort((a, b) => new Date(a.at) - new Date(b.at));
+  const selectedFulfillmentJobCurrentStage = getStatusLabel(selectedFulfillmentJob?.status);
+  const selectedFulfillmentJobNextStep = getNextExpectedStep(selectedFulfillmentJob?.status);
+  const canStartPrint = !!selectedFulfillmentJob && selectedFulfillmentJob?.stlHandoff?.status === 'verified' && !['printing', 'printed', 'print_failed'].includes(selectedFulfillmentJob?.status);
+  const canCompletePrint = selectedFulfillmentJob?.status === 'printing';
+  const canFailPrint = selectedFulfillmentJob?.status === 'printing';
+  const formatTimelineMeta = (metadata) =>
+    metadata && Object.keys(metadata).length
+      ? Object.entries(metadata)
+          .map(([key, value]) => `${key}: ${typeof value === 'object' ? JSON.stringify(value) : value}`)
+          .join(' · ')
+      : '';
+
+  const fetchSharedStlCandidates = async (jobId) => {
+    if (!jobId) return [];
+    try {
+      const response = await axios.get(`${API_BASE_URL}/admin/production/print-jobs/${encodeURIComponent(jobId)}/shared-stl-candidates`, {
+        withCredentials: true,
+      });
+      return response.data?.data || [];
+    } catch (err) {
+      console.error('Failed to fetch STL candidates:', err);
+      return [];
+    }
+  };
+
+  const handleRefreshSharedStlCandidates = async () => {
+    if (!selectedFulfillmentJob?.printJobId) return;
+    setIsLoadingSharedStlCandidates(true);
+    setStlCandidateFetchError('');
+    try {
+      const candidates = await fetchSharedStlCandidates(selectedFulfillmentJob.printJobId);
+      setStlCandidates(candidates);
+      const preserved = candidates.find((candidate) => candidate.fullPath === selectedStlCandidatePath)?.fullPath;
+      setSelectedStlCandidatePath(preserved || candidates[0]?.fullPath || '');
+    } catch (err) {
+      setStlCandidateFetchError('Failed to load STL candidates.');
+    } finally {
+      setIsLoadingSharedStlCandidates(false);
+    }
+  };
+
+  const handleRegisterStl = async () => {
+    if (!selectedFulfillmentJob?.printJobId) {
+      errorToast('Select a production job first.');
+      return;
+    }
+    if (!selectedStlCandidatePath) {
+      errorToast('Select an STL candidate to register.');
+      return;
+    }
+    if (!stlRegistrationVersion.trim()) {
+      errorToast('STL version is required.');
+      return;
+    }
+    setIsRegisteringStl(true);
+    try {
+      const response = await axios.post(
+        `${API_BASE_URL}/admin/production/print-jobs/${encodeURIComponent(selectedFulfillmentJob.printJobId)}/register-stl`,
+        {
+          sourcePath: selectedStlCandidatePath,
+          version: stlRegistrationVersion.trim(),
+        },
+        { withCredentials: true }
+      );
+      const updatedJob = response.data;
+      setFulfillmentPanelJobs((prev) => prev.map((job) => (job.printJobId === updatedJob.printJobId ? updatedJob : job)));
+      setProductionJobsByOrder((prev) => ({ ...prev, [updatedJob.orderId]: updatedJob }));
+      setSelectedFulfillmentJobId(updatedJob.printJobId);
+      successToast('STL registered successfully.');
+      await refreshFulfillmentPanelJobs();
+    } catch (err) {
+      console.error('Failed to register STL:', err);
+      errorToast(err.response?.data?.error || err.message || 'Failed to register STL');
+    } finally {
+      setIsRegisteringStl(false);
+    }
+  };
+
+  const handleCopyStlToProduction = async () => {
+    if (!selectedFulfillmentJob?.printJobId) {
+      errorToast('Select a production job first.');
+      return;
+    }
+    if (selectedFulfillmentJob?.stlHandoff?.status !== 'registered') {
+      errorToast('STL must be registered before copying to production.');
+      return;
+    }
+    setIsCopyingStl(true);
+    try {
+      const response = await axios.post(
+        `${API_BASE_URL}/admin/production/print-jobs/${encodeURIComponent(selectedFulfillmentJob.printJobId)}/copy-stl-to-production`,
+        {},
+        { withCredentials: true }
+      );
+      const updatedJob = response.data;
+      setFulfillmentPanelJobs((prev) => prev.map((job) => (job.printJobId === updatedJob.printJobId ? updatedJob : job)));
+      setProductionJobsByOrder((prev) => ({ ...prev, [updatedJob.orderId]: updatedJob }));
+      setSelectedFulfillmentJobId(updatedJob.printJobId);
+      successToast('STL copied to production successfully.');
+      await refreshFulfillmentPanelJobs();
+    } catch (err) {
+      console.error('Failed to copy STL to production:', err);
+      errorToast(err.response?.data?.error || err.message || 'Failed to copy STL to production');
+    } finally {
+      setIsCopyingStl(false);
+    }
+  };
+
+  const handleStartPrint = async () => {
+    if (!selectedFulfillmentJob?.printJobId) {
+      errorToast('Select a production job first.');
+      return;
+    }
+    if (selectedFulfillmentJob.stlHandoff?.status !== 'verified') {
+      errorToast('STL must be verified before starting the print.');
+      return;
+    }
+    setIsStartingPrint(true);
+    try {
+      const response = await axios.post(
+        `${API_BASE_URL}/admin/production/print-jobs/${encodeURIComponent(selectedFulfillmentJob.printJobId)}/start-print`,
+        {},
+        { withCredentials: true }
+      );
+      const updatedJob = response.data;
+      setFulfillmentPanelJobs((prev) => prev.map((job) => (job.printJobId === updatedJob.printJobId ? updatedJob : job)));
+      setProductionJobsByOrder((prev) => ({ ...prev, [updatedJob.orderId]: updatedJob }));
+      setSelectedFulfillmentJobId(updatedJob.printJobId);
+      successToast('Print started successfully.');
+      await refreshFulfillmentPanelJobs();
+    } catch (err) {
+      console.error('Failed to start print:', err);
+      errorToast(err.response?.data?.error || err.message || 'Failed to start print');
+    } finally {
+      setIsStartingPrint(false);
+    }
+  };
+
+  const handleCompletePrint = async () => {
+    if (!selectedFulfillmentJob?.printJobId) {
+      errorToast('Select a production job first.');
+      return;
+    }
+    setIsCompletingPrint(true);
+    try {
+      const response = await axios.post(
+        `${API_BASE_URL}/admin/production/print-jobs/${encodeURIComponent(selectedFulfillmentJob.printJobId)}/complete-print`,
+        {},
+        { withCredentials: true }
+      );
+      const updatedJob = response.data;
+      setFulfillmentPanelJobs((prev) => prev.map((job) => (job.printJobId === updatedJob.printJobId ? updatedJob : job)));
+      setProductionJobsByOrder((prev) => ({ ...prev, [updatedJob.orderId]: updatedJob }));
+      setSelectedFulfillmentJobId(updatedJob.printJobId);
+      successToast('Print completed successfully.');
+      await refreshFulfillmentPanelJobs();
+    } catch (err) {
+      console.error('Failed to complete print:', err);
+      errorToast(err.response?.data?.error || err.message || 'Failed to complete print');
+    } finally {
+      setIsCompletingPrint(false);
+    }
+  };
+
+  const handleFailPrint = async () => {
+    if (!selectedFulfillmentJob?.printJobId) {
+      errorToast('Select a production job first.');
+      return;
+    }
+    const reason = window.prompt('Enter a reason for the print failure:');
+    if (!reason || !reason.trim()) {
+      return;
+    }
+    setIsFailingPrint(true);
+    try {
+      const response = await axios.post(
+        `${API_BASE_URL}/admin/production/print-jobs/${encodeURIComponent(selectedFulfillmentJob.printJobId)}/fail-print`,
+        { reason: reason.trim() },
+        { withCredentials: true }
+      );
+      const updatedJob = response.data;
+      setFulfillmentPanelJobs((prev) => prev.map((job) => (job.printJobId === updatedJob.printJobId ? updatedJob : job)));
+      setProductionJobsByOrder((prev) => ({ ...prev, [updatedJob.orderId]: updatedJob }));
+      setSelectedFulfillmentJobId(updatedJob.printJobId);
+      successToast('Print marked as failed.');
+      await refreshFulfillmentPanelJobs();
+    } catch (err) {
+      console.error('Failed to mark print as failed:', err);
+      errorToast(err.response?.data?.error || err.message || 'Failed to mark print as failed');
+    } finally {
+      setIsFailingPrint(false);
+    }
+  };
+
   const activeFulfillmentStatuses = [
     'queued_for_generation',
     'generating_stl',
@@ -185,6 +457,35 @@ export default function AdminPage() {
       setSelectedFulfillmentJobId((fulfillmentPanelJobs || [])[0]?.printJobId || '');
     }
   }, [selectedFulfillmentJob, selectedFulfillmentJobId, fulfillmentPanelJobs]);
+
+  useEffect(() => {
+    if (selectedFulfillmentJob?.printJobId) {
+      handleRefreshSharedStlCandidates();
+    }
+  }, [selectedFulfillmentJob?.printJobId]);
+
+  useEffect(() => {
+    const syncActiveJob = async () => {
+      const jobId = selectedFulfillmentJob?.printJobId;
+      if (!jobId || jobId === lastActivePrintJobId) {
+        return;
+      }
+
+      try {
+        await axios.post(
+          `${API_BASE_URL}/admin/production/print-jobs/${encodeURIComponent(jobId)}/set-active-job`,
+          {},
+          { withCredentials: true }
+        );
+        setLastActivePrintJobId(jobId);
+        console.info('[ACTIVE JOB] synced active print job from admin UI', { jobId });
+      } catch (err) {
+        console.warn('[ACTIVE JOB] failed to sync active print job', err);
+      }
+    };
+
+    syncActiveJob();
+  }, [selectedFulfillmentJob?.printJobId, lastActivePrintJobId]);
 
   const [form, setForm] = useState(EMPTY_PRODUCT);
   const [blogForm, setBlogForm] = useState(EMPTY_BLOG);
@@ -768,10 +1069,8 @@ export default function AdminPage() {
         }
       }
 
-      if (!Array.isArray(batches) || batches.length === 0) {
-        const loadedBatches = await fetchBatches('all');
-        setBatches(Array.isArray(loadedBatches) ? loadedBatches : []);
-      }
+      const loadedBatches = await fetchBatches('all');
+      setBatches(Array.isArray(loadedBatches) ? loadedBatches : []);
       setIsFulfillmentPanelOpen(true);
     } catch (err) {
       console.error('Failed to load fulfillment panel:', err);
@@ -801,10 +1100,8 @@ export default function AdminPage() {
         setSelectedFulfillmentJobId(firstJob?.printJobId || '');
       }
 
-      if (!Array.isArray(batches) || batches.length === 0) {
-        const loadedBatches = await fetchBatches('all');
-        setBatches(Array.isArray(loadedBatches) ? loadedBatches : []);
-      }
+      const loadedBatches = await fetchBatches('all');
+      setBatches(Array.isArray(loadedBatches) ? loadedBatches : []);
       return safeJobs;
     } catch (err) {
       console.error('Failed to refresh fulfillment jobs:', err);
@@ -838,23 +1135,37 @@ export default function AdminPage() {
       errorToast('Missing order information for STL handoff.');
       return null;
     }
-    if (!fulfillmentStlFilename.trim() || !fulfillmentStlPath.trim() || !fulfillmentStlVersion.trim()) {
-      errorToast('STL filename, path, and version are all required.');
+    if (!showLegacyStlFields) {
+      errorToast('Use the shared STL workflow above or expand the legacy manual STL handoff section.');
       return null;
     }
-    const updatedJob = await handleUpdateStlHandoff({ ...selectedFulfillmentJob, isTest: false }, {
-      stlFilename: fulfillmentStlFilename.trim(),
-      stlPath: fulfillmentStlPath.trim(),
-      stlVersion: fulfillmentStlVersion.trim(),
-      status: 'stl_ready',
-    });
-    if (updatedJob) {
-      setFulfillmentPanelJobs((prev) => prev.map((existingJob) =>
-        existingJob.printJobId === updatedJob.printJobId ? updatedJob : existingJob
-      ));
-      setProductionJobsByOrder((prev) => ({ ...prev, [fulfillmentPanelOrder.orderId]: updatedJob }));
+    if (!fulfillmentStlFilename.trim() || !fulfillmentStlPath.trim() || !fulfillmentStlVersion.trim()) {
+      errorToast('STL filename, path, and version are all required to apply legacy STL handoff.');
+      return null;
     }
-    return updatedJob;
+    setIsApplyingLegacyStl(true);
+    try {
+      const updatedJob = await handleUpdateStlHandoff({ ...selectedFulfillmentJob, isTest: false }, {
+        stlFilename: fulfillmentStlFilename.trim(),
+        stlPath: fulfillmentStlPath.trim(),
+        stlVersion: fulfillmentStlVersion.trim(),
+        status: 'stl_ready',
+      });
+      if (updatedJob) {
+        setFulfillmentPanelJobs((prev) => prev.map((existingJob) =>
+          existingJob.printJobId === updatedJob.printJobId ? updatedJob : existingJob
+        ));
+        setProductionJobsByOrder((prev) => ({ ...prev, [fulfillmentPanelOrder.orderId]: updatedJob }));
+        setFulfillmentStlFilename(updatedJob.stlFilename || '');
+        setFulfillmentStlPath(updatedJob.stlPath || '');
+        setFulfillmentStlVersion(updatedJob.stlVersion || '');
+        setSelectedFulfillmentBatchId(updatedJob.assignedBatchId || '');
+        setSelectedFulfillmentJobId(updatedJob.printJobId);
+      }
+      return updatedJob;
+    } finally {
+      setIsApplyingLegacyStl(false);
+    }
   };
 
   const handleCreateBatchFromPanel = async () => {
@@ -1716,11 +2027,11 @@ export default function AdminPage() {
   const handleUpdateStlHandoff = async (printJob, overrides = {}) => {
     const edits = stlEditsByJob[printJob.printJobId] || {};
     const payload = {
-      stlFilename: edits.stlFilename !== undefined ? edits.stlFilename : printJob.stlFilename,
-      stlPath: edits.stlPath !== undefined ? edits.stlPath : printJob.stlPath,
-      stlVersion: edits.stlVersion !== undefined ? edits.stlVersion : printJob.stlVersion,
-      generationNotes: edits.generationNotes !== undefined ? edits.generationNotes : printJob.generationNotes,
-      status: overrides.status || edits.status || printJob.status,
+      stlFilename: overrides.stlFilename !== undefined ? overrides.stlFilename : edits.stlFilename !== undefined ? edits.stlFilename : printJob.stlFilename,
+      stlPath: overrides.stlPath !== undefined ? overrides.stlPath : edits.stlPath !== undefined ? edits.stlPath : printJob.stlPath,
+      stlVersion: overrides.stlVersion !== undefined ? overrides.stlVersion : edits.stlVersion !== undefined ? edits.stlVersion : printJob.stlVersion,
+      generationNotes: overrides.generationNotes !== undefined ? overrides.generationNotes : edits.generationNotes !== undefined ? edits.generationNotes : printJob.generationNotes,
+      status: overrides.status !== undefined ? overrides.status : edits.status !== undefined ? edits.status : printJob.status,
     };
 
     try {
@@ -3638,45 +3949,155 @@ export default function AdminPage() {
                           <div><strong>Created</strong><br />{selectedFulfillmentJob.createdAt ? new Date(selectedFulfillmentJob.createdAt).toLocaleString() : 'Unknown'}</div>
                           <div><strong>Created By</strong><br />{selectedFulfillmentJob.createdBy || 'admin'}</div>
                         </div>
-                        <div className="fulfillment-stl-input-grid">
-                          <label>
-                            STL Filename
-                            <input
-                              type="text"
-                              value={fulfillmentStlFilename}
-                              onChange={(e) => setFulfillmentStlFilename(e.target.value)}
-                              placeholder="Enter STL filename"
-                              className="admin-order-status-select"
-                            />
-                          </label>
-                          <label>
-                            STL Path
-                            <input
-                              type="text"
-                              value={fulfillmentStlPath}
-                              onChange={(e) => setFulfillmentStlPath(e.target.value)}
-                              placeholder="Enter STL path"
-                              className="admin-order-status-select"
-                            />
-                          </label>
-                          <label>
-                            STL Version
-                            <input
-                              type="text"
-                              value={fulfillmentStlVersion}
-                              onChange={(e) => setFulfillmentStlVersion(e.target.value)}
-                              placeholder="Enter STL version"
-                              className="admin-order-status-select"
-                            />
-                          </label>
+                        {selectedFulfillmentJob.status === 'print_failed' ? (
+                          <div className="fulfillment-failure-banner" title="Print failed; review failure details and rerun or replace">
+                            <strong>Print failure detected</strong>
+                            <span>
+                              {selectedFulfillmentJob.lifecycleEvents?.slice().reverse().find((event) => event.status === 'print_failed')?.note || 'Failure reason unavailable.'}
+                            </span>
+                          </div>
+                        ) : null}
+                        <div className="legacy-stl-section">
+                          <div className="legacy-stl-header">
+                            <strong>Manual / Legacy STL Handoff</strong>
+                            <button
+                              type="button"
+                              className="secondary-button small-button"
+                              onClick={() => setShowLegacyStlFields((prev) => !prev)}
+                            >
+                              {showLegacyStlFields ? 'Hide manual fields' : 'Show manual fields'}
+                            </button>
+                          </div>
+                          <div className="legacy-stl-note">
+                            These manual fields are for backwards compatibility only. Use the shared STL workflow below whenever possible.
+                          </div>
+                          {showLegacyStlFields ? (
+                            <>
+                              <div className="fulfillment-stl-input-grid legacy-stl-fields">
+                                <label>
+                                  STL Filename
+                                  <input
+                                    type="text"
+                                    value={fulfillmentStlFilename}
+                                    onChange={(e) => setFulfillmentStlFilename(e.target.value)}
+                                    placeholder="Enter STL filename"
+                                    className="admin-order-status-select"
+                                  />
+                                </label>
+                                <label>
+                                  STL Path
+                                  <input
+                                    type="text"
+                                    value={fulfillmentStlPath}
+                                    onChange={(e) => setFulfillmentStlPath(e.target.value)}
+                                    placeholder="Enter STL path"
+                                    className="admin-order-status-select"
+                                  />
+                                </label>
+                                <label>
+                                  STL Version
+                                  <input
+                                    type="text"
+                                    value={fulfillmentStlVersion}
+                                    onChange={(e) => setFulfillmentStlVersion(e.target.value)}
+                                    placeholder="Enter STL version"
+                                    className="admin-order-status-select"
+                                  />
+                                </label>
+                              </div>
+                              <div className="fulfillment-modal-actions legacy-stl-actions">
+                                <button
+                                  type="button"
+                                  className="secondary-button small-button"
+                                  onClick={handleApplyStlFromPanel}
+                                  disabled={isApplyingLegacyStl || !fulfillmentStlFilename.trim() || !fulfillmentStlPath.trim() || !fulfillmentStlVersion.trim()}
+                                >
+                                  {isApplyingLegacyStl ? 'Applying…' : 'Apply Legacy STL'}
+                                </button>
+                              </div>
+                            </>
+                          ) : null}
                         </div>
-                        <div className="fulfillment-modal-actions">
+                        <div className="fulfillment-shared-stl-section">
+                          <div className="fulfillment-shared-stl-header">
+                            <span>Shared STL candidates</span>
+                            <button
+                              type="button"
+                              className="secondary-button small-button"
+                              onClick={handleRefreshSharedStlCandidates}
+                              disabled={isLoadingSharedStlCandidates || !selectedFulfillmentJob?.printJobId}
+                            >
+                              Refresh
+                            </button>
+                          </div>
+                          {stlCandidateFetchError ? (
+                            <div className="form-error">{stlCandidateFetchError}</div>
+                          ) : null}
+                          {selectedFulfillmentJob?.printJobId && !isLoadingSharedStlCandidates && !stlCandidates.length ? (
+                            <div className="form-error">
+                              No STL files found in the shared job folder yet.
+                              Expected folder: <code>STL_SHARED_ROOT/{selectedFulfillmentJob.printJobId}/stl/</code>
+                            </div>
+                          ) : null}
+                          <div className="form-help-text">
+                            Expected shared STL folder for this job: <code>STL_SHARED_ROOT/{selectedFulfillmentJob?.printJobId || '<printJobId>'}/stl/</code>
+                          </div>
+                          <label>
+                            Select candidate STL
+                            <select
+                              value={selectedStlCandidatePath}
+                              onChange={(e) => setSelectedStlCandidatePath(e.target.value)}
+                              disabled={isLoadingSharedStlCandidates || !stlCandidates.length}
+                              className="admin-order-status-select"
+                            >
+                              <option value="">Choose a candidate</option>
+                              {stlCandidates.map((candidate) => (
+                                <option key={candidate.fullPath} value={candidate.fullPath}>
+                                  {candidate.fileName} {candidate.relativePath ? `· ${candidate.relativePath}` : ''}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label>
+                            Register STL version
+                            <input
+                              type="text"
+                              value={stlRegistrationVersion}
+                              onChange={(e) => setStlRegistrationVersion(e.target.value)}
+                              placeholder="Enter version"
+                              className="admin-order-status-select"
+                            />
+                          </label>
+                          <div className="fulfillment-modal-actions">
                           <button type="button" className="secondary-button small-button" onClick={() => handleOpenPrintJob(selectedFulfillmentJob)}>
                             Open Print Job
                           </button>
-                          <button type="button" className="secondary-button small-button" onClick={handleApplyStlFromPanel}>
-                            Apply STL
+                          <button type="button" className="secondary-button small-button" onClick={handleRegisterStl} disabled={!selectedStlCandidatePath || !stlRegistrationVersion.trim() || isRegisteringStl}>
+                            {isRegisteringStl ? 'Registering…' : 'Register STL'}
                           </button>
+                          <button
+                            type="button"
+                            className="secondary-button small-button"
+                            onClick={handleCopyStlToProduction}
+                            disabled={isCopyingStl || selectedFulfillmentJob?.stlHandoff?.status !== 'registered'}
+                          >
+                            {isCopyingStl ? 'Copying…' : 'Copy to Production'}
+                          </button>
+                          {canStartPrint && (
+                            <button type="button" className="secondary-button small-button" onClick={handleStartPrint} disabled={isStartingPrint}>
+                              {isStartingPrint ? 'Starting…' : 'Start Print'}
+                            </button>
+                          )}
+                          {canCompletePrint && (
+                            <button type="button" className="secondary-button small-button" onClick={handleCompletePrint} disabled={isCompletingPrint}>
+                              {isCompletingPrint ? 'Completing…' : 'Complete Print'}
+                            </button>
+                          )}
+                          {canFailPrint && (
+                            <button type="button" className="secondary-button small-button danger-button" onClick={handleFailPrint} disabled={isFailingPrint}>
+                              {isFailingPrint ? 'Failing…' : 'Fail Print'}
+                            </button>
+                          )}
                           <button type="button" className="secondary-button small-button" onClick={handleCreateBatchFromPanel}>
                             Create Batch
                           </button>
@@ -3698,6 +4119,44 @@ export default function AdminPage() {
                           <button type="button" className="secondary-button small-button danger-button" onClick={handleForceRerunFromPanel}>
                             Force Rerun Fulfillment
                           </button>
+                        </div>
+                        </div>
+                        <div className="fulfillment-modal-section">
+                          <h4>Job Timeline</h4>
+                          <div className="fulfillment-timeline-summary">
+                            <div className="timeline-summary-card">
+                              <span>Current Stage</span>
+                              <strong>{selectedFulfillmentJobCurrentStage}</strong>
+                            </div>
+                            <div className="timeline-summary-card">
+                              <span>Next expected step</span>
+                              <strong>{selectedFulfillmentJobNextStep}</strong>
+                            </div>
+                          </div>
+                          <div className="fulfillment-timeline-list">
+                            {selectedFulfillmentJobTimeline.length === 0 ? (
+                              <div className="empty-state">No lifecycle events are available for this job yet.</div>
+                            ) : (
+                              selectedFulfillmentJobTimeline.map((event, index) => {
+                                const metadataText = formatTimelineMeta(event.metadata);
+                                const isFailure = ['failed', 'qa_failed', 'cancelled'].includes(event.status);
+                                return (
+                                  <div key={`${event.at || index}-${event.source}-${index}`} className={`fulfillment-timeline-entry ${isFailure ? 'failure' : ''}`}>
+                                    <div className="fulfillment-timeline-entry-header">
+                                      <span className={`status-badge ${getStatusVariant(event.status)}`}>{event.label || getStatusLabel(event.status)}</span>
+                                      <span className="timeline-event-time">{event.at ? new Date(event.at).toLocaleString() : 'Unknown time'}</span>
+                                    </div>
+                                    <div className="timeline-event-meta-row">
+                                      <span>{event.source || 'system'}</span>
+                                      {event.actorName ? <span>by {event.actorName}</span> : null}
+                                    </div>
+                                    {event.note ? <div className="timeline-event-note">{event.note}</div> : null}
+                                    {metadataText ? <div className="timeline-event-meta">{metadataText}</div> : null}
+                                  </div>
+                                );
+                              })
+                            )}
+                          </div>
                         </div>
                       </>
                     );

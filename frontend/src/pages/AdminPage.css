@@ -1199,6 +1199,131 @@
   margin-top: 16px;
 }
 
+.fulfillment-timeline-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.timeline-summary-card {
+  background: rgba(0, 255, 200, 0.08);
+  border: 1px solid rgba(0, 255, 200, 0.12);
+  border-radius: 12px;
+  padding: 14px;
+}
+
+.timeline-summary-card span {
+  display: block;
+  color: #a1d8e8;
+  margin-bottom: 6px;
+  font-size: 0.85rem;
+}
+
+.timeline-summary-card strong {
+  display: block;
+  color: #f5faff;
+  font-size: 1rem;
+}
+
+.legacy-stl-note {
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+  color: #cbd1db;
+  font-size: 0.95rem;
+}
+
+.legacy-stl-fields {
+  opacity: 0.8;
+}
+
+.form-help-text {
+  color: #9cc1db;
+  font-size: 0.92rem;
+  margin-bottom: 12px;
+}
+
+.form-help-text code {
+  background: rgba(255, 255, 255, 0.05);
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+.fulfillment-failure-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 90, 90, 0.3);
+  background: rgba(255, 90, 90, 0.12);
+  color: #ffe6e6;
+  margin-top: 16px;
+}
+
+.fulfillment-failure-banner strong {
+  color: #ffd2d2;
+}
+
+.fulfillment-failure-banner span {
+  color: #ffdcdc;
+  font-size: 0.95rem;
+}
+
+.fulfillment-timeline-list {
+  display: grid;
+  gap: 12px;
+}
+
+.fulfillment-timeline-entry {
+  background: #0d1320;
+  border: 1px solid rgba(0, 255, 200, 0.08);
+  border-radius: 12px;
+  padding: 14px;
+}
+
+.fulfillment-timeline-entry.failure {
+  border-color: rgba(255, 72, 86, 0.35);
+  background: rgba(75, 0, 0, 0.2);
+}
+
+.fulfillment-timeline-entry-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.timeline-event-time,
+.timeline-event-meta-row span,
+.timeline-event-note,
+.timeline-event-meta {
+  display: block;
+  color: #cddbea;
+}
+
+.timeline-event-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 0.9rem;
+}
+
+.timeline-event-note {
+  color: #d7d7f0;
+  margin-bottom: 8px;
+}
+
+.timeline-event-meta {
+  color: #92e3ff;
+  font-size: 0.85rem;
+}
+
 .fulfillment-modal-loading {
   padding: 32px;
   text-align: center;

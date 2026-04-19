@@ -14,6 +14,7 @@ const stripe = process.env.STRIPE_SECRET_KEY ? require('stripe')(process.env.STR
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const archiver = require('archiver');
 const {
   normalizeCustomOrder,
@@ -23,6 +24,10 @@ const {
   FULFILLMENT_STAGES,
   isProductionCustomOrderEligible,
 } = require('../utils/customOrderUtils');
+const {
+  ensureSharedJobFolders,
+  copyOrExportSourceImagesToSharedFolder,
+} = require('../utils/sourceAssetUtils');
 
 const STATUS_VALUES = ['draft', 'active', 'archived'];
 
@@ -38,6 +43,52 @@ const ensureDir = (dirPath) => {
 };
 
 ensureDir(adminUploadDir);
+
+const STL_SHARED_ROOT = process.env.STL_SHARED_ROOT || '/shared/litho-handoff';
+const STL_PRODUCTION_ROOT = process.env.STL_PRODUCTION_ROOT || '/data/production-jobs';
+
+const computeFileSha256 = (filePath) => new Promise((resolve, reject) => {
+  const hash = crypto.createHash('sha256');
+  const stream = fs.createReadStream(filePath);
+  stream.on('error', reject);
+  stream.on('data', (chunk) => hash.update(chunk));
+  stream.on('end', () => resolve(hash.digest('hex')));
+});
+
+const resolveSharedStlPath = (sourcePath) => {
+  if (!sourcePath || typeof sourcePath !== 'string') {
+    throw new Error('Invalid STL source path');
+  }
+  const normalized = sourcePath.trim();
+  const candidate = path.isAbsolute(normalized) ? normalized : path.join(STL_SHARED_ROOT, normalized);
+  const resolved = path.resolve(candidate);
+  const sharedRoot = path.resolve(STL_SHARED_ROOT);
+  if (resolved !== sharedRoot && !resolved.startsWith(`${sharedRoot}${path.sep}`)) {
+    throw new Error('STL source path is outside the shared STL root');
+  }
+  return resolved;
+};
+
+const getProductionStlPath = (printJobId, filename) => {
+  const safeName = path.basename(filename || '');
+  return path.join(STL_PRODUCTION_ROOT, printJobId, 'assets', 'stl', safeName);
+};
+
+const ensureProductionStlDir = (printJobId) => {
+  const dir = path.join(STL_PRODUCTION_ROOT, printJobId, 'assets', 'stl');
+  ensureDir(dir);
+  return dir;
+};
+
+const getSharedStlCandidatesDir = (printJobId) => path.join(STL_SHARED_ROOT, printJobId, 'stl');
+
+const sanitizeStlFilePath = (filePath) => {
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext !== '.stl') {
+    throw new Error('Only .stl files are allowed');
+  }
+  return filePath;
+};
 
 const uploadStorage = multer.diskStorage({
   destination: adminUploadDir,
@@ -1090,9 +1141,93 @@ const getPrintJobDefaults = (productType) => {
   return defaults;
 };
 
+const STATUS_LABELS = {
+  queued_for_generation: 'Queued for generation',
+  generating_stl: 'Generating STL',
+  stl_ready: 'STL ready',
+  queued_for_slicing: 'Queued for slicing',
+  sliced: 'Sliced',
+  queued_for_batch: 'Queued for batch',
+  assigned_to_printer: 'Assigned to printer',
+  printing: 'Printing',
+  printed: 'Printed',
+  print_failed: 'Print Failed',
+  failed: 'Failed',
+  cancelled: 'Cancelled',
+  ready_to_ship: 'Ready to ship',
+  shipped: 'Shipped',
+  completed: 'Completed',
+  qa_review: 'QA review',
+  qa_failed: 'QA failed',
+  stl_registered: 'STL registered',
+  stl_copied_to_production: 'STL copied to production',
+  stl_verified: 'STL verified',
+  stl_copy_failed: 'STL copy failed',
+  stl_registration_failed: 'STL registration failed',
+};
+
+const NEXT_STAGE_BY_STATUS = {
+  queued_for_generation: 'Generate STL',
+  generating_stl: 'Finish STL generation',
+  stl_ready: 'Prepare for batch',
+  queued_for_slicing: 'Slice STL',
+  sliced: 'Queue for batch',
+  queued_for_batch: 'Assign to batch',
+  assigned_to_printer: 'Start printing',
+  printing: 'Complete print',
+  printing: 'Complete print or mark failed',
+  printed: 'Move to QA or ready-to-ship',
+  print_failed: 'Investigate failure and rerun or replace',
+  qa_review: 'Complete QA',
+  qa_failed: 'Resolve QA issue',
+  ready_to_ship: 'Ship order',
+  shipped: 'Complete delivery',
+  completed: 'Close order',
+  failed: 'Investigate failure',
+  cancelled: 'No further action',
+};
+
 const normalizePrintJobPayload = (rawJob) => {
   if (!rawJob) return rawJob;
   const job = rawJob.toObject ? rawJob.toObject({ getters: true, virtuals: false }) : { ...rawJob };
+  const events = Array.isArray(job.lifecycleEvents) ? job.lifecycleEvents : [];
+  job.timelineSummary = {
+    currentStage: STATUS_LABELS[job.status] || job.status || 'Unknown',
+    nextExpectedStep: NEXT_STAGE_BY_STATUS[job.status] || 'Review status',
+    lastEventAt: events.length ? events[events.length - 1].at : job.updatedAt,
+    eventCount: events.length,
+  };
+  job.stlHandoffSummary = {
+    status: job.stlHandoff?.status || 'missing',
+    source: job.stlHandoff?.source || {},
+    managedCopy: job.stlHandoff?.managedCopy || {},
+    verification: job.stlHandoff?.verification || {},
+  };
+  return job;
+};
+
+const appendLifecycleEvent = async (job, eventData = {}) => {
+  if (!job) return job;
+  const eventStatus = eventData.status || '';
+  const jobStatus = eventData.jobStatus !== undefined ? eventData.jobStatus : job.status;
+  const statusForLabel = eventStatus || job.status || 'queued_for_generation';
+  const event = {
+    status: statusForLabel,
+    eventStatus: eventData.eventStatus || statusForLabel,
+    label: eventData.label || STATUS_LABELS[statusForLabel] || statusForLabel,
+    at: eventData.at ? new Date(eventData.at) : new Date(),
+    actorType: eventData.actorType || 'system',
+    actorId: eventData.actorId || '',
+    actorName: eventData.actorName || job.createdBy || '',
+    source: eventData.source || 'system',
+    note: eventData.note || '',
+    metadata: eventData.metadata || {},
+  };
+  const lifecycleEvents = Array.isArray(job.lifecycleEvents) ? [...job.lifecycleEvents, event] : [event];
+  job.lifecycleEvents = lifecycleEvents;
+  if (jobStatus) job.status = jobStatus;
+  job.updatedAt = new Date();
+  await job.save();
   return job;
 };
 
@@ -1306,23 +1441,12 @@ const createProductionPrintJob = async (req, res) => {
       });
     }
 
-    const sourceImages = Array.isArray(normalizedOrder.images)
-      ? normalizedOrder.images.map((img) => ({
-          path: img.path || '',
-          publicUrl: img.publicUrl || '',
-          relativePath: img.relativePath || '',
-          originalName: img.originalName || '',
-          mimeType: img.mimeType || '',
-          size: img.size || 0,
-        }))
-      : [];
-
     const printJob = await PrintJob.create({
       orderId: normalizedOrder.orderId,
       customOrderId: customOrderId || normalizedOrder._id || normalizedOrder.orderId,
       productType: normalizedOrder.productType || 'panel',
       partType: partType || normalizedOrder.productType || 'custom_order',
-      sourceImages,
+      sourceImages: [],
       printerProfile: printerProfile || suggested.printerProfile,
       materialProfile: materialProfile || suggested.materialProfile,
       slicerProfile: slicerProfile || suggested.slicerProfile,
@@ -1350,6 +1474,41 @@ const createProductionPrintJob = async (req, res) => {
       createdBy: forceCreate ? 'production-admin-force-rerun' : 'production-admin',
     });
 
+    try {
+        console.info('[SOURCE PIPELINE] exporting custom order images for production job', {
+          printJobId: printJob.printJobId,
+          orderId: normalizedOrder.orderId,
+          customOrderId: normalizedOrder._id || normalizedOrder.orderId,
+        });
+        const exportResult = await copyOrExportSourceImagesToSharedFolder({ printJob, customOrder: normalizedOrder });
+        if (exportResult.sharedSourceFolder) {
+          printJob.sharedSourceFolder = exportResult.sharedSourceFolder;
+        }
+        if (Array.isArray(exportResult.sourceImages) && exportResult.sourceImages.length) {
+          printJob.sourceImages = exportResult.sourceImages;
+        }
+        if (!Array.isArray(exportResult.sourceImages) || exportResult.sourceImages.length === 0) {
+          console.info('[SOURCE PIPELINE] no source images exported for production job', {
+            printJobId: printJob.printJobId,
+            orderId: normalizedOrder.orderId,
+            sourceDir: exportResult.sharedSourceFolder,
+          });
+        }
+        if (exportResult.sharedSourceFolder || (Array.isArray(exportResult.sourceImages) && exportResult.sourceImages.length)) {
+          await printJob.save();
+        }
+      } catch (exportErr) {
+        console.warn('⚠️ Failed to export source images to shared folder:', exportErr.message || exportErr);
+      }
+    await appendLifecycleEvent(printJob, {
+      status: printJob.status,
+      label: forceCreate ? 'Force rerun created' : 'Production job created',
+      source: forceCreate ? 'force_rerun' : 'create_production_job',
+      actorType: 'system',
+      actorName: forceCreate ? 'production-admin-force-rerun' : 'production-admin',
+      metadata: { forceCreate: Boolean(forceCreate) },
+    });
+
     await updateCustomOrderFulfillmentState(customOrder, 'print_ready');
     return res.status(201).json(normalizePrintJobPayload(printJob));
   } catch (err) {
@@ -1364,6 +1523,378 @@ const createProductionPrintJob = async (req, res) => {
 // CREATE a print job from a custom order
 router.post('/print-jobs', createProductionPrintJob);
 router.post('/production/print-jobs', createProductionPrintJob);
+
+router.get('/production/print-jobs/:printJobId/shared-stl-candidates', async (req, res) => {
+  try {
+    const { printJobId } = req.params;
+    console.log('[STL DEBUG] printJobId:', printJobId);
+    console.log('[STL DEBUG] STL_SHARED_ROOT:', STL_SHARED_ROOT);
+
+    const printJob = await PrintJob.findOne({ printJobId, isTest: { $ne: true } });
+    if (!printJob) {
+      console.log('[STL DEBUG] printJob: not found');
+      return res.status(404).json({ error: 'Production print job not found.' });
+    }
+
+    const candidatesDir = getSharedStlCandidatesDir(printJobId);
+    console.log('[STL DEBUG] candidateDir:', candidatesDir);
+    const exists = fs.existsSync(candidatesDir);
+    console.log('[STL DEBUG] exists:', exists);
+    if (!exists) {
+      console.log('[STL DEBUG] returning empty candidate list');
+      return res.json({ data: [] });
+    }
+
+    const entries = await fs.promises.readdir(candidatesDir, { withFileTypes: true });
+    console.log('[STL DEBUG] raw entries:', entries.map((entry) => entry.name));
+    const files = [];
+    const stlFiles = [];
+    for (const entry of entries) {
+      if (!entry.isFile()) continue;
+      const ext = path.extname(entry.name).toLowerCase();
+      if (ext !== '.stl') continue;
+      const fullPath = path.join(candidatesDir, entry.name);
+      const stats = await fs.promises.stat(fullPath);
+      const candidate = {
+        fileName: entry.name,
+        filename: entry.name,
+        relativePath: path.relative(STL_SHARED_ROOT, fullPath),
+        fullPath,
+        sizeBytes: stats.size,
+        modifiedAt: stats.mtime,
+      };
+      files.push(candidate);
+      stlFiles.push(candidate.fileName);
+    }
+    console.log('[STL DEBUG] filtered stlFiles:', stlFiles);
+    console.log('[STL DEBUG] response payload:', { data: files });
+
+    res.json({ data: files });
+  } catch (err) {
+    console.error('❌ Failed to fetch STL candidates:', err);
+    res.status(500).json({
+      error: 'Failed to fetch STL candidates',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined,
+    });
+  }
+});
+
+router.post('/production/print-jobs/:printJobId/register-stl', async (req, res) => {
+  try {
+    const { printJobId } = req.params;
+    const { sourcePath, version, notes } = req.body;
+
+    if (!sourcePath || !version) {
+      return res.status(400).json({ error: 'sourcePath and version are required.' });
+    }
+
+    const printJob = await PrintJob.findOne({ printJobId, isTest: { $ne: true } });
+    if (!printJob) {
+      return res.status(404).json({ error: 'Production print job not found.' });
+    }
+
+    const resolvedPath = resolveSharedStlPath(sourcePath);
+    const stats = await fs.promises.stat(resolvedPath).catch(() => null);
+    if (!stats || !stats.isFile()) {
+      return res.status(400).json({ error: 'STL source file does not exist.' });
+    }
+
+    sanitizeStlFilePath(resolvedPath);
+
+    const checksumSha256 = await computeFileSha256(resolvedPath);
+
+    printJob.stlHandoff = {
+      status: 'registered',
+      source: {
+        sourceType: 'shared_folder',
+        originalPath: resolvedPath,
+        originalFilename: path.basename(resolvedPath),
+        version,
+        sizeBytes: stats.size,
+        checksumSha256,
+        registeredAt: new Date(),
+        registeredBy: req.session?.admin?.username || 'production-admin',
+      },
+      managedCopy: printJob.stlHandoff?.managedCopy || {},
+      verification: printJob.stlHandoff?.verification || {},
+    };
+
+    printJob.stlFilename = printJob.stlHandoff.source.originalFilename;
+    printJob.stlVersion = version;
+    await printJob.save();
+
+    await appendLifecycleEvent(printJob, {
+      status: 'queued_for_generation',
+      jobStatus: printJob.status,
+      label: 'STL registered',
+      source: 'stl_registered',
+      actorType: 'admin',
+      actorName: req.session?.admin?.username || 'production-admin',
+      metadata: {
+        sourcePath: resolvedPath,
+        version,
+        checksumSha256,
+        sizeBytes: stats.size,
+        notes: notes || '',
+      },
+    });
+
+    res.json(normalizePrintJobPayload(printJob));
+  } catch (err) {
+    console.error('❌ Failed to register STL:', err);
+    res.status(500).json({
+      error: 'Failed to register STL',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined,
+    });
+  }
+});
+
+router.post('/production/print-jobs/:printJobId/set-active-job', async (req, res) => {
+  try {
+    const { printJobId } = req.params;
+    if (!printJobId) {
+      return res.status(400).json({ error: 'printJobId is required.' });
+    }
+
+    const printJob = await PrintJob.findOne({ printJobId, isTest: { $ne: true } });
+    if (!printJob) {
+      return res.status(404).json({ error: 'Production print job not found.' });
+    }
+
+    ensureDir(STL_SHARED_ROOT);
+    const activeJobFile = path.join(STL_SHARED_ROOT, 'active-job.txt');
+    await fs.promises.writeFile(activeJobFile, `${printJobId}\n`, 'utf8');
+
+    console.info('[ACTIVE JOB] set active print job', { printJobId, activeJobFile });
+
+    res.json({
+      printJobId,
+      activeJobFile,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.error('❌ Failed to set active print job:', err);
+    res.status(500).json({
+      error: 'Failed to set active print job',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined,
+    });
+  }
+});
+
+router.post('/production/print-jobs/:printJobId/copy-stl-to-production', async (req, res) => {
+  try {
+    const { printJobId } = req.params;
+    const printJob = await PrintJob.findOne({ printJobId, isTest: { $ne: true } });
+    if (!printJob) {
+      return res.status(404).json({ error: 'Production print job not found.' });
+    }
+
+    if (!printJob.stlHandoff?.source?.originalPath || printJob.stlHandoff?.status !== 'registered') {
+      return res.status(400).json({ error: 'STL must be registered before copying to production.' });
+    }
+
+    const sourcePath = resolveSharedStlPath(printJob.stlHandoff.source.originalPath);
+    const sourceStats = await fs.promises.stat(sourcePath).catch(() => null);
+    if (!sourceStats || !sourceStats.isFile()) {
+      return res.status(400).json({ error: 'Registered source STL no longer exists.' });
+    }
+
+    const productionDir = ensureProductionStlDir(printJobId);
+    const productionFilename = path.basename(sourcePath);
+    const productionPath = path.join(productionDir, productionFilename);
+
+    await fs.promises.copyFile(sourcePath, productionPath);
+    const sourceChecksum = await computeFileSha256(sourcePath);
+    const productionChecksum = await computeFileSha256(productionPath);
+    const producedStats = await fs.promises.stat(productionPath);
+    const checksumMatch = sourceChecksum === productionChecksum;
+
+    printJob.stlHandoff.managedCopy = {
+      copied: true,
+      copiedAt: new Date(),
+      copiedBy: req.session?.admin?.username || 'production-admin',
+      productionPath,
+      productionFilename,
+      checksumSha256: productionChecksum,
+      sizeBytes: producedStats.size,
+    };
+    printJob.stlHandoff.verification = {
+      fileExistsAtRegistration: true,
+      fileExistsAfterCopy: true,
+      extensionValid: path.extname(productionFilename).toLowerCase() === '.stl',
+      checksumMatch,
+      lastVerifiedAt: new Date(),
+      verificationMessage: checksumMatch ? 'Production copy verified' : 'Checksum mismatch after copy',
+    };
+
+    if (checksumMatch) {
+      printJob.stlHandoff.status = 'verified';
+      printJob.status = 'stl_ready';
+      await printJob.save();
+      await appendLifecycleEvent(printJob, {
+        status: 'stl_copied_to_production',
+        jobStatus: 'stl_ready',
+        label: 'STL copied to production',
+        source: 'stl_copied_to_production',
+        actorType: 'admin',
+        actorName: req.session?.admin?.username || 'production-admin',
+        metadata: {
+          productionPath,
+          checksumSha256: productionChecksum,
+          sizeBytes: producedStats.size,
+        },
+      });
+      await appendLifecycleEvent(printJob, {
+        status: 'stl_verified',
+        jobStatus: 'stl_ready',
+        label: 'STL verified',
+        source: 'stl_verified',
+        actorType: 'admin',
+        actorName: req.session?.admin?.username || 'production-admin',
+        metadata: {
+          checksumMatch,
+        },
+      });
+    } else {
+      printJob.stlHandoff.status = 'failed';
+      await printJob.save();
+      await appendLifecycleEvent(printJob, {
+        status: 'stl_copy_failed',
+        jobStatus: printJob.status,
+        label: 'STL copy failed',
+        source: 'stl_copy_failed',
+        actorType: 'admin',
+        actorName: req.session?.admin?.username || 'production-admin',
+        metadata: {
+          sourceChecksum,
+          productionChecksum,
+        },
+      });
+    }
+
+    res.json(normalizePrintJobPayload(printJob));
+  } catch (err) {
+    console.error('❌ Failed to copy STL to production:', err);
+    if (err.message && err.message.includes('outside the shared STL root')) {
+      return res.status(400).json({ error: err.message });
+    }
+    res.status(500).json({
+      error: 'Failed to copy STL to production',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined,
+    });
+  }
+});
+
+router.post('/production/print-jobs/:printJobId/start-print', async (req, res) => {
+  try {
+    const { printJobId } = req.params;
+    const printJob = await PrintJob.findOne({ printJobId, isTest: { $ne: true } });
+    if (!printJob) {
+      return res.status(404).json({ error: 'Production print job not found.' });
+    }
+
+    if (printJob.status === 'printing') {
+      return res.status(400).json({ error: 'Print job is already started.' });
+    }
+    if (['printed', 'failed', 'print_failed', 'cancelled'].includes(printJob.status)) {
+      return res.status(400).json({ error: `Cannot start a print job in status ${printJob.status}.` });
+    }
+    if (printJob.stlHandoff?.status !== 'verified') {
+      return res.status(400).json({ error: 'STL must be verified before starting the print.' });
+    }
+
+    printJob.status = 'printing';
+    await appendLifecycleEvent(printJob, {
+      status: 'printing',
+      eventStatus: 'print_started',
+      label: 'Print Started',
+      source: 'operator_start_print',
+      actorType: 'admin',
+      actorName: req.session?.admin?.username || 'production-admin',
+      metadata: {},
+    });
+
+    res.json(normalizePrintJobPayload(printJob));
+  } catch (err) {
+    console.error('❌ Failed to start print:', err);
+    res.status(500).json({
+      error: 'Failed to start print',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined,
+    });
+  }
+});
+
+router.post('/production/print-jobs/:printJobId/complete-print', async (req, res) => {
+  try {
+    const { printJobId } = req.params;
+    const printJob = await PrintJob.findOne({ printJobId, isTest: { $ne: true } });
+    if (!printJob) {
+      return res.status(404).json({ error: 'Production print job not found.' });
+    }
+
+    if (printJob.status !== 'printing') {
+      return res.status(400).json({ error: 'Print job must be printing before it can be completed.' });
+    }
+
+    printJob.status = 'printed';
+    await appendLifecycleEvent(printJob, {
+      status: 'printed',
+      eventStatus: 'printed',
+      label: 'Print Completed',
+      source: 'operator_complete_print',
+      actorType: 'admin',
+      actorName: req.session?.admin?.username || 'production-admin',
+      metadata: {},
+    });
+
+    res.json(normalizePrintJobPayload(printJob));
+  } catch (err) {
+    console.error('❌ Failed to complete print:', err);
+    res.status(500).json({
+      error: 'Failed to complete print',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined,
+    });
+  }
+});
+
+router.post('/production/print-jobs/:printJobId/fail-print', async (req, res) => {
+  try {
+    const { printJobId } = req.params;
+    const { reason } = req.body;
+    const failureReason = String(reason || 'Unknown failure').trim() || 'Unknown failure';
+
+    const printJob = await PrintJob.findOne({ printJobId, isTest: { $ne: true } });
+    if (!printJob) {
+      return res.status(404).json({ error: 'Production print job not found.' });
+    }
+
+    if (printJob.status !== 'printing') {
+      return res.status(400).json({ error: 'Print job must be printing before it can be marked as failed.' });
+    }
+
+    printJob.status = 'print_failed';
+    await appendLifecycleEvent(printJob, {
+      status: 'print_failed',
+      eventStatus: 'print_failed',
+      label: 'Print Failed',
+      source: 'operator_fail_print',
+      actorType: 'admin',
+      actorName: req.session?.admin?.username || 'production-admin',
+      note: failureReason,
+      metadata: {
+        reason: failureReason,
+      },
+    });
+
+    res.json(normalizePrintJobPayload(printJob));
+  } catch (err) {
+    console.error('❌ Failed to fail print:', err);
+    res.status(500).json({
+      error: 'Failed to fail print',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined,
+    });
+  }
+});
 
 router.post('/production/print-jobs/:printJobId/apply-stl', async (req, res) => {
   try {
@@ -1381,7 +1912,7 @@ router.post('/production/print-jobs/:printJobId/apply-stl', async (req, res) => 
       return res.status(404).json({ error: 'Production print job not found.' });
     }
 
-    if (['cancelled', 'failed', 'printed'].includes(printJob.status)) {
+    if (['cancelled', 'failed', 'print_failed', 'printed'].includes(printJob.status)) {
       return res.status(400).json({
         error: `Cannot apply STL handoff to a print job in status ${printJob.status}.`,
       });
@@ -1394,6 +1925,15 @@ router.post('/production/print-jobs/:printJobId/apply-stl', async (req, res) => 
     printJob.status = 'stl_ready';
     printJob.updatedAt = new Date();
     await printJob.save();
+
+    await appendLifecycleEvent(printJob, {
+      status: 'stl_ready',
+      label: 'STL attached',
+      source: 'apply_stl',
+      actorType: 'system',
+      actorName: 'production-admin',
+      metadata: { stlFilename, stlPath, stlVersion },
+    });
 
     const customOrder = await CustomOrder.findOne({ orderId: printJob.orderId, isTest: { $ne: true } });
     if (customOrder) {
@@ -1449,6 +1989,15 @@ router.post('/production/print-jobs/:printJobId/create-batch', async (req, res) 
       printJob.status = 'queued_for_batch';
     }
     await printJob.save();
+
+    await appendLifecycleEvent(printJob, {
+      status: 'queued_for_batch',
+      label: 'Batch created',
+      source: 'create_batch',
+      actorType: 'system',
+      actorName: 'production-admin',
+      metadata: { batchId: batch.batchId },
+    });
 
     const customOrder = await CustomOrder.findOne({ orderId: printJob.orderId, isTest: { $ne: true } });
     if (customOrder) {
@@ -1512,6 +2061,15 @@ router.post('/production/print-jobs/:printJobId/assign-batch', async (req, res) 
     }
     await printJob.save();
 
+    await appendLifecycleEvent(printJob, {
+      status: 'queued_for_batch',
+      label: 'Batch assigned',
+      source: 'assign_batch',
+      actorType: 'system',
+      actorName: 'production-admin',
+      metadata: { batchId: batch.batchId },
+    });
+
     const customOrder = await CustomOrder.findOne({ orderId: printJob.orderId, isTest: { $ne: true } });
     if (customOrder) {
       await updateCustomOrderFulfillmentState(customOrder, 'in_production');
@@ -1574,6 +2132,32 @@ router.get('/print-jobs', async (req, res) => {
     console.error('❌ Failed to fetch print jobs:', err);
     res.status(500).json({
       error: 'Failed to fetch print jobs',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined,
+    });
+  }
+});
+
+router.get('/print-jobs/:printJobId/source-images', async (req, res) => {
+  try {
+    const { printJobId } = req.params;
+    if (!printJobId) {
+      return res.status(400).json({ error: 'printJobId is required' });
+    }
+
+    const printJob = await PrintJob.findOne({ printJobId });
+    if (!printJob) {
+      return res.status(404).json({ error: 'Production print job not found.' });
+    }
+
+    res.json({
+      printJobId: printJob.printJobId,
+      sharedSourceFolder: printJob.sharedSourceFolder || '',
+      sourceImages: Array.isArray(printJob.sourceImages) ? printJob.sourceImages : [],
+    });
+  } catch (err) {
+    console.error('❌ Failed to fetch print job source images:', err);
+    res.status(500).json({
+      error: 'Failed to fetch print job source images',
       details: process.env.NODE_ENV === 'development' ? err.message : undefined,
     });
   }
@@ -1795,6 +2379,11 @@ router.patch('/print-jobs/:printJobId/stl-handoff', async (req, res) => {
       'assigned_to_printer',
       'printing',
       'printed',
+      'ready_to_ship',
+      'shipped',
+      'completed',
+      'qa_review',
+      'qa_failed',
       'failed',
       'cancelled'
     ];
@@ -1822,6 +2411,20 @@ router.patch('/print-jobs/:printJobId/stl-handoff', async (req, res) => {
     if (!printJob) {
       return res.status(404).json({ error: 'Print job not found.' });
     }
+
+    await appendLifecycleEvent(printJob, {
+      status: update.status || printJob.status || 'stl_ready',
+      label: 'STL handoff updated',
+      source: 'stl_handoff',
+      actorType: 'system',
+      actorName: 'production-admin',
+      metadata: {
+        ...(stlFilename !== undefined ? { stlFilename } : {}),
+        ...(stlPath !== undefined ? { stlPath } : {}),
+        ...(stlVersion !== undefined ? { stlVersion } : {}),
+        ...(generationNotes !== undefined ? { generationNotes } : {}),
+      },
+    });
 
     res.json(normalizePrintJobPayload(printJob));
   } catch (err) {
@@ -2085,7 +2688,7 @@ router.patch('/print-jobs/:printJobId', async (req, res) => {
       notes,
     } = req.body;
 
-    const validStatuses = ['queued_for_slicing', 'sliced', 'queued_for_batch', 'assigned_to_printer', 'printing', 'printed', 'failed', 'cancelled'];
+    const validStatuses = ['queued_for_slicing', 'sliced', 'queued_for_batch', 'assigned_to_printer', 'printing', 'printed', 'failed', 'print_failed', 'cancelled'];
     const update = {};
 
     if (printerProfile !== undefined) update.printerProfile = printerProfile;
