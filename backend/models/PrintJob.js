@@ -30,14 +30,23 @@ const printJobSchema = new mongoose.Schema({
   },
   sourceImages: {
     type: [new mongoose.Schema({
-      path: String,
-      publicUrl: String,
-      relativePath: String,
       originalName: String,
+      renamedFilename: String,
+      destinationPath: String,
+      sharedSourceFolder: String,
+      sourcePath: String,
       mimeType: String,
       size: Number,
+      uploadedAt: { type: Date, default: Date.now },
+      panel: Number,
+      panelLabel: String,
     }, { _id: false })],
     default: []
+  },
+  sharedSourceFolder: {
+    type: String,
+    trim: true,
+    default: ''
   },
   printerProfile: {
     type: String,
@@ -112,9 +121,61 @@ const printJobSchema = new mongoose.Schema({
     trim: true,
     default: ''
   },
+  stlHandoff: {
+    type: {
+      status: {
+        type: String,
+        trim: true,
+        default: 'missing',
+        enum: ['missing', 'registered', 'copied', 'verified', 'failed'],
+      },
+      source: {
+        type: {
+          sourceType: { type: String, trim: true, default: '' },
+          originalPath: { type: String, trim: true, default: '' },
+          originalFilename: { type: String, trim: true, default: '' },
+          version: { type: String, trim: true, default: '' },
+          sizeBytes: { type: Number, default: 0 },
+          checksumSha256: { type: String, trim: true, default: '' },
+          registeredAt: { type: Date, default: null },
+          registeredBy: { type: String, trim: true, default: '' },
+        },
+        default: {},
+      },
+      managedCopy: {
+        type: {
+          copied: { type: Boolean, default: false },
+          copiedAt: { type: Date, default: null },
+          copiedBy: { type: String, trim: true, default: '' },
+          productionPath: { type: String, trim: true, default: '' },
+          productionFilename: { type: String, trim: true, default: '' },
+          checksumSha256: { type: String, trim: true, default: '' },
+          sizeBytes: { type: Number, default: 0 },
+        },
+        default: {},
+      },
+      verification: {
+        type: {
+          fileExistsAtRegistration: { type: Boolean, default: false },
+          fileExistsAfterCopy: { type: Boolean, default: false },
+          extensionValid: { type: Boolean, default: false },
+          checksumMatch: { type: Boolean, default: false },
+          lastVerifiedAt: { type: Date, default: null },
+          verificationMessage: { type: String, trim: true, default: '' },
+        },
+        default: {},
+      },
+    },
+    default: {
+      status: 'missing',
+      source: {},
+      managedCopy: {},
+      verification: {},
+    },
+  },
   status: {
     type: String,
-    enum: ['queued_for_generation', 'generating_stl', 'stl_ready', 'queued_for_slicing', 'sliced', 'queued_for_batch', 'assigned_to_printer', 'printing', 'printed', 'failed', 'cancelled'],
+    enum: ['queued_for_generation', 'generating_stl', 'stl_ready', 'queued_for_slicing', 'sliced', 'queued_for_batch', 'assigned_to_printer', 'printing', 'printed', 'ready_to_ship', 'shipped', 'completed', 'qa_review', 'qa_failed', 'failed', 'print_failed', 'cancelled'],
     default: 'queued_for_generation',
     index: true
   },
@@ -137,6 +198,21 @@ const printJobSchema = new mongoose.Schema({
     type: String,
     trim: true,
     default: ''
+  },
+  lifecycleEvents: {
+    type: [{
+      status: { type: String, trim: true, default: '' },
+      eventStatus: { type: String, trim: true, default: '' },
+      label: { type: String, trim: true, default: '' },
+      at: { type: Date, default: Date.now },
+      actorType: { type: String, trim: true, default: 'system' },
+      actorId: { type: String, trim: true, default: '' },
+      actorName: { type: String, trim: true, default: '' },
+      source: { type: String, trim: true, default: '' },
+      note: { type: String, trim: true, default: '' },
+      metadata: { type: mongoose.Schema.Types.Mixed, default: {} },
+    }],
+    default: []
   },
   estimatedPrintHours: {
     type: Number,
