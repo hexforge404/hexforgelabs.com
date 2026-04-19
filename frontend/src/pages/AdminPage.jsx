@@ -131,7 +131,28 @@ export default function AdminPage() {
   const [draggedOrderId, setDraggedOrderId] = useState(null);
   const [dragOverStage, setDragOverStage] = useState(null);
   const [printJobs, setPrintJobs] = useState([]);
+  const [productionJobsByOrder, setProductionJobsByOrder] = useState({});
+  const [fulfillmentPanelOrder, setFulfillmentPanelOrder] = useState(null);
+  const [fulfillmentPanelJobs, setFulfillmentPanelJobs] = useState([]);
+  const [selectedFulfillmentJobId, setSelectedFulfillmentJobId] = useState('');
+  const [selectedFulfillmentBatchId, setSelectedFulfillmentBatchId] = useState('');
+  const [isFulfillmentPanelOpen, setIsFulfillmentPanelOpen] = useState(false);
+  const [isLoadingFulfillmentPanel, setIsLoadingFulfillmentPanel] = useState(false);
+  const [fulfillmentStlFilename, setFulfillmentStlFilename] = useState('');
+  const [fulfillmentStlPath, setFulfillmentStlPath] = useState('');
+  const [fulfillmentStlVersion, setFulfillmentStlVersion] = useState('');
   const [printJobStatusFilter, setPrintJobStatusFilter] = useState('all');
+  const selectedFulfillmentJob = (fulfillmentPanelJobs || []).find((j) => j.printJobId === selectedFulfillmentJobId) || null;
+  const activeFulfillmentStatuses = [
+    'queued_for_generation',
+    'generating_stl',
+    'stl_ready',
+    'queued_for_slicing',
+    'queued_for_batch',
+    'assigned_to_printer',
+    'printing',
+  ];
+  const isActiveFulfillmentJob = (job) => job && activeFulfillmentStatuses.includes(job.status);
   const [lithophaneJobs, setLithophaneJobs] = useState([]);
   const [lithophaneStatusFilter, setLithophaneStatusFilter] = useState('all');
   const [batchStatusFilter, setBatchStatusFilter] = useState('all');
@@ -144,6 +165,26 @@ export default function AdminPage() {
   const [promoCodes, setPromoCodes] = useState([]);
 
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (selectedFulfillmentJob) {
+      setFulfillmentStlFilename(selectedFulfillmentJob.stlFilename || '');
+      setFulfillmentStlPath(selectedFulfillmentJob.stlPath || '');
+      setFulfillmentStlVersion(selectedFulfillmentJob.stlVersion || '');
+      setSelectedFulfillmentBatchId(selectedFulfillmentJob.assignedBatchId || '');
+    } else {
+      setFulfillmentStlFilename('');
+      setFulfillmentStlPath('');
+      setFulfillmentStlVersion('');
+      setSelectedFulfillmentBatchId('');
+    }
+  }, [selectedFulfillmentJob]);
+
+  useEffect(() => {
+    if (selectedFulfillmentJobId && !selectedFulfillmentJob) {
+      setSelectedFulfillmentJobId((fulfillmentPanelJobs || [])[0]?.printJobId || '');
+    }
+  }, [selectedFulfillmentJob, selectedFulfillmentJobId, fulfillmentPanelJobs]);
 
   const [form, setForm] = useState(EMPTY_PRODUCT);
   const [blogForm, setBlogForm] = useState(EMPTY_BLOG);
@@ -186,6 +227,21 @@ export default function AdminPage() {
   const [testPipelineOrderId, setTestPipelineOrderId] = useState('');
   const [testPipelinePrintJobId, setTestPipelinePrintJobId] = useState('');
   const [testPipelineBatchId, setTestPipelineBatchId] = useState('');
+  const [testPipelineEnvAvailable, setTestPipelineEnvAvailable] = useState(false);
+  const [testPipelineRuntimeEnabled, setTestPipelineRuntimeEnabled] = useState(false);
+  const [testPipelineEffectiveEnabled, setTestPipelineEffectiveEnabled] = useState(false);
+  const [testPipelineRuntimeUpdatedAt, setTestPipelineRuntimeUpdatedAt] = useState(null);
+  const [testPipelineRuntimeUpdatedBy, setTestPipelineRuntimeUpdatedBy] = useState(null);
+  const [testPipelineRuntimeExpired, setTestPipelineRuntimeExpired] = useState(false);
+  const [testPipelineAutoDisableAfterMinutes, setTestPipelineAutoDisableAfterMinutes] = useState(30);
+  const [testPipelineModeMessage, setTestPipelineModeMessage] = useState('');
+  const [isLoadingTestPipelineStatus, setIsLoadingTestPipelineStatus] = useState(false);
+  const [isUpdatingRuntimeStatus, setIsUpdatingRuntimeStatus] = useState(false);
+  const [testArtifacts, setTestArtifacts] = useState({
+    confirmed: { orders: [], printJobs: [], batches: [] },
+    suspected: { orders: [], printJobs: [], batches: [] },
+  });
+  const [isLoadingTestArtifacts, setIsLoadingTestArtifacts] = useState(false);
   const [testPipelineResult, setTestPipelineResult] = useState(null);
   const [testPipelineStepStates, setTestPipelineStepStates] = useState({
     createOrder: 'idle',
@@ -307,6 +363,56 @@ export default function AdminPage() {
   }, [activeTab]);
 
   useEffect(() => {
+    if (activeTab !== 'test-pipeline') return;
+
+    const loadTestPipelineStatus = async () => {
+      setIsLoadingTestPipelineStatus(true);
+      try {
+        const statusRes = await axios.get(`${API_BASE_URL}/admin/test-pipeline/runtime-status`, { withCredentials: true });
+        const body = statusRes.data || {};
+        setTestPipelineEnvAvailable(Boolean(body.envAvailable));
+        setTestPipelineRuntimeEnabled(Boolean(body.runtimeEnabled));
+        setTestPipelineEffectiveEnabled(Boolean(body.effectiveEnabled));
+        setTestPipelineRuntimeUpdatedAt(body.updatedAt || null);
+        setTestPipelineRuntimeUpdatedBy(body.updatedBy || null);
+        setTestPipelineRuntimeExpired(Boolean(body.expired));
+        setTestPipelineAutoDisableAfterMinutes(body.autoDisableAfterMinutes || 30);
+        setTestPipelineModeMessage(body.message || 'Test Pipeline status unavailable.');
+      } catch (err) {
+        console.warn('Failed to load test pipeline status:', err.message || err);
+        setTestPipelineEnvAvailable(false);
+        setTestPipelineRuntimeEnabled(false);
+        setTestPipelineEffectiveEnabled(false);
+        setTestPipelineModeMessage('Unable to determine test pipeline status.');
+      } finally {
+        setIsLoadingTestPipelineStatus(false);
+      }
+    };
+
+    const loadTestArtifacts = async () => {
+      setIsLoadingTestArtifacts(true);
+      try {
+        const artifactsRes = await axios.get(`${API_BASE_URL}/admin/test-artifacts`, {
+          params: { includeSuspected: true, limit: 200 },
+          withCredentials: true,
+        });
+        const body = artifactsRes.data || {};
+        setTestArtifacts({
+          confirmed: body.confirmed || { orders: [], printJobs: [], batches: [] },
+          suspected: body.suspected || { orders: [], printJobs: [], batches: [] },
+        });
+      } catch (err) {
+        console.warn('Failed to load test artifacts:', err.message || err);
+      } finally {
+        setIsLoadingTestArtifacts(false);
+      }
+    };
+
+    loadTestPipelineStatus();
+    loadTestArtifacts();
+  }, [activeTab]);
+
+  useEffect(() => {
     if (activeTab !== 'promo-audit' || !canManagePromos) return;
 
     const loadPromoAudit = async () => {
@@ -347,15 +453,55 @@ export default function AdminPage() {
     promoAuditFilters.actor,
   ]);
 
+  const fetchCustomOrders = async (status = 'all') => {
+    try {
+      const statusParam = status && status !== 'all' ? `?status=${encodeURIComponent(status)}` : '';
+      const response = await axios.get(`${API_BASE_URL}/admin/custom-orders${statusParam}`, {
+        withCredentials: true,
+      });
+      return response.data?.data || [];
+    } catch (err) {
+      console.error('Failed to fetch custom orders:', err);
+      return [];
+    }
+  };
+
+  const fetchProductionJobsForOrders = useCallback(async (orderIds = []) => {
+    if (!Array.isArray(orderIds) || orderIds.length === 0) return {};
+    try {
+      const response = await axios.get(`${API_BASE_URL}/admin/print-jobs`, {
+        params: {
+          orderIds: orderIds.join(','),
+        },
+        withCredentials: true,
+      });
+      const jobs = response.data?.data || [];
+      return jobs.reduce((acc, job) => {
+        if (job.orderId) acc[job.orderId] = job;
+        return acc;
+      }, {});
+    } catch (err) {
+      console.error('Failed to fetch production jobs for orders:', err);
+      return {};
+    }
+  }, []);
+
   useEffect(() => {
     if (activeTab !== 'custom-orders' && activeTab !== 'production-queue') return;
     const loadFilteredCustomOrders = async () => {
       const targetStatus = activeTab === 'custom-orders' ? customOrderStatusFilter : 'all';
       const customOrderData = await fetchCustomOrders(targetStatus);
       setCustomOrders(customOrderData);
+      const orderIds = customOrderData.map((order) => order.orderId).filter(Boolean);
+      if (orderIds.length) {
+        const jobsByOrder = await fetchProductionJobsForOrders(orderIds);
+        setProductionJobsByOrder(jobsByOrder);
+      } else {
+        setProductionJobsByOrder({});
+      }
     };
     loadFilteredCustomOrders();
-  }, [activeTab, customOrderStatusFilter]);
+  }, [activeTab, customOrderStatusFilter, fetchProductionJobsForOrders]);
 
   // ---------- HELPERS ----------
   const normalizeName = (name) => name.replace(/\s+/g, '').toLowerCase();
@@ -434,19 +580,6 @@ export default function AdminPage() {
     return ALLOWED_FULFILLMENT_TRANSITIONS[fromStage]?.includes(toStage) || false;
   };
 
-  const fetchCustomOrders = async (status = 'all') => {
-    try {
-      const statusParam = status && status !== 'all' ? `?status=${encodeURIComponent(status)}` : '';
-      const response = await axios.get(`${API_BASE_URL}/admin/custom-orders${statusParam}`, {
-        withCredentials: true,
-      });
-      return response.data?.data || [];
-    } catch (err) {
-      console.error('Failed to fetch custom orders:', err);
-      return [];
-    }
-  };
-
   const fetchPrintJobs = useCallback(async (status = 'all') => {
     try {
       const params = {};
@@ -460,6 +593,20 @@ export default function AdminPage() {
       return response.data?.data || [];
     } catch (err) {
       console.error('Failed to fetch print jobs:', err);
+      return [];
+    }
+  }, []);
+
+  const fetchPrintJobsForOrder = useCallback(async (orderId) => {
+    if (!orderId) return [];
+    try {
+      const response = await axios.get(`${API_BASE_URL}/admin/print-jobs`, {
+        params: { orderId },
+        withCredentials: true,
+      });
+      return response.data?.data || [];
+    } catch (err) {
+      console.error('Failed to fetch print jobs for order:', err);
       return [];
     }
   }, []);
@@ -526,22 +673,25 @@ export default function AdminPage() {
 
   const handleCreateBatchFromPrintJob = async (job) => {
     try {
-      const response = await axios.post(
-        `${API_BASE_URL}/admin/batches`,
-        {
-          printerProfile: job.printerProfile,
-          materialProfile: job.materialProfile,
-          slicerProfile: job.slicerProfile,
-          nozzle: job.nozzle,
-          layerHeight: job.layerHeight,
-          printJobIds: [job.printJobId],
-          status: 'queued_for_batch',
-          notes: `Created from print job ${job.printJobId}`,
-        },
-        { withCredentials: true }
-      );
+      const endpoint = job.isTest
+        ? `${API_BASE_URL}/admin/batches`
+        : `${API_BASE_URL}/admin/production/print-jobs/${encodeURIComponent(job.printJobId)}/create-batch`;
+      const payload = job.isTest
+        ? {
+            printerProfile: job.printerProfile,
+            materialProfile: job.materialProfile,
+            slicerProfile: job.slicerProfile,
+            nozzle: job.nozzle,
+            layerHeight: job.layerHeight,
+            printJobIds: [job.printJobId],
+            status: 'queued_for_batch',
+            notes: `Created from print job ${job.printJobId}`,
+          }
+        : {};
 
-      const createdBatch = response.data;
+      const response = await axios.post(endpoint, payload, { withCredentials: true });
+      const createdBatch = job.isTest ? response.data : response.data.batch;
+
       setBatches((prev) => [createdBatch, ...prev]);
       setPrintJobs((prev) =>
         prev.map((existingJob) =>
@@ -566,12 +716,13 @@ export default function AdminPage() {
 
   const handleAssignPrintJobToBatch = async (job, batchId) => {
     try {
-      const response = await axios.post(
-        `${API_BASE_URL}/admin/batches/${encodeURIComponent(batchId)}/assign`,
-        { printJobId: job.printJobId },
-        { withCredentials: true }
-      );
-      const updatedBatch = response.data;
+      const endpoint = job.isTest
+        ? `${API_BASE_URL}/admin/batches/${encodeURIComponent(batchId)}/assign`
+        : `${API_BASE_URL}/admin/production/print-jobs/${encodeURIComponent(job.printJobId)}/assign-batch`;
+      const payload = job.isTest ? { printJobId: job.printJobId } : { batchId };
+
+      const response = await axios.post(endpoint, payload, { withCredentials: true });
+      const updatedBatch = job.isTest ? response.data : response.data.batch;
       setBatches((prev) => prev.map((batch) => (batch.batchId === updatedBatch.batchId ? updatedBatch : batch)));
       setPrintJobs((prev) =>
         prev.map((existingJob) =>
@@ -592,6 +743,185 @@ export default function AdminPage() {
       errorToast(msg);
       return null;
     }
+  };
+
+  const loadFulfillmentPanel = async (order) => {
+    if (!order?.orderId) {
+      return;
+    }
+
+    setIsLoadingFulfillmentPanel(true);
+    setFulfillmentPanelOrder(order);
+    setFulfillmentPanelJobs([]);
+    setSelectedFulfillmentJobId('');
+    setSelectedFulfillmentBatchId('');
+    try {
+      const jobs = await fetchPrintJobsForOrder(order.orderId) || [];
+      const safeJobs = Array.isArray(jobs) ? jobs : [];
+      setFulfillmentPanelJobs(safeJobs);
+
+      if (safeJobs.length) {
+        const activeJob = safeJobs.find((job) => ['queued_for_generation','generating_stl','stl_ready','queued_for_slicing','queued_for_batch','assigned_to_printer','printing'].includes(job.status));
+        const firstJob = activeJob || safeJobs[0];
+        if (firstJob?.printJobId) {
+          setSelectedFulfillmentJobId(firstJob.printJobId);
+        }
+      }
+
+      if (!Array.isArray(batches) || batches.length === 0) {
+        const loadedBatches = await fetchBatches('all');
+        setBatches(Array.isArray(loadedBatches) ? loadedBatches : []);
+      }
+      setIsFulfillmentPanelOpen(true);
+    } catch (err) {
+      console.error('Failed to load fulfillment panel:', err);
+      errorToast('Failed to load fulfillment details.');
+    } finally {
+      setIsLoadingFulfillmentPanel(false);
+    }
+  };
+
+  const handleOpenFulfillmentPanel = async (order) => {
+    if (!order) return;
+    await loadFulfillmentPanel(order);
+  };
+
+  const refreshFulfillmentPanelJobs = async () => {
+    if (!fulfillmentPanelOrder?.orderId) return null;
+    setIsLoadingFulfillmentPanel(true);
+    try {
+      const jobs = await fetchPrintJobsForOrder(fulfillmentPanelOrder.orderId) || [];
+      const safeJobs = Array.isArray(jobs) ? jobs : [];
+      setFulfillmentPanelJobs(safeJobs);
+
+      const selectedStillExists = safeJobs.some((job) => job.printJobId === selectedFulfillmentJobId);
+      if (!selectedStillExists && safeJobs.length) {
+        const activeJob = safeJobs.find((job) => activeFulfillmentStatuses.includes(job.status));
+        const firstJob = activeJob || safeJobs[0];
+        setSelectedFulfillmentJobId(firstJob?.printJobId || '');
+      }
+
+      if (!Array.isArray(batches) || batches.length === 0) {
+        const loadedBatches = await fetchBatches('all');
+        setBatches(Array.isArray(loadedBatches) ? loadedBatches : []);
+      }
+      return safeJobs;
+    } catch (err) {
+      console.error('Failed to refresh fulfillment jobs:', err);
+      errorToast('Failed to refresh fulfillment jobs.');
+      return null;
+    } finally {
+      setIsLoadingFulfillmentPanel(false);
+    }
+  };
+
+  const handleStartFulfillmentInPanel = async (order) => {
+    if (!order?.orderId) {
+      errorToast('Unable to start fulfillment: missing order information.');
+      return null;
+    }
+    const createdJob = await handleStartFulfillment(order);
+    if (createdJob) {
+      setFulfillmentPanelJobs((prev) => [createdJob, ...prev]);
+      setSelectedFulfillmentJobId(createdJob.printJobId);
+      setProductionJobsByOrder((prev) => ({ ...prev, [order.orderId]: createdJob }));
+    }
+    return createdJob;
+  };
+
+  const handleApplyStlFromPanel = async () => {
+    if (!selectedFulfillmentJob) {
+      errorToast('Select a production job first.');
+      return null;
+    }
+    if (!fulfillmentPanelOrder?.orderId) {
+      errorToast('Missing order information for STL handoff.');
+      return null;
+    }
+    if (!fulfillmentStlFilename.trim() || !fulfillmentStlPath.trim() || !fulfillmentStlVersion.trim()) {
+      errorToast('STL filename, path, and version are all required.');
+      return null;
+    }
+    const updatedJob = await handleUpdateStlHandoff({ ...selectedFulfillmentJob, isTest: false }, {
+      stlFilename: fulfillmentStlFilename.trim(),
+      stlPath: fulfillmentStlPath.trim(),
+      stlVersion: fulfillmentStlVersion.trim(),
+      status: 'stl_ready',
+    });
+    if (updatedJob) {
+      setFulfillmentPanelJobs((prev) => prev.map((existingJob) =>
+        existingJob.printJobId === updatedJob.printJobId ? updatedJob : existingJob
+      ));
+      setProductionJobsByOrder((prev) => ({ ...prev, [fulfillmentPanelOrder.orderId]: updatedJob }));
+    }
+    return updatedJob;
+  };
+
+  const handleCreateBatchFromPanel = async () => {
+    if (!selectedFulfillmentJob) {
+      errorToast('Select a production job first.');
+      return null;
+    }
+    const createdBatch = await handleCreateBatchFromPrintJob({ ...selectedFulfillmentJob, isTest: false });
+    if (createdBatch) {
+      setFulfillmentPanelJobs((prev) => prev.map((existingJob) =>
+        existingJob.printJobId === selectedFulfillmentJob.printJobId ? { ...existingJob, assignedBatchId: createdBatch.batchId } : existingJob
+      ));
+      setSelectedFulfillmentBatchId(createdBatch.batchId);
+      if (fulfillmentPanelOrder?.orderId) {
+        setProductionJobsByOrder((prev) => ({ ...prev, [fulfillmentPanelOrder.orderId]: { ...selectedFulfillmentJob, assignedBatchId: createdBatch.batchId } }));
+      }
+    }
+    return createdBatch;
+  };
+
+  const handleAssignBatchFromPanel = async () => {
+    if (!selectedFulfillmentJob) {
+      errorToast('Select a production job first.');
+      return null;
+    }
+    if (!selectedFulfillmentBatchId) {
+      errorToast('Select a batch to assign.');
+      return null;
+    }
+    if (!fulfillmentPanelOrder?.orderId) {
+      errorToast('Missing order information for batch assignment.');
+      return null;
+    }
+    const updatedBatch = await handleAssignPrintJobToBatch({ ...selectedFulfillmentJob, isTest: false }, selectedFulfillmentBatchId);
+    if (updatedBatch) {
+      setFulfillmentPanelJobs((prev) => prev.map((existingJob) =>
+        existingJob.printJobId === selectedFulfillmentJob.printJobId ? { ...existingJob, assignedBatchId: updatedBatch.batchId } : existingJob
+      ));
+      setProductionJobsByOrder((prev) => ({ ...prev, [fulfillmentPanelOrder.orderId]: { ...selectedFulfillmentJob, assignedBatchId: updatedBatch.batchId } }));
+    }
+    return updatedBatch;
+  };
+
+  const handleForceRerunFromPanel = async () => {
+    if (!fulfillmentPanelOrder?.orderId) return null;
+    if (!window.confirm('Force rerun fulfillment will create a new production print job even if an active job already exists. Proceed?')) {
+      return null;
+    }
+    const createdJob = await handleStartFulfillment(fulfillmentPanelOrder, { forceCreate: true });
+    if (createdJob) {
+      setFulfillmentPanelJobs((prev) => [createdJob, ...prev]);
+      setSelectedFulfillmentJobId(createdJob.printJobId);
+      setSelectedFulfillmentBatchId(createdJob.assignedBatchId || '');
+      setProductionJobsByOrder((prev) => ({ ...prev, [fulfillmentPanelOrder.orderId]: createdJob }));
+    }
+    return createdJob;
+  };
+
+  const handleCloseFulfillmentPanel = () => {
+    setIsFulfillmentPanelOpen(false);
+    setFulfillmentPanelOrder(null);
+    setFulfillmentPanelJobs([]);
+    setSelectedFulfillmentJobId('');
+    setSelectedFulfillmentBatchId('');
+    setFulfillmentStlFilename('');
+    setFulfillmentStlPath('');
+    setFulfillmentStlVersion('');
   };
 
 
@@ -1206,36 +1536,161 @@ export default function AdminPage() {
     }
   };
 
-  const handleCreatePrintJob = async (order) => {
+  const handleStartFulfillment = async (order, options = {}) => {
     try {
       const response = await axios.post(
-        `${API_BASE_URL}/admin/print-jobs`,
+        `${API_BASE_URL}/admin/production/print-jobs`,
         {
           orderId: order.orderId,
           customOrderId: order._id,
           productType: order.productType,
           notes: order.notes || '',
+          forceCreate: options.forceCreate === true,
         },
         { withCredentials: true }
       );
 
       const createdJob = response.data;
-      successToast(`Print job ${createdJob.printJobId} created for ${order.orderId}`);
+      setProductionJobsByOrder((prev) => ({
+        ...prev,
+        [order.orderId]: createdJob,
+      }));
+      successToast(`Production print job ${createdJob.printJobId} created for ${order.orderId}`);
       if (activeTab === 'print-jobs') {
         setPrintJobs((prev) => [createdJob, ...prev]);
       }
-
       return createdJob;
     } catch (err) {
-      console.error('Create print job error:', err.response || err);
+      console.error('Start fulfillment error:', err.response || err);
+      const existingJob = err.response?.data?.existingJob;
+      if (existingJob && !options.forceCreate) {
+        setProductionJobsByOrder((prev) => ({
+          ...prev,
+          [order.orderId]: existingJob,
+        }));
+        successToast(`Active production print job already exists: ${existingJob.printJobId}`);
+        return existingJob;
+      }
       const msg =
         err.response?.data?.message ||
         err.response?.data?.error ||
         err.message ||
-        'Failed to create print job';
+        'Failed to start production fulfillment';
       errorToast(msg);
       return null;
     }
+  };
+
+  const handleForceRerunFulfillment = async (order) => {
+    if (!window.confirm('Force rerun fulfillment will create a new production print job even if an active job already exists. Proceed?')) {
+      return null;
+    }
+    return handleStartFulfillment(order, { forceCreate: true });
+  };
+
+  const handleApplyStlFromOrder = async (order) => {
+    const job = productionJobsByOrder[order.orderId];
+    if (!job) {
+      errorToast('No linked production print job found for this order.');
+      return null;
+    }
+
+    const defaultFilename = job.stlFilename || `${order.orderId.replace(/[^a-zA-Z0-9_-]/g, '-')}.stl`;
+    const stlFilename = window.prompt('Enter STL filename for handoff:', defaultFilename);
+    if (!stlFilename) return null;
+    const stlPath = window.prompt('Enter STL path or URL:', job.stlPath || `/uploads/custom-orders/${order.orderId}/${stlFilename}`);
+    const stlVersion = window.prompt('Enter STL version:', job.stlVersion || 'v1');
+
+    const updatedJob = await handleUpdateStlHandoff({ ...job, isTest: false }, {
+      stlFilename,
+      stlPath,
+      stlVersion,
+      status: 'stl_ready',
+    });
+    if (updatedJob) {
+      setProductionJobsByOrder((prev) => ({
+        ...prev,
+        [order.orderId]: updatedJob,
+      }));
+    }
+    return updatedJob;
+  };
+
+  const handleCreateBatchFromOrder = async (order) => {
+    const job = productionJobsByOrder[order.orderId];
+    if (!job) {
+      errorToast('No linked production print job found for this order.');
+      return null;
+    }
+    const createdBatch = await handleCreateBatchFromPrintJob({ ...job, isTest: false });
+    if (createdBatch) {
+      setProductionJobsByOrder((prev) => ({
+        ...prev,
+        [order.orderId]: {
+          ...job,
+          assignedBatchId: createdBatch.batchId,
+        },
+      }));
+    }
+    return createdBatch;
+  };
+
+  const handleAssignBatchFromOrder = async (order) => {
+    const job = productionJobsByOrder[order.orderId];
+    if (!job) {
+      errorToast('No linked production print job found for this order.');
+      return null;
+    }
+    const batchId = window.prompt('Enter batch ID to assign this print job to:');
+    if (!batchId) return null;
+    const updatedBatch = await handleAssignPrintJobToBatch({ ...job, isTest: false }, batchId);
+    if (updatedBatch) {
+      setProductionJobsByOrder((prev) => ({
+        ...prev,
+        [order.orderId]: {
+          ...job,
+          assignedBatchId: updatedBatch.batchId,
+        },
+      }));
+    }
+    return updatedBatch;
+  };
+
+  const getProductionEligibilityBadge = (order) => {
+    if (order.isTest) {
+      return { label: 'Test order', variant: 'warning' };
+    }
+
+    const status = order.fulfillmentStatus || order.status;
+    const paid = ['deposit_paid', 'paid_in_full'].includes(order.paymentStatus);
+    const hasImages = Array.isArray(order.images) && order.images.length > 0;
+    const terminal = ['cancelled', 'completed'].includes(status);
+
+    if (terminal) {
+      return { label: 'Fulfillment closed', variant: 'disabled' };
+    }
+
+    if (!paid) {
+      return { label: 'Waiting payment', variant: 'warning' };
+    }
+
+    if (!hasImages) {
+      return { label: 'Missing assets', variant: 'warning' };
+    }
+
+    return { label: 'Production eligible', variant: 'success' };
+  };
+
+  const handleOpenPrintJob = (job) => {
+    if (!job) return;
+    setActiveTab('print-jobs');
+    setPrintJobStatusFilter('all');
+    setPrintJobs((prev) => (prev.some((existing) => existing.printJobId === job.printJobId) ? prev : [job, ...prev]));
+    successToast(`Opened print job ${job.printJobId}`);
+  };
+
+  const handleCreatePrintJob = async (order) => {
+    return handleStartFulfillment(order);
   };
 
   const handleExportSlicerPacket = (printJobId) => {
@@ -1269,11 +1724,10 @@ export default function AdminPage() {
     };
 
     try {
-      const response = await axios.patch(
-        `${API_BASE_URL}/admin/print-jobs/${encodeURIComponent(printJob.printJobId)}/stl-handoff`,
-        payload,
-        { withCredentials: true }
-      );
+      const endpoint = printJob.isTest
+        ? `${API_BASE_URL}/admin/print-jobs/${encodeURIComponent(printJob.printJobId)}/stl-handoff`
+        : `${API_BASE_URL}/admin/production/print-jobs/${encodeURIComponent(printJob.printJobId)}/apply-stl`;
+      const response = await axios.post(endpoint, payload, { withCredentials: true });
       const updatedJob = response.data;
       setPrintJobs((prev) => prev.map((jobItem) => (jobItem.printJobId === printJob.printJobId ? updatedJob : jobItem)));
       setLithophaneJobs((prev) => prev.map((jobItem) => (jobItem.printJobId === printJob.printJobId ? updatedJob : jobItem)));
@@ -1698,6 +2152,35 @@ export default function AdminPage() {
     return err.message || 'Unknown error';
   };
 
+  const handleToggleRuntimeStatus = async (enabled) => {
+    if (!window.confirm(`Are you sure you want to ${enabled ? 'enable' : 'disable'} the runtime test pipeline?`)) {
+      return;
+    }
+
+    setIsUpdatingRuntimeStatus(true);
+    try {
+      const response = await axios.post(
+        `${API_BASE_URL}/admin/test-pipeline/runtime-status`,
+        { enabled },
+        { withCredentials: true }
+      );
+      const body = response.data || {};
+      setTestPipelineEnvAvailable(Boolean(body.envAvailable));
+      setTestPipelineRuntimeEnabled(Boolean(body.runtimeEnabled));
+      setTestPipelineEffectiveEnabled(Boolean(body.effectiveEnabled));
+      setTestPipelineRuntimeUpdatedAt(body.updatedAt || null);
+      setTestPipelineRuntimeUpdatedBy(body.updatedBy || null);
+      setTestPipelineRuntimeExpired(Boolean(body.expired));
+      setTestPipelineAutoDisableAfterMinutes(body.autoDisableAfterMinutes || 30);
+      setTestPipelineModeMessage(`Runtime mode ${enabled ? 'enabled' : 'disabled'}.`);
+    } catch (err) {
+      console.error('Failed to update runtime status:', err);
+      errorToast(extractApiError(err));
+    } finally {
+      setIsUpdatingRuntimeStatus(false);
+    }
+  };
+
   const mergePipelineIds = (result) => {
     if (!result || typeof result !== 'object') return;
 
@@ -1906,6 +2389,31 @@ export default function AdminPage() {
     }
   };
 
+  const handleForceCleanupAllTestData = async () => {
+    try {
+      if (!window.confirm('Force cleanup will delete ALL records marked isTest=true and remove associated test order assets. Proceed?')) {
+        return;
+      }
+      setTestPipelineLoading(true);
+      setTestPipelineStatus('Force cleaning up all test data');
+      appendLog('Force cleanup initiated');
+      const response = await axios.delete(`${API_BASE_URL}/admin/test-pipeline/force-cleanup`, {
+        withCredentials: true,
+      });
+      const result = response.data || {};
+      appendLog('Force cleanup completed');
+      setTestPipelineStatus('Force cleanup completed');
+      return result;
+    } catch (err) {
+      const message = extractApiError(err);
+      appendLog(`Error: Force cleanup failed — ${message}`);
+      setTestPipelineStatus(`Force cleanup failed: ${message}`);
+      throw err;
+    } finally {
+      setTestPipelineLoading(false);
+    }
+  };
+
   const exportSlicerPacket = () => {
     if (!testPipelinePrintJobId) {
       appendLog('ERROR: Print Job ID is required to export a packet');
@@ -1942,6 +2450,11 @@ export default function AdminPage() {
 
   return (
     <div className="admin-container">
+      {testPipelineEffectiveEnabled && (
+        <div className="admin-global-warning">
+          ⚠ TEST PIPELINE ACTIVE — runtime test pipeline mode is enabled. Actions are gated and cleanup is available.
+        </div>
+      )}
       <div className="tab-bar">
         <button
           className={activeTab === 'products' ? 'tab active' : 'tab'}
@@ -2776,6 +3289,25 @@ export default function AdminPage() {
                           <span className="label">Payment:</span> {order.paymentStatus || 'pending'}
                         </span>
                       </div>
+                      <div className="order-fulfillment-badges">
+                        {(() => {
+                          const badge = getProductionEligibilityBadge(order);
+                          const job = productionJobsByOrder[order.orderId];
+                          return (
+                            <>
+                              <span className={`status-badge ${badge.variant}`}>{badge.label}</span>
+                              {job && (
+                                <>
+                                  <span className="status-badge info">Job {job.printJobId}</span>
+                                  <span className={`status-badge ${job.status === 'stl_ready' || job.status === 'queued_for_batch' || job.status === 'assigned_to_printer' || job.status === 'printing' ? 'success' : 'warning'}`}>Job {job.status || 'unknown'}</span>
+                                  <span className={`status-badge ${job.stlPath || job.stlFilename ? 'success' : 'warning'}`}>{job.stlPath || job.stlFilename ? 'STL Attached' : 'STL Missing'}</span>
+                                  <span className={`status-badge ${job.assignedBatchId ? 'success' : 'warning'}`}>{job.assignedBatchId ? `Batch ${job.assignedBatchId}` : 'Batch not linked'}</span>
+                                </>
+                              )}
+                            </>
+                          );
+                        })()}
+                      </div>
                     </div>
 
                     <div className="admin-order-status-wrap">
@@ -2811,10 +3343,21 @@ export default function AdminPage() {
                       <button
                         type="button"
                         className="secondary-button small-button"
-                        onClick={() => handleCreatePrintJob(order)}
+                        onClick={() => handleOpenFulfillmentPanel(order)}
+                        disabled={order.isTest}
+                        title={order.isTest ? 'Real fulfillment not available for test orders' : 'Open order fulfillment panel'}
                       >
-                        Create Print Job
+                        Manage Fulfillment
                       </button>
+                      {productionJobsByOrder[order.orderId] ? (
+                        <button
+                          type="button"
+                          className="secondary-button small-button"
+                          onClick={() => handleOpenPrintJob(productionJobsByOrder[order.orderId])}
+                        >
+                          Open Print Job
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         className="secondary-button small-button"
@@ -2822,6 +3365,22 @@ export default function AdminPage() {
                       >
                         Generate Work Order
                       </button>
+                      {(productionJobsByOrder?.[order.orderId]) ? (
+                        <div className="production-job-summary">
+                          <span>
+                            Job: {productionJobsByOrder[order.orderId]?.printJobId || 'Unknown'}
+                          </span>
+                          <span>
+                            Status: {productionJobsByOrder[order.orderId]?.status || 'Unknown'}
+                          </span>
+                          <span>
+                            Batch: {productionJobsByOrder[order.orderId]?.assignedBatchId || 'None'}
+                          </span>
+                          <span>
+                            STL: {(productionJobsByOrder[order.orderId]?.stlPath || productionJobsByOrder[order.orderId]?.stlFilename) ? 'Attached' : 'Missing'}
+                          </span>
+                        </div>
+                      ) : null}
                     </div>
                   </div>
 
@@ -2989,6 +3548,172 @@ export default function AdminPage() {
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {isFulfillmentPanelOpen && fulfillmentPanelOrder && (
+        <div className="fulfillment-modal-backdrop" onClick={handleCloseFulfillmentPanel}>
+          <div className="fulfillment-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="fulfillment-modal-header">
+              <div>
+                <h3>Fulfillment Detail</h3>
+                <p>Order {fulfillmentPanelOrder.orderId}</p>
+              </div>
+              <div className="fulfillment-modal-header-actions">
+                <button
+                  type="button"
+                  className="secondary-button small-button"
+                  onClick={refreshFulfillmentPanelJobs}
+                  disabled={isLoadingFulfillmentPanel}
+                >
+                  Refresh jobs
+                </button>
+                <button type="button" className="secondary-button small-button" onClick={handleCloseFulfillmentPanel}>Close</button>
+              </div>
+            </div>
+
+            {isLoadingFulfillmentPanel ? (
+              <div className="fulfillment-modal-loading">Loading fulfillment details…</div>
+            ) : (
+              <>
+                <div className="fulfillment-modal-section">
+                  <h4>Order Summary</h4>
+                  <div className="fulfillment-summary-grid">
+                    <div><strong>Payment</strong><br />{fulfillmentPanelOrder?.paymentStatus || 'pending'}</div>
+                    <div><strong>Fulfillment</strong><br />{fulfillmentPanelOrder?.fulfillmentStatus || fulfillmentPanelOrder?.status || 'submitted'}</div>
+                    <div><strong>Images</strong><br />{Array.isArray(fulfillmentPanelOrder?.images) ? fulfillmentPanelOrder.images.length : fulfillmentPanelOrder?.imagesCount || 0}</div>
+                    <div><strong>Total</strong><br />${Number(fulfillmentPanelOrder?.totalPrice || fulfillmentPanelOrder?.discountedTotal || 0).toFixed(2)}</div>
+                    <div><strong>Deposit</strong><br />${Number(fulfillmentPanelOrder?.depositAmount || 0).toFixed(2)}</div>
+                    <div><strong>Balance</strong><br />${Number(fulfillmentPanelOrder?.remainingBalance || 0).toFixed(2)}</div>
+                  </div>
+                </div>
+
+                <div className="fulfillment-modal-section">
+                  <h4>Production Jobs</h4>
+                  <div className="fulfillment-job-list">
+                    {(fulfillmentPanelJobs || []).length === 0 ? (
+                      <div className="empty-state">No production print jobs exist for this order yet.</div>
+                    ) : (
+                      (fulfillmentPanelJobs || []).filter(Boolean).map((job) => {
+                        const isActive = isActiveFulfillmentJob(job);
+                        return (
+                          <button
+                            type="button"
+                            key={job.printJobId || 'unknown-job'}
+                            className={`fulfillment-job-item ${selectedFulfillmentJobId === job.printJobId ? 'selected' : ''}`}
+                            onClick={() => job?.printJobId && setSelectedFulfillmentJobId(job.printJobId)}
+                          >
+                            <div className="fulfillment-job-item-top">
+                              <span>{job?.printJobId || 'Unknown'}</span>
+                              <span className={`status-badge ${isActive ? 'success' : 'info'}`}>
+                                {isActive ? 'Active run' : 'Prior run'}
+                              </span>
+                            </div>
+                            <div>{job?.status || 'Unknown'}</div>
+                            <div>{job?.assignedBatchId ? `Batch ${job.assignedBatchId}` : 'No batch'}</div>
+                            <div>{job?.createdBy || 'created by admin'}</div>
+                            <div>{job?.createdAt ? new Date(job.createdAt).toLocaleString() : 'No date'}</div>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+
+                <div className="fulfillment-modal-section">
+                  <h4>Selected Job Details</h4>
+                  {(() => {
+                    if (!selectedFulfillmentJobId) {
+                      return <div className="empty-state">Select a production job to manage fulfillment.</div>;
+                    }
+                    if (!selectedFulfillmentJob) {
+                      return <div className="empty-state">Selected job not found.</div>;
+                    }
+                    return (
+                      <>
+                        <div className="fulfillment-summary-grid">
+                          <div><strong>Status</strong><br />{selectedFulfillmentJob.status || 'Unknown'}</div>
+                          <div><strong>STL</strong><br />{(selectedFulfillmentJob.stlPath || selectedFulfillmentJob.stlFilename) ? 'Attached' : 'Missing'}</div>
+                          <div><strong>Batch</strong><br />{selectedFulfillmentJob.assignedBatchId || 'None'}</div>
+                          <div><strong>Created</strong><br />{selectedFulfillmentJob.createdAt ? new Date(selectedFulfillmentJob.createdAt).toLocaleString() : 'Unknown'}</div>
+                          <div><strong>Created By</strong><br />{selectedFulfillmentJob.createdBy || 'admin'}</div>
+                        </div>
+                        <div className="fulfillment-stl-input-grid">
+                          <label>
+                            STL Filename
+                            <input
+                              type="text"
+                              value={fulfillmentStlFilename}
+                              onChange={(e) => setFulfillmentStlFilename(e.target.value)}
+                              placeholder="Enter STL filename"
+                              className="admin-order-status-select"
+                            />
+                          </label>
+                          <label>
+                            STL Path
+                            <input
+                              type="text"
+                              value={fulfillmentStlPath}
+                              onChange={(e) => setFulfillmentStlPath(e.target.value)}
+                              placeholder="Enter STL path"
+                              className="admin-order-status-select"
+                            />
+                          </label>
+                          <label>
+                            STL Version
+                            <input
+                              type="text"
+                              value={fulfillmentStlVersion}
+                              onChange={(e) => setFulfillmentStlVersion(e.target.value)}
+                              placeholder="Enter STL version"
+                              className="admin-order-status-select"
+                            />
+                          </label>
+                        </div>
+                        <div className="fulfillment-modal-actions">
+                          <button type="button" className="secondary-button small-button" onClick={() => handleOpenPrintJob(selectedFulfillmentJob)}>
+                            Open Print Job
+                          </button>
+                          <button type="button" className="secondary-button small-button" onClick={handleApplyStlFromPanel}>
+                            Apply STL
+                          </button>
+                          <button type="button" className="secondary-button small-button" onClick={handleCreateBatchFromPanel}>
+                            Create Batch
+                          </button>
+                          <select
+                            className="admin-order-status-select"
+                            value={selectedFulfillmentBatchId}
+                            onChange={(e) => setSelectedFulfillmentBatchId(e.target.value)}
+                          >
+                            <option value="">Select existing batch</option>
+                            {(batches || []).map((batch) => (
+                              <option key={batch.batchId} value={batch.batchId}>
+                                {batch.batchId} • {batch.status || 'pending'}
+                              </option>
+                            ))}
+                          </select>
+                          <button type="button" className="secondary-button small-button" onClick={handleAssignBatchFromPanel} disabled={!selectedFulfillmentBatchId}>
+                            Assign Batch
+                          </button>
+                          <button type="button" className="secondary-button small-button danger-button" onClick={handleForceRerunFromPanel}>
+                            Force Rerun Fulfillment
+                          </button>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+
+                {(!(fulfillmentPanelJobs || []).length) && !fulfillmentPanelOrder?.isTest && (
+                  <div className="fulfillment-modal-section">
+                    <button type="button" className="secondary-button small-button" onClick={() => handleStartFulfillmentInPanel(fulfillmentPanelOrder)}>
+                      Start Fulfillment
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
         </div>
       )}
 
@@ -3430,6 +4155,42 @@ export default function AdminPage() {
       {activeTab === 'test-pipeline' && (
         <div className="test-pipeline-panel">
           <h2 className="section-header">TEST PIPELINE</h2>
+          <div className={`test-pipeline-mode-banner ${testPipelineEffectiveEnabled ? 'enabled' : 'disabled'}`}>
+            <div>
+              <strong>{testPipelineEffectiveEnabled ? 'Test Pipeline Effectively Enabled' : 'Test Pipeline Effectively Disabled'}</strong>
+              <div className="test-pipeline-mode-summary">
+                <div>Deployment support: {testPipelineEnvAvailable ? 'Available' : 'Unavailable'}</div>
+                <div>Runtime toggle: {testPipelineRuntimeEnabled ? 'Enabled' : 'Disabled'}</div>
+                <div>Effective state: {testPipelineEffectiveEnabled ? 'Enabled' : 'Disabled'}</div>
+                {testPipelineRuntimeExpired && (
+                  <div className="test-pipeline-expired-warning">Runtime mode expired after {testPipelineAutoDisableAfterMinutes} minutes</div>
+                )}
+                {testPipelineRuntimeUpdatedAt && (
+                  <div>Last updated: {new Date(testPipelineRuntimeUpdatedAt).toLocaleString()}</div>
+                )}
+                {testPipelineRuntimeUpdatedBy && (
+                  <div>Updated by: {testPipelineRuntimeUpdatedBy}</div>
+                )}
+              </div>
+            </div>
+            <div className="test-pipeline-mode-actions">
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => handleToggleRuntimeStatus(!testPipelineRuntimeEnabled)}
+                disabled={!testPipelineEnvAvailable || isLoadingTestPipelineStatus || isUpdatingRuntimeStatus}
+              >
+                {testPipelineRuntimeEnabled ? 'Disable Runtime Pipeline' : 'Enable Runtime Pipeline'}
+              </button>
+            </div>
+            <span>
+              {isLoadingTestPipelineStatus
+                ? 'Loading test pipeline status…'
+                : testPipelineModeMessage || (testPipelineEnvAvailable
+                  ? `Runtime toggle is ${testPipelineRuntimeEnabled ? 'enabled' : 'disabled'}.`
+                  : 'Deployment-level TEST_PIPELINE_MODE is disabled.')}
+            </span>
+          </div>
           <div className="admin-order-filter-controls">
             <label>
               Test Run ID:
@@ -3470,14 +4231,14 @@ export default function AdminPage() {
           </div>
 
           <div className="test-pipeline-actions">
-            <button type="button" className="primary-button" onClick={handleCreateTestOrder} disabled={testPipelineLoading}>
+            <button type="button" className="primary-button" onClick={handleCreateTestOrder} disabled={testPipelineLoading || !testPipelineEnvAvailable || !testPipelineRuntimeEnabled}>
               Create Test Order
             </button>
             <button
               type="button"
               className="primary-button"
               onClick={handleSimulateTestPayment}
-              disabled={testPipelineLoading || !testPipelineOrderId}
+              disabled={testPipelineLoading || !testPipelineEnvAvailable || !testPipelineRuntimeEnabled || !testPipelineOrderId}
             >
               Simulate Payment
             </button>
@@ -3485,7 +4246,7 @@ export default function AdminPage() {
               type="button"
               className="primary-button"
               onClick={handleCreateTestPrintJob}
-              disabled={testPipelineLoading || !testPipelineOrderId}
+              disabled={testPipelineLoading || !testPipelineEnvAvailable || !testPipelineRuntimeEnabled || !testPipelineOrderId}
             >
               Create Print Job
             </button>
@@ -3493,7 +4254,7 @@ export default function AdminPage() {
               type="button"
               className="primary-button"
               onClick={handleApplyTestStl}
-              disabled={testPipelineLoading || !testPipelinePrintJobId}
+              disabled={testPipelineLoading || !testPipelineEnvAvailable || !testPipelineRuntimeEnabled || !testPipelinePrintJobId}
             >
               Apply STL Handoff
             </button>
@@ -3501,7 +4262,7 @@ export default function AdminPage() {
               type="button"
               className="primary-button"
               onClick={handleCreateTestBatch}
-              disabled={testPipelineLoading || !testPipelinePrintJobId}
+              disabled={testPipelineLoading || !testPipelineEnvAvailable || !testPipelineRuntimeEnabled || !testPipelinePrintJobId}
             >
               Create Batch
             </button>
@@ -3509,24 +4270,27 @@ export default function AdminPage() {
               type="button"
               className="primary-button"
               onClick={handleAssignTestJob}
-              disabled={testPipelineLoading || !testPipelinePrintJobId || !testPipelineBatchId}
+              disabled={testPipelineLoading || !testPipelineEnvAvailable || !testPipelineRuntimeEnabled || !testPipelinePrintJobId || !testPipelineBatchId}
             >
               Assign Job
             </button>
-            <button type="button" className="primary-button" onClick={handleRunFullTestPipeline} disabled={testPipelineLoading}>
+            <button type="button" className="primary-button" onClick={handleRunFullTestPipeline} disabled={testPipelineLoading || !testPipelineEnvAvailable || !testPipelineRuntimeEnabled}>
               Run Full Pipeline
             </button>
           </div>
 
           <div className="test-pipeline-actions" style={{ marginTop: '12px' }}>
-            <button type="button" className="secondary-button" onClick={exportSlicerPacket} disabled={!testPipelinePrintJobId}>
+            <button type="button" className="secondary-button" onClick={exportSlicerPacket} disabled={!testPipelineEnvAvailable || !testPipelineRuntimeEnabled || !testPipelinePrintJobId}>
               Export Slicer Packet
             </button>
-            <button type="button" className="secondary-button" onClick={exportLithophanePacket} disabled={!testPipelinePrintJobId}>
+            <button type="button" className="secondary-button" onClick={exportLithophanePacket} disabled={!testPipelineEnvAvailable || !testPipelineRuntimeEnabled || !testPipelinePrintJobId}>
               Export Lithophane Packet
             </button>
             <button type="button" className="secondary-button danger-button" onClick={handleCleanupTestData} disabled={testPipelineLoading || !testPipelineTestRunId}>
               Cleanup Test Data
+            </button>
+            <button type="button" className="secondary-button danger-button" onClick={handleForceCleanupAllTestData} disabled={testPipelineLoading}>
+              Force Cleanup All Test Data
             </button>
           </div>
 
@@ -3535,6 +4299,124 @@ export default function AdminPage() {
             <div><strong>Order ID:</strong> {testPipelineOrderId || 'None'}</div>
             <div><strong>Print Job ID:</strong> {testPipelinePrintJobId || 'None'}</div>
             <div><strong>Batch ID:</strong> {testPipelineBatchId || 'None'}</div>
+          </div>
+
+          <div className="test-artifact-browser">
+            <div className="test-artifact-header">
+              <h3>Test Artifact Browser</h3>
+              <div className="test-artifact-header-actions">
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={async () => {
+                    setIsLoadingTestArtifacts(true);
+                    try {
+                      const artifactsRes = await axios.get(`${API_BASE_URL}/admin/test-artifacts`, {
+                        params: { includeSuspected: true, limit: 200 },
+                        withCredentials: true,
+                      });
+                      const body = artifactsRes.data || {};
+                      setTestArtifacts({
+                        confirmed: body.confirmed || { orders: [], printJobs: [], batches: [] },
+                        suspected: body.suspected || { orders: [], printJobs: [], batches: [] },
+                      });
+                    } catch (err) {
+                      console.warn('Failed to refresh test artifacts:', err.message || err);
+                    } finally {
+                      setIsLoadingTestArtifacts(false);
+                    }
+                  }}
+                  disabled={isLoadingTestArtifacts}
+                >
+                  Refresh Artifacts
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button danger-button"
+                  onClick={handleCleanupTestData}
+                  disabled={testPipelineLoading || !testPipelineTestRunId || (testArtifacts.confirmed.orders.length + testArtifacts.confirmed.printJobs.length + testArtifacts.confirmed.batches.length === 0)}
+                  title={
+                    !testPipelineTestRunId
+                      ? 'Enter a Test Run ID before deleting confirmed artifacts'
+                      : 'Delete confirmed test artifacts for this Test Run ID'
+                  }
+                >
+                  Delete Confirmed Artifacts
+                </button>
+              </div>
+            </div>
+            <div className="test-artifact-summary">
+              <div><strong>Confirmed test orders:</strong> {testArtifacts.confirmed.orders.length}</div>
+              <div><strong>Confirmed test print jobs:</strong> {testArtifacts.confirmed.printJobs.length}</div>
+              <div><strong>Confirmed test batches:</strong> {testArtifacts.confirmed.batches.length}</div>
+              <div><strong>Suspected legacy orders:</strong> {testArtifacts.suspected.orders.length}</div>
+              <div><strong>Suspected legacy print jobs:</strong> {testArtifacts.suspected.printJobs.length}</div>
+              <div><strong>Suspected legacy batches:</strong> {testArtifacts.suspected.batches.length}</div>
+            </div>
+            {isLoadingTestArtifacts ? (
+              <div className="empty-state">Loading test artifacts…</div>
+            ) : (
+              <>
+                <div className="test-artifact-section">
+                  <h4>Confirmed Test Records</h4>
+                  <div className="artifact-list-grid">
+                    <div className="artifact-list-card">
+                      <div className="artifact-list-title">Orders</div>
+                      <ul>
+                        {testArtifacts.confirmed.orders.slice(0, 20).map((order) => (
+                          <li key={order.orderId}>{order.orderId} {order.testRunId ? `(${order.testRunId})` : ''}</li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div className="artifact-list-card">
+                      <div className="artifact-list-title">Print Jobs</div>
+                      <ul>
+                        {testArtifacts.confirmed.printJobs.slice(0, 20).map((job) => (
+                          <li key={job.printJobId}>{job.printJobId} {job.testRunId ? `(${job.testRunId})` : ''}</li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div className="artifact-list-card">
+                      <div className="artifact-list-title">Batches</div>
+                      <ul>
+                        {testArtifacts.confirmed.batches.slice(0, 20).map((batch) => (
+                          <li key={batch.batchId}>{batch.batchId} {batch.testRunId ? `(${batch.testRunId})` : ''}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+                <div className="test-artifact-section">
+                  <h4>Suspected Legacy Test Records</h4>
+                  <div className="artifact-list-grid">
+                    <div className="artifact-list-card">
+                      <div className="artifact-list-title">Orders</div>
+                      <ul>
+                        {testArtifacts.suspected.orders.slice(0, 20).map((order) => (
+                          <li key={order.orderId}>{order.orderId} {order.customer?.email ? `(${order.customer.email})` : ''}</li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div className="artifact-list-card">
+                      <div className="artifact-list-title">Print Jobs</div>
+                      <ul>
+                        {testArtifacts.suspected.printJobs.slice(0, 20).map((job) => (
+                          <li key={job.printJobId}>{job.printJobId} {job.generationMethod ? `(${job.generationMethod})` : ''}</li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div className="artifact-list-card">
+                      <div className="artifact-list-title">Batches</div>
+                      <ul>
+                        {testArtifacts.suspected.batches.slice(0, 20).map((batch) => (
+                          <li key={batch.batchId}>{batch.batchId}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
 
           <div className="test-pipeline-steps-grid">

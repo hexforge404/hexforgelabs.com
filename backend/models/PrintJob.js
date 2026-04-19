@@ -155,6 +155,12 @@ const printJobSchema = new mongoose.Schema({
   testRunId: {
     type: String,
     trim: true,
+    default: '',
+    index: true
+  },
+  createdBy: {
+    type: String,
+    trim: true,
     default: ''
   },
   createdAt: {

@@ -8,12 +8,15 @@ const { v4: uuidv4 } = require('uuid');
 const CustomOrder = require('../models/CustomOrder');
 const PrintJob = require('../models/PrintJob');
 const Batch = require('../models/Batch');
+const RuntimeSetting = require('../models/RuntimeSetting');
 const {
   normalizeCustomOrder,
 } = require('../utils/customOrderUtils');
 
 const TEST_PIPELINE_MODE = process.env.TEST_PIPELINE_MODE === 'true' || process.env.TEST_PIPELINE_MODE === '1';
 const TEST_PIPELINE_DISABLE_EMAILS = process.env.TEST_PIPELINE_DISABLE_EMAILS === 'true' || process.env.TEST_PIPELINE_DISABLE_EMAILS === '1';
+const TEST_PIPELINE_RUNTIME_KEY = 'test_pipeline_runtime_enabled';
+const TEST_PIPELINE_AUTO_DISABLE_MINUTES = Number(process.env.TEST_PIPELINE_AUTO_DISABLE_MINUTES || 30);
 const uploadsRoot = process.env.IMAGES_DIR || path.join(__dirname, '..', 'uploads');
 const customOrdersRoot = path.join(uploadsRoot, 'custom-orders');
 const seededAssetsDir = path.join(__dirname, '..', 'test-assets', 'custom-orders');
@@ -53,6 +56,161 @@ function getSeededImages() {
     .map((filename) => ({ filename, sourcePath: path.join(seededAssetsDir, filename) }));
 }
 
+router.get('/status', requireAdmin, (req, res) => {
+  return res.json({
+    enabled: TEST_PIPELINE_MODE,
+    disableEmails: TEST_PIPELINE_DISABLE_EMAILS,
+    requiredEnv: 'TEST_PIPELINE_MODE=true',
+    message: TEST_PIPELINE_MODE
+      ? 'Test Pipeline mode is enabled for this backend environment.'
+      : 'Test Pipeline is disabled. Set TEST_PIPELINE_MODE=true to enable it for internal testing.',
+  });
+});
+
+router.get('/runtime-status', requireAdmin, async (req, res) => {
+  try {
+    const runtimeState = await getRuntimePipelineSetting();
+    const setting = runtimeState.setting;
+    return res.json({
+      envAvailable: TEST_PIPELINE_MODE,
+      runtimeEnabled: runtimeState.runtimeEnabled,
+      effectiveEnabled: TEST_PIPELINE_MODE && runtimeState.runtimeEnabled,
+      expired: runtimeState.expired,
+      updatedBy: setting?.updatedBy || null,
+      updatedAt: setting?.updatedAt || null,
+      enabledAt: setting?.enabledAt || null,
+      autoDisableAfterMinutes: TEST_PIPELINE_AUTO_DISABLE_MINUTES,
+      message: TEST_PIPELINE_MODE
+        ? 'Runtime toggle endpoint is available.'
+        : 'Deployment-level TEST_PIPELINE_MODE is disabled.',
+    });
+  } catch (err) {
+    console.error('❌ Failed to fetch runtime status:', err);
+    return res.status(500).json({
+      error: 'Failed to fetch runtime status',
+      details: err.message,
+    });
+  }
+});
+
+router.post('/runtime-status', requireAdmin, async (req, res) => {
+  try {
+    const { enabled } = req.body;
+    if (typeof enabled !== 'boolean') {
+      return res.status(400).json({
+        error: 'enabled must be a boolean',
+      });
+    }
+
+    const oldState = await getRuntimePipelineSetting();
+    const oldValue = oldState.setting?.value === 'true';
+    const setting = await setRuntimePipelineEnabled(enabled, req.session.admin?.username || 'admin');
+    console.info(`✅ Test Pipeline runtime state changed by ${req.session.admin?.username || 'admin'}: ${oldValue} -> ${enabled}`);
+
+    return res.json({
+      envAvailable: TEST_PIPELINE_MODE,
+      runtimeEnabled: enabled,
+      effectiveEnabled: TEST_PIPELINE_MODE && enabled,
+      expired: false,
+      oldValue,
+      updatedBy: setting.updatedBy,
+      updatedAt: setting.updatedAt,
+      enabledAt: setting.enabledAt || null,
+      autoDisableAfterMinutes: TEST_PIPELINE_AUTO_DISABLE_MINUTES,
+    });
+  } catch (err) {
+    console.error('❌ Failed to update runtime status:', err);
+    return res.status(500).json({
+      error: 'Failed to update runtime status',
+      details: err.message,
+    });
+  }
+});
+
+router.delete('/cleanup', requireAdmin, async (req, res) => {
+  try {
+    const { testRunId } = req.body;
+    if (!testRunId) {
+      return res.status(400).json({
+        success: false,
+        step: 'cleanup',
+        error: 'testRunId is required',
+      });
+    }
+
+    const orders = await CustomOrder.find({ isTest: true, testRunId });
+    const printJobs = await PrintJob.find({ isTest: true, testRunId });
+    const batches = await Batch.find({ isTest: true, testRunId });
+
+    const orderIds = orders.map((order) => order.orderId);
+    const removedOrders = await CustomOrder.deleteMany({ isTest: true, testRunId });
+    const removedPrintJobs = await PrintJob.deleteMany({ isTest: true, testRunId });
+    const removedBatches = await Batch.deleteMany({ isTest: true, testRunId });
+
+    for (const orderId of orderIds) {
+      const targetDir = path.join(customOrdersRoot, orderId);
+      if (fs.existsSync(targetDir)) {
+        fs.rmSync(targetDir, { recursive: true, force: true });
+      }
+    }
+
+    return res.json({
+      success: true,
+      step: 'cleanup',
+      testRunId,
+      result: {
+        ordersRemoved: removedOrders.deletedCount,
+        printJobsRemoved: removedPrintJobs.deletedCount,
+        batchesRemoved: removedBatches.deletedCount,
+      },
+    });
+  } catch (err) {
+    console.error('❌ Failed to cleanup test pipeline data:', err);
+    return res.status(500).json({
+      success: false,
+      step: 'cleanup',
+      error: 'Failed to cleanup test pipeline data',
+      details: err.message,
+    });
+  }
+});
+
+router.delete('/force-cleanup', requireAdmin, async (req, res) => {
+  try {
+    const orders = await CustomOrder.find({ isTest: true });
+    const orderIds = orders.map((order) => order.orderId);
+
+    const removedOrders = await CustomOrder.deleteMany({ isTest: true });
+    const removedPrintJobs = await PrintJob.deleteMany({ isTest: true });
+    const removedBatches = await Batch.deleteMany({ isTest: true });
+
+    for (const orderId of orderIds) {
+      const targetDir = path.join(customOrdersRoot, orderId);
+      if (fs.existsSync(targetDir)) {
+        fs.rmSync(targetDir, { recursive: true, force: true });
+      }
+    }
+
+    return res.json({
+      success: true,
+      step: 'force-cleanup',
+      result: {
+        ordersRemoved: removedOrders.deletedCount,
+        printJobsRemoved: removedPrintJobs.deletedCount,
+        batchesRemoved: removedBatches.deletedCount,
+      },
+    });
+  } catch (err) {
+    console.error('❌ Failed to force cleanup test pipeline data:', err);
+    return res.status(500).json({
+      success: false,
+      step: 'force-cleanup',
+      error: 'Failed to force cleanup test pipeline data',
+      details: err.message,
+    });
+  }
+});
+
 const testPipelineNotEnabled = (req, res, next) => {
   if (!TEST_PIPELINE_MODE) {
     return res.status(403).json({
@@ -63,10 +221,69 @@ const testPipelineNotEnabled = (req, res, next) => {
   return next();
 };
 
+const ensureRuntimeEnabled = async (req, res, next) => {
+  const runtimeState = await getRuntimePipelineSetting();
+  if (!runtimeState.runtimeEnabled) {
+    return res.status(403).json({
+      error: 'Test pipeline runtime mode is disabled',
+      message: 'Enable runtime mode with POST /api/admin/test-pipeline/runtime-status',
+      expired: runtimeState.expired,
+    });
+  }
+  return next();
+};
+
 const ensureDir = (dirPath) => {
   if (!fs.existsSync(dirPath)) {
     fs.mkdirSync(dirPath, { recursive: true });
   }
+};
+
+const getRuntimePipelineSetting = async () => {
+  const setting = await RuntimeSetting.findOne({ key: TEST_PIPELINE_RUNTIME_KEY });
+  if (!setting) {
+    return { runtimeEnabled: false, expired: false, setting: null };
+  }
+
+  const runtimeEnabledRaw = setting.value === 'true' || setting.value === true;
+  let expired = false;
+  let runtimeEnabled = runtimeEnabledRaw;
+
+  if (runtimeEnabledRaw && setting.enabledAt) {
+    const ageMs = Date.now() - new Date(setting.enabledAt).getTime();
+    const timeoutMs = TEST_PIPELINE_AUTO_DISABLE_MINUTES * 60 * 1000;
+    if (ageMs > timeoutMs) {
+      expired = true;
+      runtimeEnabled = false;
+    }
+  }
+
+  return { runtimeEnabled, expired, setting };
+};
+
+const getRuntimePipelineEnabled = async () => {
+  const { runtimeEnabled } = await getRuntimePipelineSetting();
+  return runtimeEnabled;
+};
+
+const setRuntimePipelineEnabled = async (enabled, updatedBy) => {
+  const newValue = enabled ? 'true' : 'false';
+  const update = {
+    key: TEST_PIPELINE_RUNTIME_KEY,
+    value: newValue,
+    updatedBy: updatedBy || 'admin',
+    updatedAt: new Date(),
+  };
+  if (enabled) {
+    update.enabledAt = new Date();
+  } else {
+    update.enabledAt = null;
+  }
+  return RuntimeSetting.findOneAndUpdate(
+    { key: TEST_PIPELINE_RUNTIME_KEY },
+    update,
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  );
 };
 
 const findTestOrder = async ({ orderId, testRunId }) => {
@@ -188,6 +405,7 @@ const isBatchCompatibleWithJob = (job, batch) => {
 router.use(testPipelineNotEnabled);
 router.use(requireAdmin);
 router.use(adminLimiter);
+router.use(ensureRuntimeEnabled);
 
 router.post('/create-order', async (req, res) => {
   try {
@@ -222,6 +440,7 @@ router.post('/create-order', async (req, res) => {
       },
       isTest: true,
       testRunId,
+      createdBy: 'test-pipeline',
       confirmationSent: false,
       depositConfirmationSent: false,
       adminNotificationSent: false,
@@ -341,6 +560,7 @@ router.post('/create-print-job', async (req, res) => {
       notes: 'Test print job created from test custom order',
       isTest: true,
       testRunId: normalizedOrder.testRunId,
+      createdBy: 'test-pipeline',
     });
 
     await printJob.save();
@@ -428,6 +648,7 @@ router.post('/create-batch', async (req, res) => {
       notes: 'Test batch generated from test print job',
       isTest: true,
       testRunId: printJob.testRunId,
+      createdBy: 'test-pipeline',
     });
 
     await batch.save();
@@ -555,6 +776,7 @@ router.post('/run', async (req, res) => {
       confirmationSent: false,
       depositConfirmationSent: false,
       adminNotificationSent: false,
+      createdBy: 'test-pipeline',
     });
 
     const images = await copySeedImagesForOrder(order.orderId);
@@ -594,6 +816,7 @@ router.post('/run', async (req, res) => {
       notes: 'Full pipeline test print job',
       isTest: true,
       testRunId,
+      createdBy: 'test-pipeline',
     });
 
     await printJob.save();
@@ -612,6 +835,7 @@ router.post('/run', async (req, res) => {
       notes: 'Full pipeline generated batch',
       isTest: true,
       testRunId,
+      createdBy: 'test-pipeline',
     });
 
     await batch.save();
@@ -634,54 +858,6 @@ router.post('/run', async (req, res) => {
       success: false,
       step: 'run',
       error: 'Failed to run full test pipeline',
-      details: err.message,
-    });
-  }
-});
-
-router.delete('/cleanup', async (req, res) => {
-  try {
-    const { testRunId } = req.body;
-    if (!testRunId) {
-      return res.status(400).json({
-        success: false,
-        step: 'cleanup',
-        error: 'testRunId is required',
-      });
-    }
-
-    const orders = await CustomOrder.find({ isTest: true, testRunId });
-    const printJobs = await PrintJob.find({ isTest: true, testRunId });
-    const batches = await Batch.find({ isTest: true, testRunId });
-
-    const orderIds = orders.map((order) => order.orderId);
-    const removedOrders = await CustomOrder.deleteMany({ isTest: true, testRunId });
-    const removedPrintJobs = await PrintJob.deleteMany({ isTest: true, testRunId });
-    const removedBatches = await Batch.deleteMany({ isTest: true, testRunId });
-
-    for (const orderId of orderIds) {
-      const targetDir = path.join(customOrdersRoot, orderId);
-      if (fs.existsSync(targetDir)) {
-        fs.rmSync(targetDir, { recursive: true, force: true });
-      }
-    }
-
-    return res.json({
-      success: true,
-      step: 'cleanup',
-      testRunId,
-      result: {
-        ordersRemoved: removedOrders.deletedCount,
-        printJobsRemoved: removedPrintJobs.deletedCount,
-        batchesRemoved: removedBatches.deletedCount,
-      },
-    });
-  } catch (err) {
-    console.error('❌ Failed to cleanup test pipeline data:', err);
-    return res.status(500).json({
-      success: false,
-      step: 'cleanup',
-      error: 'Failed to cleanup test pipeline data',
       details: err.message,
     });
   }

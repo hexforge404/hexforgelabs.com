@@ -21,6 +21,7 @@ const {
   isAllowedFulfillmentTransition,
   getFulfillmentTimestampKey,
   FULFILLMENT_STAGES,
+  isProductionCustomOrderEligible,
 } = require('../utils/customOrderUtils');
 
 const STATUS_VALUES = ['draft', 'active', 'archived'];
@@ -644,22 +645,25 @@ router.get('/webhook-events', async (req, res) => {
 
 router.get('/orders/payment-status', async (req, res) => {
   try {
-    const { type = 'standard', limit = 50, offset = 0 } = req.query;
+    const { type = 'standard', limit = 50, offset = 0, includeTest = 'false' } = req.query;
     const pendingThresholdMinutes = Number(process.env.PAYMENT_PENDING_THRESHOLD_MINUTES || 30);
     const thresholdDate = new Date(Date.now() - pendingThresholdMinutes * 60 * 1000);
+    const allowTestData = String(includeTest).toLowerCase() === 'true';
 
     const includeStandard = type !== 'custom';
     const includeCustom = type !== 'standard';
+    const standardFilter = allowTestData ? {} : { isTest: { $ne: true } };
+    const customOrderFilter = allowTestData ? {} : { isTest: { $ne: true } };
 
     const [orders, customOrders] = await Promise.all([
       includeStandard
-        ? Order.find({})
+        ? Order.find(standardFilter)
             .sort({ createdAt: -1 })
             .skip(Number(offset))
             .limit(Number(limit))
         : [],
       includeCustom
-        ? CustomOrder.find({})
+        ? CustomOrder.find(customOrderFilter)
             .sort({ createdAt: -1 })
             .skip(Number(offset))
             .limit(Number(limit))
@@ -777,10 +781,10 @@ router.get('/monitoring/summary', async (req, res) => {
         .sort({ receivedAt: -1 })
         .limit(5)
         .select('stripeEventId type orderId customOrderId receivedAt errorMessage resultMessage paymentIntentId stripeSessionId'),
-      Order.countDocuments({ paymentStatus: 'pending', createdAt: { $lt: thresholdDate } }),
-      CustomOrder.countDocuments({ paymentStatus: 'pending', createdAt: { $lt: thresholdDate } }),
-      Order.countDocuments({ $and: [{ stripeSessionId: { $in: [null, ''] } }, { paymentIntentId: { $in: [null, ''] } }] }),
-      CustomOrder.countDocuments({ $and: [{ stripeSessionId: { $in: [null, ''] } }, { paymentIntentId: { $in: [null, ''] } }] }),
+      Order.countDocuments({ paymentStatus: 'pending', createdAt: { $lt: thresholdDate }, isTest: { $ne: true } }),
+      CustomOrder.countDocuments({ paymentStatus: 'pending', createdAt: { $lt: thresholdDate }, isTest: { $ne: true } }),
+      Order.countDocuments({ $and: [{ stripeSessionId: { $in: [null, ''] } }, { paymentIntentId: { $in: [null, ''] } }], isTest: { $ne: true } }),
+      CustomOrder.countDocuments({ $and: [{ stripeSessionId: { $in: [null, ''] } }, { paymentIntentId: { $in: [null, ''] } }], isTest: { $ne: true } }),
       StripeWebhookEvent.aggregate([
         { $match: { paymentIntentId: { $exists: true, $ne: null } } },
         { $group: { _id: '$paymentIntentId', count: { $sum: 1 } } },
@@ -828,8 +832,9 @@ router.get('/monitoring/summary', async (req, res) => {
 // GET all custom lamp orders with filtering
 router.get('/custom-orders', async (req, res) => {
   try {
-    const { status, panels, limit = 100, offset = 0 } = req.query;
-    const filter = {};
+    const { status, panels, limit = 100, offset = 0, includeTest = 'false' } = req.query;
+    const allowTestData = String(includeTest).toLowerCase() === 'true';
+    const filter = allowTestData ? {} : { isTest: { $ne: true } };
     
     if (status) filter.status = status;
     if (panels) filter.panels = panels;
@@ -855,6 +860,99 @@ router.get('/custom-orders', async (req, res) => {
     res.status(500).json({
       error: 'Failed to fetch custom orders',
       details: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
+  }
+});
+
+router.get('/test-artifacts', async (req, res) => {
+  try {
+    const { includeSuspected = 'true', limit = 200 } = req.query;
+    const normalizedLimit = Math.min(Number(limit) || 200, 500);
+    const includeLegacy = String(includeSuspected).toLowerCase() === 'true';
+
+    const confirmedOrdersPromise = CustomOrder.find({ isTest: true })
+      .sort({ createdAt: -1 })
+      .limit(normalizedLimit)
+      .lean();
+    const confirmedPrintJobsPromise = PrintJob.find({ isTest: true })
+      .sort({ createdAt: -1 })
+      .limit(normalizedLimit)
+      .lean();
+    const confirmedBatchesPromise = Batch.find({ isTest: true })
+      .sort({ createdAt: -1 })
+      .limit(normalizedLimit)
+      .lean();
+
+    const [confirmedOrders, confirmedPrintJobs, confirmedBatches] = await Promise.all([
+      confirmedOrdersPromise,
+      confirmedPrintJobsPromise,
+      confirmedBatchesPromise,
+    ]);
+
+    const suspectedOrders = includeLegacy
+      ? await CustomOrder.find({
+          isTest: { $ne: true },
+          $or: [
+            { 'customer.email': { $regex: /test\+pipeline/i } },
+            { productName: { $regex: /hexforge test custom order/i } },
+            { notes: { $regex: /auto-generated test custom order|test pipeline/i } },
+            { createdBy: 'test-pipeline' },
+          ],
+        })
+          .sort({ createdAt: -1 })
+          .limit(normalizedLimit)
+          .lean()
+      : [];
+
+    const suspectedPrintJobs = includeLegacy
+      ? await PrintJob.find({
+          isTest: { $ne: true },
+          $or: [
+            { generationMethod: 'test_pipeline' },
+            { generationNotes: { $regex: /test pipeline/i } },
+            { notes: { $regex: /test pipeline/i } },
+            { createdBy: 'test-pipeline' },
+          ],
+        })
+          .sort({ createdAt: -1 })
+          .limit(normalizedLimit)
+          .lean()
+      : [];
+
+    const suspectedBatches = includeLegacy
+      ? await Batch.find({
+          isTest: { $ne: true },
+          $or: [
+            { notes: { $regex: /test batch|test pipeline/i } },
+            { createdBy: 'test-pipeline' },
+          ],
+        })
+          .sort({ createdAt: -1 })
+          .limit(normalizedLimit)
+          .lean()
+      : [];
+
+    return res.json({
+      confirmed: {
+        orders: confirmedOrders,
+        printJobs: confirmedPrintJobs,
+        batches: confirmedBatches,
+      },
+      suspected: {
+        orders: suspectedOrders,
+        printJobs: suspectedPrintJobs,
+        batches: suspectedBatches,
+      },
+      metadata: {
+        includeSuspected: includeLegacy,
+        limit: normalizedLimit,
+      },
+    });
+  } catch (err) {
+    console.error('❌ Failed to fetch test artifacts:', err);
+    res.status(500).json({
+      error: 'Failed to fetch test artifacts',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined,
     });
   }
 });
@@ -998,6 +1096,41 @@ const normalizePrintJobPayload = (rawJob) => {
   return job;
 };
 
+const ACTIVE_PRODUCTION_PRINT_JOB_STATUSES = [
+  'queued_for_generation',
+  'generating_stl',
+  'stl_ready',
+  'queued_for_slicing',
+  'sliced',
+  'queued_for_batch',
+  'assigned_to_printer',
+  'printing',
+];
+
+const findActiveProductionPrintJob = async (orderId) => {
+  if (!orderId) return null;
+  return PrintJob.findOne({
+    orderId,
+    isTest: { $ne: true },
+    status: { $in: ACTIVE_PRODUCTION_PRINT_JOB_STATUSES },
+  }).sort({ createdAt: -1 });
+};
+
+const updateCustomOrderFulfillmentState = async (customOrder, newStatus) => {
+  if (!customOrder || !newStatus) return customOrder;
+  const currentStatus = customOrder.fulfillmentStatus || customOrder.status;
+  if (currentStatus === newStatus) return customOrder;
+
+  customOrder.fulfillmentStatus = newStatus;
+  customOrder.status = newStatus;
+  customOrder.fulfillmentTimestamps = {
+    ...customOrder.fulfillmentTimestamps,
+    [getFulfillmentTimestampKey(newStatus)]: new Date(),
+  };
+  await customOrder.save();
+  return customOrder;
+};
+
 const normalizeCompatProfile = (value) => String(value || '').trim().toLowerCase();
 
 const isSlicerProfileCompatible = (candidate, existing) => {
@@ -1109,8 +1242,7 @@ const buildWorkOrderHtml = (order, printJob) => {
 </html>`;
 };
 
-// CREATE a print job from a custom order
-router.post('/print-jobs', async (req, res) => {
+const createProductionPrintJob = async (req, res) => {
   try {
     const {
       orderId,
@@ -1139,10 +1271,11 @@ router.post('/print-jobs', async (req, res) => {
       estimatedPrintHours,
       notes,
       partType,
+      forceCreate,
     } = req.body;
 
     if (!orderId && !customOrderId) {
-      return res.status(400).json({ error: 'orderId or customOrderId is required to create a print job.' });
+      return res.status(400).json({ error: 'orderId or customOrderId is required to create a production print job.' });
     }
 
     let customOrder;
@@ -1156,8 +1289,22 @@ router.post('/print-jobs', async (req, res) => {
       return res.status(404).json({ error: 'Custom order not found.' });
     }
 
+    if (!isProductionCustomOrderEligible(customOrder)) {
+      return res.status(400).json({
+        error: 'Custom order is not eligible for production fulfillment. It must be a paid non-test order with valid assets and a non-terminal status.'
+      });
+    }
+
     const normalizedOrder = normalizeCustomOrder(customOrder);
     const suggested = getPrintJobDefaults(normalizedOrder.productType);
+
+    const existingJob = await findActiveProductionPrintJob(normalizedOrder.orderId);
+    if (existingJob && !req.body.forceCreate) {
+      return res.status(409).json({
+        error: 'An active production print job already exists for this order.',
+        existingJob: normalizePrintJobPayload(existingJob),
+      });
+    }
 
     const sourceImages = Array.isArray(normalizedOrder.images)
       ? normalizedOrder.images.map((img) => ({
@@ -1183,7 +1330,7 @@ router.post('/print-jobs', async (req, res) => {
       layerHeight: typeof layerHeight === 'number' ? layerHeight : suggested.layerHeight,
       infill: typeof infill === 'number' ? infill : suggested.infill,
       wallCount: typeof wallCount === 'number' ? wallCount : suggested.wallCount,
-      generationMethod: generationMethod || '',
+      generationMethod: generationMethod || 'production_admin',
       lithophaneType: lithophaneType || '',
       targetWidthMm: typeof targetWidthMm === 'number' ? targetWidthMm : 0,
       targetHeightMm: typeof targetHeightMm === 'number' ? targetHeightMm : 0,
@@ -1199,13 +1346,185 @@ router.post('/print-jobs', async (req, res) => {
       gcodePath: gcodePath || '',
       estimatedPrintHours: typeof estimatedPrintHours === 'number' ? estimatedPrintHours : suggested.estimatedPrintHours,
       notes: notes || '',
+      isTest: false,
+      createdBy: forceCreate ? 'production-admin-force-rerun' : 'production-admin',
     });
 
-    res.status(201).json(normalizePrintJobPayload(printJob));
+    await updateCustomOrderFulfillmentState(customOrder, 'print_ready');
+    return res.status(201).json(normalizePrintJobPayload(printJob));
   } catch (err) {
-    console.error('❌ Failed to create print job:', err);
+    console.error('❌ Failed to create production print job:', err);
     res.status(500).json({
-      error: 'Failed to create print job',
+      error: 'Failed to create production print job',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined,
+    });
+  }
+};
+
+// CREATE a print job from a custom order
+router.post('/print-jobs', createProductionPrintJob);
+router.post('/production/print-jobs', createProductionPrintJob);
+
+router.post('/production/print-jobs/:printJobId/apply-stl', async (req, res) => {
+  try {
+    const { printJobId } = req.params;
+    const { stlFilename, stlPath, stlVersion, generationNotes } = req.body;
+
+    if (!stlFilename && !stlPath && !stlVersion) {
+      return res.status(400).json({
+        error: 'At least one STL handoff property is required: stlFilename, stlPath, or stlVersion.',
+      });
+    }
+
+    const printJob = await PrintJob.findOne({ printJobId, isTest: { $ne: true } });
+    if (!printJob) {
+      return res.status(404).json({ error: 'Production print job not found.' });
+    }
+
+    if (['cancelled', 'failed', 'printed'].includes(printJob.status)) {
+      return res.status(400).json({
+        error: `Cannot apply STL handoff to a print job in status ${printJob.status}.`,
+      });
+    }
+
+    if (stlFilename !== undefined) printJob.stlFilename = stlFilename;
+    if (stlPath !== undefined) printJob.stlPath = stlPath;
+    if (stlVersion !== undefined) printJob.stlVersion = stlVersion;
+    if (generationNotes !== undefined) printJob.generationNotes = generationNotes;
+    printJob.status = 'stl_ready';
+    printJob.updatedAt = new Date();
+    await printJob.save();
+
+    const customOrder = await CustomOrder.findOne({ orderId: printJob.orderId, isTest: { $ne: true } });
+    if (customOrder) {
+      await updateCustomOrderFulfillmentState(customOrder, 'in_production');
+    }
+
+    res.json(normalizePrintJobPayload(printJob));
+  } catch (err) {
+    console.error('❌ Failed to apply production STL handoff:', err);
+    res.status(500).json({
+      error: 'Failed to apply production STL handoff',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined,
+    });
+  }
+});
+
+router.post('/production/print-jobs/:printJobId/create-batch', async (req, res) => {
+  try {
+    const { printJobId } = req.params;
+    const printJob = await PrintJob.findOne({ printJobId, isTest: { $ne: true } });
+    if (!printJob) {
+      return res.status(404).json({ error: 'Production print job not found.' });
+    }
+
+    if (printJob.assignedBatchId) {
+      const existingBatch = await Batch.findOne({ batchId: printJob.assignedBatchId, isTest: { $ne: true } });
+      return res.status(409).json({
+        error: 'This production print job is already assigned to a batch.',
+        existingBatch: existingBatch ? existingBatch.toObject({ getters: true, virtuals: false }) : null,
+        printJob: normalizePrintJobPayload(printJob),
+      });
+    }
+
+    const batch = new Batch({
+      printerProfile: printJob.printerProfile,
+      materialProfile: printJob.materialProfile,
+      slicerProfile: printJob.slicerProfile,
+      nozzle: printJob.nozzle,
+      layerHeight: printJob.layerHeight,
+      printJobIds: [printJob.printJobId],
+      totalEstimatedPrintHours: Number(printJob.estimatedPrintHours || 0),
+      status: 'queued_for_batch',
+      projectFilePath: '',
+      gcodePath: '',
+      notes: `Production batch created from print job ${printJob.printJobId}`,
+      isTest: false,
+      createdBy: 'production-admin',
+    });
+
+    await batch.save();
+    printJob.assignedBatchId = batch.batchId;
+    if (!['queued_for_batch', 'assigned_to_printer', 'printing', 'printed'].includes(printJob.status)) {
+      printJob.status = 'queued_for_batch';
+    }
+    await printJob.save();
+
+    const customOrder = await CustomOrder.findOne({ orderId: printJob.orderId, isTest: { $ne: true } });
+    if (customOrder) {
+      await updateCustomOrderFulfillmentState(customOrder, 'in_production');
+    }
+
+    return res.status(201).json({
+      batch: batch.toObject({ getters: true, virtuals: false }),
+      printJob: normalizePrintJobPayload(printJob),
+    });
+  } catch (err) {
+    console.error('❌ Failed to create production batch:', err);
+    res.status(500).json({
+      error: 'Failed to create production batch',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined,
+    });
+  }
+});
+
+router.post('/production/print-jobs/:printJobId/assign-batch', async (req, res) => {
+  try {
+    const { printJobId } = req.params;
+    const { batchId } = req.body;
+
+    if (!batchId) {
+      return res.status(400).json({ error: 'batchId is required.' });
+    }
+
+    const printJob = await PrintJob.findOne({ printJobId, isTest: { $ne: true } });
+    if (!printJob) {
+      return res.status(404).json({ error: 'Production print job not found.' });
+    }
+
+    const batch = await Batch.findOne({ batchId, isTest: { $ne: true } });
+    if (!batch) {
+      return res.status(404).json({ error: 'Production batch not found.' });
+    }
+
+    if (!isPrintJobCompatibleWithBatch(printJob, batch)) {
+      return res.status(400).json({
+        error: 'Print job is not compatible with this batch.',
+      });
+    }
+
+    if (printJob.assignedBatchId && printJob.assignedBatchId !== batch.batchId) {
+      return res.status(409).json({
+        error: 'Print job is already assigned to a different batch.',
+        existingBatchId: printJob.assignedBatchId,
+      });
+    }
+
+    if (!batch.printJobIds.includes(printJob.printJobId)) {
+      batch.printJobIds.push(printJob.printJobId);
+      batch.totalEstimatedPrintHours = await computeBatchTotals(batch.printJobIds);
+      await batch.save();
+    }
+
+    printJob.assignedBatchId = batch.batchId;
+    if (!['queued_for_batch', 'assigned_to_printer', 'printing', 'printed'].includes(printJob.status)) {
+      printJob.status = 'queued_for_batch';
+    }
+    await printJob.save();
+
+    const customOrder = await CustomOrder.findOne({ orderId: printJob.orderId, isTest: { $ne: true } });
+    if (customOrder) {
+      await updateCustomOrderFulfillmentState(customOrder, 'in_production');
+    }
+
+    return res.json({
+      batch: batch.toObject({ getters: true, virtuals: false }),
+      printJob: normalizePrintJobPayload(printJob),
+    });
+  } catch (err) {
+    console.error('❌ Failed to assign production print job to batch:', err);
+    res.status(500).json({
+      error: 'Failed to assign production print job to batch',
       details: process.env.NODE_ENV === 'development' ? err.message : undefined,
     });
   }
@@ -1214,8 +1533,18 @@ router.post('/print-jobs', async (req, res) => {
 // GET print jobs
 router.get('/print-jobs', async (req, res) => {
   try {
-    const { status, limit = 100, offset = 0 } = req.query;
-    const filter = {};
+    const { status, limit = 100, offset = 0, includeTest = 'false', orderId, customOrderId, orderIds } = req.query;
+    const allowTestData = String(includeTest).toLowerCase() === 'true';
+    const filter = allowTestData ? {} : { isTest: { $ne: true } };
+    if (orderId) filter.orderId = orderId;
+    if (customOrderId) filter.customOrderId = customOrderId;
+    if (orderIds) {
+      const ids = String(orderIds)
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean);
+      if (ids.length) filter.orderId = { $in: ids };
+    }
     if (status) filter.status = status;
 
     if (typeof status === 'string' && status.includes(',')) {
@@ -1577,8 +1906,9 @@ router.post('/batches', async (req, res) => {
 
 router.get('/batches', async (req, res) => {
   try {
-    const { status, limit = 100, offset = 0 } = req.query;
-    const filter = {};
+    const { status, limit = 100, offset = 0, includeTest = 'false' } = req.query;
+    const allowTestData = String(includeTest).toLowerCase() === 'true';
+    const filter = allowTestData ? {} : { isTest: { $ne: true } };
     if (status) filter.status = status;
 
     const batches = await Batch.find(filter)
