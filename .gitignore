@@ -96,3 +96,6 @@ frontend/public/images/project_file's/
 # package-lock.json
 # yarn.lock
 # pnpm-lock.yaml
+
+.env
+.env.production
