@@ -2198,7 +2198,11 @@ const activeAddons = getActiveAddons();
                     ? 'This listing is for the custom lithophane box only.'
                     : customOrder.productType === 'globeLamp'
                       ? 'Designed as a globe-style lithophane lamp.'
-                      : 'Designed for use with a compatible lamp base. This listing is for the custom shade only.'}
+                      : customOrder.productType === 'nightlight'
+                        ? 'This listing is for a complete custom lithophane night light.'
+                        : customOrder.productType === 'cylinder'
+                          ? 'This listing is for the custom lithophane lamp shade only. A compatible lamp base is not included.'
+                          : 'Designed for use with a compatible lamp base. This listing is for the custom shade only.'}
               </div>
 
               {uploadProgressMessage && (
