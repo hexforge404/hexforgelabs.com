@@ -29,9 +29,9 @@ function PanelConfigurator({
             onChange={(e) => onSizeChange(e.target.value)}
             className="product-detail-custom-select"
           >
-            <option value="small">Small (4" height)</option>
-            <option value="medium">Medium (6" height)</option>
-            <option value="large">Large (8" height)</option>
+            <option value="small">Small - 100mm top / 150mm bottom / 150mm tall</option>
+            <option value="medium">Medium - 150mm top / 200mm bottom / 200mm tall</option>
+            <option value="large">Large - 200mm top / 250mm bottom / 250mm tall</option>
           </select>
         </div>
       )}
@@ -121,9 +121,9 @@ function GlobeLampConfigurator({ lampshade, onSizeChange, onToggleAddon, onNotes
           onChange={(e) => onSizeChange(e.target.value)}
           className="product-detail-custom-select"
         >
-          <option value="small">Small (4" height)</option>
-          <option value="medium">Medium (6" height)</option>
-          <option value="large">Large (8" height)</option>
+          <option value="small">Small - 100mm top / 150mm bottom / 150mm tall</option>
+          <option value="medium">Medium - 150mm top / 200mm bottom / 200mm tall</option>
+          <option value="large">Large - 200mm top / 250mm bottom / 250mm tall</option>
         </select>
       </div>
 
@@ -173,9 +173,9 @@ function CylinderConfigurator({
           onChange={(e) => onSizeChange(e.target.value)}
           className="product-detail-custom-select"
         >
-          <option value="small">Small (4" height)</option>
-          <option value="medium">Medium (6" height)</option>
-          <option value="large">Large (8" height)</option>
+          <option value="small">Small - 100mm top / 150mm bottom / 150mm tall</option>
+          <option value="medium">Medium - 150mm top / 200mm bottom / 200mm tall</option>
+          <option value="large">Large - 200mm top / 250mm bottom / 250mm tall</option>
         </select>
       </div>
 
@@ -215,6 +215,7 @@ function CylinderConfigurator({
         >
           <option value="led">LED Strip</option>
           <option value="bulb">Incandescent Bulb</option>
+          <option value="rgb">RGB Lighting</option>
         </select>
       </div>
 

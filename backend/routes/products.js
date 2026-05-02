@@ -931,23 +931,61 @@ const getRequiredPanelCount = ({ productType, panels, panelCount }) => {
   return clampPanelCount(panelCount, labelCount, minPanels, 5);
 };
 
-const SIZE_PRICE_MAP = {
-  small: 0,
-  medium: 10,
-  large: 20,
+const LAMP_SHADE_SIZES = {
+  small: {
+    label: 'Small',
+    topDiameterMm: 100,
+    bottomDiameterMm: 150,
+    heightMm: 150,
+    includedPanels: 2,
+    basePrice: 45,
+  },
+  medium: {
+    label: 'Medium',
+    topDiameterMm: 150,
+    bottomDiameterMm: 200,
+    heightMm: 200,
+    includedPanels: 2,
+    basePrice: 60,
+  },
+  large: {
+    label: 'Large',
+    topDiameterMm: 200,
+    bottomDiameterMm: 250,
+    heightMm: 250,
+    includedPanels: 2,
+    basePrice: 75,
+  },
 };
 
-const calculateCustomOrderPrice = ({ productType, panelCount, size = 'small', addons = {} }) => {
+const LAMP_ADDONS = {
+  extraPanel: 5,
+  diffuser: 10,
+  rgbLighting: 15,
+  rgbDiffuserBundle: 20,
+};
+
+const DEPOSIT_RATE = 0.5;
+
+const isLampShadeProduct = (productType) => {
+  return ['cylinder', 'panel', 'globeLamp'].includes(String(productType).trim());
+};
+
+const getSizeConfig = (size) => {
+  return LAMP_SHADE_SIZES[String(size).toLowerCase()] || LAMP_SHADE_SIZES.medium;
+};
+
+const calculateCustomOrderPrice = ({ productType, panelCount, size = 'medium', addons = {}, lightType } = {}) => {
   let basePrice = 0;
-  const sizeAdjustment = SIZE_PRICE_MAP[String(size).toLowerCase()] || 0;
+  const sizeConfig = getSizeConfig(size);
   if (productType === 'cylinder') {
-    const count = Math.max(2, Number(panelCount) || 2);
-    basePrice = 35 + sizeAdjustment + Math.max(0, count - 2) * 10;
+    const count = Math.max(2, Number(panelCount) || sizeConfig.includedPanels);
+    basePrice = sizeConfig.basePrice + Math.max(0, count - sizeConfig.includedPanels) * LAMP_ADDONS.extraPanel;
   } else if (productType === 'panel') {
-    const count = Math.max(2, Number(panelCount) || 2);
-    basePrice = 50 + sizeAdjustment + Math.max(0, count - 2) * 10;
+    const count = Math.max(2, Number(panelCount) || sizeConfig.includedPanels);
+    basePrice = sizeConfig.basePrice + Math.max(0, count - sizeConfig.includedPanels) * LAMP_ADDONS.extraPanel;
   } else if (productType === 'globeLamp') {
-    basePrice = 50 + sizeAdjustment;
+    basePrice = sizeConfig.basePrice;
   } else if (productType === 'fixedBox4') {
     basePrice = 45;
   } else if (productType === 'panelBox5' || productType === 'swappableBox5') {
@@ -959,7 +997,18 @@ const calculateCustomOrderPrice = ({ productType, panelCount, size = 'small', ad
   }
 
   let total = basePrice;
-  if (addons.diffuser) total += 10;
+  if (isLampShadeProduct(productType)) {
+    const hasRgb = String(lightType || '').toLowerCase() === 'rgb' || addons.rgbLighting || addons.rgb;
+    const hasDiffuser = Boolean(addons.diffuser);
+    if (hasRgb && hasDiffuser) {
+      total += LAMP_ADDONS.rgbDiffuserBundle;
+    } else if (hasRgb) {
+      total += LAMP_ADDONS.rgbLighting;
+    } else if (hasDiffuser) {
+      total += LAMP_ADDONS.diffuser;
+    }
+  }
+
   if (addons.nightlight) total += 5;
   return roundMoney(total);
 };
@@ -989,6 +1038,7 @@ router.post('/custom-orders/validate-promo', express.json(), async (req, res) =>
       panelCount,
       size,
       addons,
+      lightType,
     } = req.body;
 
     if (!promoCode || !promoCode.trim()) {
@@ -1064,6 +1114,7 @@ router.post('/custom-orders/validate-promo', express.json(), async (req, res) =>
       panelCount,
     }) || 2;
     const resolvedAddons = parseAddonsPayload(addons);
+    const resolvedLightType = String(lightType || '').trim();
 
     // Calculate discount preview with current custom order selections
     const originalPrice = calculateCustomOrderPrice({
@@ -1071,6 +1122,7 @@ router.post('/custom-orders/validate-promo', express.json(), async (req, res) =>
       panelCount: requiredPanels,
       size,
       addons: resolvedAddons,
+      lightType: resolvedLightType,
     });
     let discountAmount = 0;
 
@@ -1420,6 +1472,7 @@ router.post(
         panelCount: requiredPanels,
         size,
         addons: resolvedAddons,
+        lightType: resolvedLightType,
       });
       let discountedTotal = originalPrice;
       let discountAmount = 0;
