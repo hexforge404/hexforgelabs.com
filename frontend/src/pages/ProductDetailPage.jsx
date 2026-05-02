@@ -1224,6 +1224,9 @@ const activeAddons = getActiveAddons();
     return ['LITHNL01', 'LITHDF01', 'LITHBUNDLE01'].includes(sku) || categories.includes('lamps');
   };
 
+  const isLampShadeOrder = ['cylinder', 'panel', 'globeLamp'].includes(customOrder.productType);
+  const isPremiumEligibleLamp = ['cylinder', 'panel', 'globeLamp'].includes(customOrder.productType);
+
   const normalizeProduct = (p) => {
     const basePrice = isLampProduct(p) ? getBasePriceForLamp(p, slug) : Number(p?.price || 0);
     return {
@@ -1484,9 +1487,13 @@ const activeAddons = getActiveAddons();
           ) : (
             <h1 className="product-detail-title">{normalized.title}</h1>
           )}
-          {customOrder.productType === 'cylinder' ? (
+          {customOrder.productType === 'nightlight' ? (
             <div className="product-detail-lamp-tagline">
-              A glowing photo lamp made just for you.
+              A compact glowing photo display made for desks, shelves, and bedside tables.
+            </div>
+          ) : isLampShadeOrder ? (
+            <div className="product-detail-lamp-tagline">
+              A custom lithophane memory lamp shade handcrafted from your photos. Includes photo review, quality checks, and a 50% deposit to begin.
             </div>
           ) : isLamp && (
             <div className="product-detail-lamp-tagline">
@@ -1598,11 +1605,11 @@ const activeAddons = getActiveAddons();
                     : customOrder.productType === 'globeLamp'
                       ? 'A globe-style lithophane lamp made from your photos.'
                       : customOrder.productType === 'cylinder'
-                        ? 'A custom photo lamp handcrafted to glow beautifully in your home.'
+                        ? 'A custom lithophane memory lamp shade handcrafted to glow beautifully in your home.'
                         : customOrder.productType === 'familyBundle4'
                           ? 'A premium family bundle with matching lamps, night lights, and diffusers, handcrafted from your photos.'
                           : customOrder.productType === 'nightlight'
-                            ? 'A custom lithophane night light made from your photo.'
+                            ? 'A compact lithophane night light made from your photo.'
                             : 'A custom multi-panel lithophane display made from your photos.'}
               </div>
               <p className="product-detail-custom-order-copy">
@@ -1619,9 +1626,43 @@ const activeAddons = getActiveAddons();
                           Perfect for gifts, memorials, and special celebrations.
                         </>
                       ) : customOrder.productType === 'nightlight' ? (
-                        'Upload one photo and we will create a custom lithophane night light from your image.'
+                        'Upload one photo and we will create a compact glowing photo night light from your image. Ideal for desks, shelves, and bedside tables.'
                       ) : 'Upload your favorite photos and we will craft a glowing custom lamp that looks stunning on any shelf or bedside table.'}
               </p>
+              {isPremiumEligibleLamp && (
+                <div className="product-detail-premium-offer">
+                  <div className="product-detail-section-title">Premium Memory Lamp Package</div>
+                  <p>
+                    A premium build for gift-ready keepsakes, memorials, and high-impact displays. Large shade + RGB + diffuser + up to 3 images, with expert photo review and premium finishing.
+                  </p>
+                  <ul className="product-detail-premium-list">
+                    <li>Large shade from about $100</li>
+                    <li>RGB + diffuser bundle included</li>
+                    <li>Up to 3 images/panels</li>
+                    <li>Photo review before printing</li>
+                    <li>Gift-ready finishing and premium polish</li>
+                  </ul>
+                </div>
+              )}
+              {isLampShadeOrder && (
+                <div className="product-detail-size-tier-block">
+                  <div className="product-detail-section-title">Choose Your Size</div>
+                  <div className="product-detail-size-grid">
+                    <div>
+                      <strong>Small — $45</strong><br />
+                      100mm top / 150mm bottom / 150mm tall
+                    </div>
+                    <div>
+                      <strong>Medium — $60</strong><br />
+                      150mm top / 200mm bottom / 200mm tall
+                    </div>
+                    <div>
+                      <strong>Large — $75</strong><br />
+                      200mm top / 250mm bottom / 250mm tall
+                    </div>
+                  </div>
+                </div>
+              )}
               {customOrder.productType === 'cylinder' && (
                 <div className="product-detail-cylinder-summary-block">
                   <div className="product-detail-section-title">How It Works</div>
@@ -1692,78 +1733,101 @@ const activeAddons = getActiveAddons();
                       {uploadError}
                     </div>
                   )}
-                  {customOrder.productType === 'nightlight' ? (
-                    <div className="product-detail-panel-upload-block">
-                      <div className="product-detail-panel-upload-label">Night Light Photo</div>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={(e) => {
-                          const file = e.target.files[0];
-                          handlePanelImageUpload(0, file);
-                        }}
-                        className="product-detail-custom-file"
-                      />
-                      {customOrder.images[0] && (
-                        <div className="product-detail-custom-preview">
-                          <img
-                            src={URL.createObjectURL(customOrder.images[0])}
-                            alt="Night light preview"
-                            className="product-detail-custom-preview-img"
-                          />
-                          <div className="product-detail-custom-filename">
-                            {customOrder.images[0].name}
-                          </div>
-                          <button
-                            type="button"
-                            className="product-detail-custom-remove"
-                            onClick={() => handleRemovePanelImage(0)}
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    Array.from({ length: requiredPanelCount }, (_, index) => (
-                      <div key={`panel-${requiredPanelCount}-${index}`} className="product-detail-panel-upload-block">
-                        <div className="product-detail-panel-upload-label">
-                          {customOrder.productType === 'cylinder'
-                            ? `Photo ${index + 1}`
-                            : customOrder.productType === 'globeLamp'
-                              ? `Image ${index + 1}`
-                              : `Panel ${index + 1}`}
-                        </div>
+                  {customOrder.productType === 'nightlight' && (
+                    <React.Fragment>
+                      <div className="product-detail-photo-check-block">
+                        <div className="product-detail-section-title">Photo Quality Check</div>
+                        <p>
+                          We review every uploaded image before printing. If a photo is too dark, blurry, or poorly composed, we’ll contact you before production to make sure your keepsake looks its best.
+                        </p>
+                        <Link to="/chat" className="product-detail-free-photo-check-cta">
+                          Get a Free Photo Check
+                        </Link>
+                      </div>
+                      <div className="product-detail-panel-upload-block">
+                        <div className="product-detail-panel-upload-label">Night Light Photo</div>
                         <input
                           type="file"
                           accept="image/*"
                           onChange={(e) => {
                             const file = e.target.files[0];
-                            handlePanelImageUpload(index, file);
+                            handlePanelImageUpload(0, file);
                           }}
                           className="product-detail-custom-file"
                         />
-                        {customOrder.images[index] && (
+                        {customOrder.images[0] && (
                           <div className="product-detail-custom-preview">
                             <img
-                              src={URL.createObjectURL(customOrder.images[index])}
-                              alt={`${customOrder.productType === 'globeLamp' ? `Image ${index + 1}` : `Panel ${index + 1}`} Preview`}
+                              src={URL.createObjectURL(customOrder.images[0])}
+                              alt="Night light preview"
                               className="product-detail-custom-preview-img"
                             />
                             <div className="product-detail-custom-filename">
-                              {customOrder.images[index].name}
+                              {customOrder.images[0].name}
                             </div>
                             <button
                               type="button"
                               className="product-detail-custom-remove"
-                              onClick={() => handleRemovePanelImage(index)}
+                              onClick={() => handleRemovePanelImage(0)}
                             >
                               Remove
                             </button>
                           </div>
                         )}
                       </div>
-                    ))
+                    </React.Fragment>
+                  )}
+                  {customOrder.productType !== 'nightlight' && (
+                    <React.Fragment>
+                      <div className="product-detail-photo-check-block">
+                        <div className="product-detail-section-title">Photo Quality Check</div>
+                        <p>
+                          We review every uploaded image before printing. If a photo is too dark, blurry, or poorly composed, we’ll contact you before production to make sure your keepsake looks its best.
+                        </p>
+                        <Link to="/chat" className="product-detail-free-photo-check-cta">
+                          Get a Free Photo Check
+                        </Link>
+                      </div>
+                      {Array.from({ length: requiredPanelCount }, (_, index) => (
+                        <div key={`panel-${requiredPanelCount}-${index}`} className="product-detail-panel-upload-block">
+                          <div className="product-detail-panel-upload-label">
+                            {customOrder.productType === 'cylinder'
+                              ? `Photo ${index + 1}`
+                              : customOrder.productType === 'globeLamp'
+                                ? `Image ${index + 1}`
+                                : `Panel ${index + 1}`}
+                          </div>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => {
+                              const file = e.target.files[0];
+                              handlePanelImageUpload(index, file);
+                            }}
+                            className="product-detail-custom-file"
+                          />
+                          {customOrder.images[index] && (
+                            <div className="product-detail-custom-preview">
+                              <img
+                                src={URL.createObjectURL(customOrder.images[index])}
+                                alt={`${customOrder.productType === 'globeLamp' ? 'Image' : 'Panel'} ${index + 1} Preview`}
+                                className="product-detail-custom-preview-img"
+                              />
+                              <div className="product-detail-custom-filename">
+                                {customOrder.images[index].name}
+                              </div>
+                              <button
+                                type="button"
+                                className="product-detail-custom-remove"
+                                onClick={() => handleRemovePanelImage(index)}
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </React.Fragment>
                   )}
                 </div>
               )}
@@ -1922,6 +1986,21 @@ const activeAddons = getActiveAddons();
                   />
                 )}
               </div>
+
+              {isLampShadeOrder && (
+                <div className="product-detail-upgrade-summary">
+                  <div className="product-detail-section-title">Upgrade Your Build</div>
+                  <ul className="product-detail-upgrade-list">
+                    <li>Extra image/panel — +$5</li>
+                    <li>Diffuser — +$10</li>
+                    <li>RGB lighting — +$15</li>
+                    <li>RGB + diffuser bundle — +$20 total</li>
+                  </ul>
+                  <div className="product-detail-custom-helper" style={{ marginTop: '8px' }}>
+                    RGB and diffuser together are bundled at +$20 total, not +$25.
+                  </div>
+                </div>
+              )}
 
               {['cylinder', 'swappableBox5'].includes(customOrder.productType) && activeAddons.nightlight && (
                 <div className="product-detail-custom-field">
