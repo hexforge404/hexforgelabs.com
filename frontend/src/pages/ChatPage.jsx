@@ -16,6 +16,7 @@ const ChatPage = () => {
   const product = params.get("product");
 
   const isPhotoCheck = intent === "photo-check";
+  const isNightLightCheck = product === "night-light";
   const productLabel =
     product === "night-light"
       ? "night light"
@@ -25,7 +26,9 @@ const ChatPage = () => {
       ? "globe lamp"
       : "lithophane";
 
-  const photoCheckIntro = `Hi! I can help check whether your photos will work well for a ${productLabel}.\nUpload up to 5 photos, and I’ll help review:\n- brightness and contrast\n- face/detail visibility\n- composition and framing\n- whether they fit best as a night light, small shade, medium shade, or large shade`;
+  const photoCheckIntro = isNightLightCheck
+    ? `Hi! I can help you submit photos for a free night light photo check.\nUpload up to 5 photos using the form above. The HexForge team will review them for contrast, clear details, cropping, and fit for a compact glowing display.\nYou’ll get a follow-up after review. Instant AI photo analysis is coming later.`
+    : `Hi! I can help you submit photos for a free HexForge photo check.\nUpload up to 5 photos using the form above. The HexForge team will review them for:\n- brightness and contrast\n- face/detail visibility\n- composition and framing\n- best fit as a night light, small shade, medium shade, or large shade\nYou’ll get a follow-up after review. Instant AI photo analysis is coming later.`;
 
   const [photoName, setPhotoName] = useState('');
   const [photoEmail, setPhotoEmail] = useState('');
@@ -171,7 +174,7 @@ const handleSubmitPhotoCheck = useCallback(
         throw new Error(result?.errors?.[0] || result?.message || 'Unable to submit photo check.');
       }
 
-      setPhotoCheckSuccess(`We’ll review your photos and follow up by email. Request ID: ${result.requestId}`);
+      setPhotoCheckSuccess(`Photo check request received. We’ll manually review your photos and follow up by email. Request ID: ${result.requestId}`);
       setPhotoName('');
       setPhotoEmail('');
       setPhotoFiles([]);
@@ -201,7 +204,7 @@ const handleSubmitPhotoCheck = useCallback(
             <div className="hf-photo-check-panel__header">
               <div className="hf-photo-check-panel__title">Free Photo Check</div>
               <div className="hf-photo-check-panel__subtitle">
-                Upload up to 5 photos and HexForge will review them for brightness, contrast, composition, and suitability for your selected product.
+                Upload up to 5 photos for manual review. We’ll check image quality and recommend the best product fit before you place an order.
               </div>
             </div>
             <form className="hf-photo-check-form" onSubmit={handleSubmitPhotoCheck}>
