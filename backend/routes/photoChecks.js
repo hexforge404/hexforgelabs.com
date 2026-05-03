@@ -112,6 +112,7 @@ router.post('/', photoUploadFields, createValidation, async (req, res) => {
         email: req.body.email,
       },
       product: req.body.product?.trim() || 'lithophane',
+      notes: req.body.notes?.trim() || undefined,
       image: {
         path: firstImage.path,
         publicUrl: firstImage.path,
@@ -164,6 +165,78 @@ router.get('/:requestId', requireAdmin, async (req, res) => {
   } catch (error) {
     console.error('Error fetching photo check request:', error);
     return res.status(500).json({ message: 'Unable to fetch photo check request' });
+  }
+});
+
+router.patch('/:requestId/status', requireAdmin, express.json(), async (req, res) => {
+  const { status } = req.body;
+  const allowedStatuses = ['new', 'reviewed', 'contacted', 'converted', 'archived'];
+
+  if (!allowedStatuses.includes(status)) {
+    return res.status(400).json({ message: 'Invalid status value' });
+  }
+
+  try {
+    const request = await PhotoCheckRequest.findOneAndUpdate(
+      { requestId: req.params.requestId },
+      { status },
+      { new: true }
+    ).lean();
+
+    if (!request) {
+      return res.status(404).json({ message: 'Photo check request not found' });
+    }
+
+    return res.json({ success: true, request });
+  } catch (error) {
+    console.error('Error updating photo check status:', error);
+    return res.status(500).json({ message: 'Unable to update photo check status' });
+  }
+});
+
+router.get('/:requestId/images/:filename', requireAdmin, async (req, res) => {
+  try {
+    const { requestId } = req.params;
+    const filename = path.basename(req.params.filename);
+    const request = await PhotoCheckRequest.findOne({ requestId }).lean();
+    if (!request) {
+      return res.status(404).json({ message: 'Photo check request not found' });
+    }
+
+    const allowedImages = [
+      ...(request.images || []),
+      ...(request.image && request.image.filename ? [request.image] : []),
+    ];
+
+    const image = allowedImages.find((img) => img.filename === filename);
+    if (!image) {
+      return res.status(403).json({ message: 'Image not authorized for this request' });
+    }
+
+    const requestDir = path.resolve(PHOTO_CHECK_UPLOAD_DIR, requestId);
+    let targetPath;
+
+    if (image.path) {
+      const candidate = path.isAbsolute(image.path)
+        ? image.path
+        : path.resolve(__dirname, '..', image.path);
+      if (candidate.startsWith(requestDir + path.sep)) {
+        targetPath = candidate;
+      }
+    }
+
+    if (!targetPath) {
+      targetPath = path.resolve(requestDir, filename);
+    }
+
+    if (!targetPath.startsWith(requestDir + path.sep)) {
+      return res.status(403).json({ message: 'Forbidden' });
+    }
+
+    return res.sendFile(targetPath);
+  } catch (error) {
+    console.error('Error fetching photo check image:', error);
+    return res.status(500).json({ message: 'Unable to fetch photo check image' });
   }
 });
 
