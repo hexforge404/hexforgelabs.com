@@ -12,6 +12,7 @@ const MongoStore = require('connect-mongo');
 const toolRoutes = require('./routes/tools');
 const path = require('path');                   // ⬅️ move up here
 const uploadsRouter = require('./routes/uploads'); // ⬅️ and this
+const photoCheckRoutes = require('./routes/photoChecks');
 const scriptLabRoutes = require('./routes/scriptLab');
 const surfaceRoutes = require('./routes/surface');
 
@@ -176,6 +177,7 @@ app.use("/api/assistant-sessions", apiLimiter, assistantSessionsRouter);
 app.use("/api/assistant/sessions", apiLimiter, assistantSessionsRouter);
 app.use('/api/mcp', mcpRoutes);
 app.use('/api/products', apiLimiter, productRoutes);
+app.use('/api/photo-checks', apiLimiter, photoCheckRoutes);
 app.use('/api/orders', apiLimiter, orderRoutes);
 app.use('/api/admin', apiLimiter, adminRoutes);
 app.use('/api/admin/test-pipeline', apiLimiter, testPipelineRoutes);
