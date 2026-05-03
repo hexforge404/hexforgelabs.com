@@ -1,6 +1,45 @@
 const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
 
+const imageSchema = new mongoose.Schema(
+  {
+    originalName: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    filename: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    path: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    relativePath: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    mimeType: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    size: {
+      type: Number,
+      required: true,
+    },
+    uploadedAt: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+  { _id: false }
+);
+
 const photoCheckRequestSchema = new mongoose.Schema(
   {
     requestId: {
@@ -57,6 +96,10 @@ const photoCheckRequestSchema = new mongoose.Schema(
         type: Date,
         default: Date.now,
       },
+    },
+    images: {
+      type: [imageSchema],
+      default: undefined,
     },
     status: {
       type: String,

@@ -27,7 +27,7 @@ ensureDir(PHOTO_CHECK_UPLOAD_DIR).catch((err) => {
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB limit
+    fileSize: 10 * 1024 * 1024, // 10MB limit per file
   },
   fileFilter: (req, file, cb) => {
     if (file.mimetype.startsWith('image/')) {
@@ -37,6 +37,12 @@ const upload = multer({
     }
   },
 });
+
+const photoUploadFields = upload.fields([
+  { name: 'photos', maxCount: 5 },
+  { name: 'photo', maxCount: 5 },
+  { name: 'image', maxCount: 5 },
+]);
 
 const safeFilename = (originalName) => {
   const ext = path.extname(originalName).toLowerCase();
@@ -51,14 +57,23 @@ const safeFilename = (originalName) => {
 const createValidation = [
   body('name').trim().notEmpty().withMessage('Name is required'),
   body('email').trim().isEmail().withMessage('Valid email is required'),
-  body('product').trim().notEmpty().withMessage('Product is required'),
+  body('product').optional().trim(),
 ];
 
-router.post('/', upload.any(), createValidation, async (req, res) => {
+router.post('/', photoUploadFields, createValidation, async (req, res) => {
   const errors = validationResult(req);
-  const file = (req.files || []).find((entry) => ['image', 'photo'].includes(entry.fieldname));
-  if (!file) {
-    return res.status(400).json({ errors: ['Image file is required'] });
+  const files = [
+    ...(req.files?.photos || []),
+    ...(req.files?.photo || []),
+    ...(req.files?.image || []),
+  ];
+
+  if (files.length === 0) {
+    return res.status(400).json({ errors: ['At least one image file is required'] });
+  }
+
+  if (files.length > 5) {
+    return res.status(400).json({ errors: ['Please upload no more than 5 photos'] });
   }
 
   if (!errors.isEmpty()) {
@@ -70,34 +85,53 @@ router.post('/', upload.any(), createValidation, async (req, res) => {
     const requestDir = path.join(PHOTO_CHECK_UPLOAD_DIR, requestId);
     await ensureDir(requestDir);
 
-    const filename = safeFilename(file.originalname);
-    const targetPath = path.join(requestDir, filename);
-    await fs.writeFile(targetPath, file.buffer);
+    const imageMetas = await Promise.all(
+      files.map(async (file) => {
+        const filename = safeFilename(file.originalname);
+        const targetPath = path.join(requestDir, filename);
+        await fs.writeFile(targetPath, file.buffer);
 
-    const relativePath = `uploads/photo-checks/${requestId}/${filename}`;
-    const publicUrl = `/${relativePath}`;
+        const relativePath = `uploads/photo-checks/${requestId}/${filename}`;
+        return {
+          originalName: file.originalname,
+          filename,
+          path: relativePath,
+          relativePath,
+          mimeType: file.mimetype,
+          size: file.size,
+          uploadedAt: new Date(),
+        };
+      })
+    );
 
+    const firstImage = imageMetas[0];
     const photoCheck = new PhotoCheckRequest({
       requestId,
       customer: {
         name: req.body.name,
         email: req.body.email,
       },
-      product: req.body.product,
+      product: req.body.product?.trim() || 'lithophane',
       image: {
-        path: publicUrl,
-        publicUrl,
-        relativePath,
-        originalName: file.originalname,
-        mimeType: file.mimetype,
-        size: file.size,
-        uploadedAt: new Date(),
+        path: firstImage.path,
+        publicUrl: firstImage.path,
+        relativePath: firstImage.relativePath,
+        originalName: firstImage.originalName,
+        mimeType: firstImage.mimeType,
+        size: firstImage.size,
+        uploadedAt: firstImage.uploadedAt,
       },
+      images: imageMetas,
     });
 
     await photoCheck.save();
 
-    return res.json({ success: true, requestId });
+    return res.status(201).json({
+      success: true,
+      requestId,
+      imageCount: imageMetas.length,
+      message: 'Photo check request received.',
+    });
   } catch (error) {
     console.error('Error saving photo check request:', error);
     return res.status(500).json({ message: 'Unable to create photo check request' });
