@@ -1740,7 +1740,10 @@ const activeAddons = getActiveAddons();
                         <p>
                           We review every uploaded image before printing. If a photo is too dark, blurry, or poorly composed, we’ll contact you before production to make sure your keepsake looks its best.
                         </p>
-                        <Link to="/chat" className="product-detail-free-photo-check-cta">
+                        <Link
+                          to={`/chat?intent=photo-check&product=${customOrder.productType === 'nightlight' ? 'night-light' : 'custom-lithophane'}`}
+                          className="product-detail-free-photo-check-cta"
+                        >
                           Get a Free Photo Check
                         </Link>
                       </div>
@@ -1784,7 +1787,10 @@ const activeAddons = getActiveAddons();
                         <p>
                           We review every uploaded image before printing. If a photo is too dark, blurry, or poorly composed, we’ll contact you before production to make sure your keepsake looks its best.
                         </p>
-                        <Link to="/chat" className="product-detail-free-photo-check-cta">
+                        <Link
+                          to={`/chat?intent=photo-check&product=${customOrder.productType === 'nightlight' ? 'night-light' : 'custom-lithophane'}`}
+                          className="product-detail-free-photo-check-cta"
+                        >
                           Get a Free Photo Check
                         </Link>
                       </div>
