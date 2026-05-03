@@ -67,6 +67,10 @@ const photoCheckRequestSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    notes: {
+      type: String,
+      trim: true,
+    },
     image: {
       path: {
         type: String,
@@ -103,7 +107,7 @@ const photoCheckRequestSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['new', 'reviewed', 'archived'],
+      enum: ['new', 'reviewed', 'contacted', 'converted', 'archived'],
       default: 'new',
       index: true,
     },

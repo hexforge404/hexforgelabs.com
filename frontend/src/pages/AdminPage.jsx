@@ -125,6 +125,11 @@ export default function AdminPage() {
   const [orders, setOrders] = useState([]);
   const [customOrders, setCustomOrders] = useState([]);
   const [customOrderStatusFilter, setCustomOrderStatusFilter] = useState('all');
+  const [photoChecks, setPhotoChecks] = useState([]);
+  const [photoChecksLoading, setPhotoChecksLoading] = useState(false);
+  const [photoChecksError, setPhotoChecksError] = useState(null);
+  const [photoCheckStatusUpdates, setPhotoCheckStatusUpdates] = useState({});
+  const [photoPreview, setPhotoPreview] = useState(null);
   const [productionQueueFilter, setProductionQueueFilter] = useState('all');
   const [productionQueueSort, setProductionQueueSort] = useState('newest');
   const [expandedCustomOrders, setExpandedCustomOrders] = useState({});
@@ -767,6 +772,63 @@ export default function AdminPage() {
     }
   };
 
+  const fetchPhotoChecks = async () => {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/photo-checks`, {
+        withCredentials: true,
+      });
+      return response.data?.data || [];
+    } catch (err) {
+      console.error('Failed to fetch photo checks:', err);
+      throw err;
+    }
+  };
+
+  const updatePhotoCheckStatus = async (requestId, status) => {
+    const response = await axios.patch(
+      `${API_BASE_URL}/photo-checks/${encodeURIComponent(requestId)}/status`,
+      { status },
+      { withCredentials: true }
+    );
+    return response.data?.request;
+  };
+
+  const photoCheckStatuses = ['new', 'reviewed', 'contacted', 'converted', 'archived'];
+
+  const getSelectedPhotoCheckStatus = (request) =>
+    photoCheckStatusUpdates[request.requestId] || request.status;
+
+  const handlePhotoCheckStatusChange = (requestId, status) => {
+    setPhotoCheckStatusUpdates((prev) => ({ ...prev, [requestId]: status }));
+  };
+
+  const openPhotoPreview = (request, image) => {
+    setPhotoPreview({ request, image });
+  };
+
+  const closePhotoPreview = () => {
+    setPhotoPreview(null);
+  };
+
+  useEffect(() => {
+    if (!photoPreview) return undefined;
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        closePhotoPreview();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [photoPreview]);
+
+  const handleSavePhotoCheckStatus = async (request) => {
+    const selectedStatus = getSelectedPhotoCheckStatus(request);
+    if (selectedStatus === request.status) return;
+    await handleUpdatePhotoCheckStatus(request.requestId, selectedStatus);
+  };
+
   const fetchProductionJobsForOrders = useCallback(async (orderIds = []) => {
     if (!Array.isArray(orderIds) || orderIds.length === 0) return {};
     try {
@@ -803,6 +865,239 @@ export default function AdminPage() {
     };
     loadFilteredCustomOrders();
   }, [activeTab, customOrderStatusFilter, fetchProductionJobsForOrders]);
+
+  useEffect(() => {
+    if (activeTab !== 'photo-checks') return;
+
+    const loadPhotoChecks = async () => {
+      setPhotoChecksLoading(true);
+      setPhotoChecksError(null);
+      try {
+        const checks = await fetchPhotoChecks();
+        setPhotoChecks(checks);
+      } catch (err) {
+        setPhotoChecksError(err.response?.data?.message || err.message || 'Unable to load photo checks.');
+      } finally {
+        setPhotoChecksLoading(false);
+      }
+    };
+
+    loadPhotoChecks();
+  }, [activeTab]);
+
+  const handleRefreshPhotoChecks = async () => {
+    setPhotoChecksLoading(true);
+    setPhotoChecksError(null);
+    try {
+      const checks = await fetchPhotoChecks();
+      setPhotoChecks(checks);
+    } catch (err) {
+      setPhotoChecksError(err.response?.data?.message || err.message || 'Unable to load photo checks.');
+    } finally {
+      setPhotoChecksLoading(false);
+    }
+  };
+
+  const handleUpdatePhotoCheckStatus = async (requestId, status) => {
+    try {
+      const updated = await updatePhotoCheckStatus(requestId, status);
+      setPhotoChecks((prev) => prev.map((item) => (item.requestId === requestId ? updated : item)));
+    } catch (err) {
+      errorToast(err.response?.data?.message || err.message || 'Failed to update status');
+    }
+  };
+
+  const getPhotoCheckImageUrl = (requestId, filename) =>
+    `${API_BASE_URL}/photo-checks/${encodeURIComponent(requestId)}/images/${encodeURIComponent(filename)}`;
+
+  const renderPhotoChecks = () => {
+    if (photoChecksLoading) {
+      return <div className="empty-state">Loading photo check requests…</div>;
+    }
+
+    if (photoChecksError) {
+      return <div className="status-message error-message">{photoChecksError}</div>;
+    }
+
+    if (!photoChecks || photoChecks.length === 0) {
+      return <div className="empty-state">No photo check requests yet.</div>;
+    }
+
+    return (
+      <>
+        <div className="admin-orders-grid admin-photo-check-grid">
+          {photoChecks.map((request) => {
+            const images = request.images || [];
+            const selectedStatus = getSelectedPhotoCheckStatus(request);
+
+            return (
+              <div key={request.requestId} className="admin-order-card photo-check-card">
+                <div className="photo-check-card-header">
+                  <div>
+                    <div className="admin-order-title">{request.requestId}</div>
+                    <div className={`photo-check-status-pill status-${request.status}`}>{request.status}</div>
+                  </div>
+                  <div className="photo-check-card-meta">
+                    <div className="photo-check-meta-item">
+                      <span className="label">Created</span>
+                      <span>{new Date(request.createdAt).toLocaleString()}</span>
+                    </div>
+                    <div className="photo-check-meta-item">
+                      <span className="label">Images</span>
+                      <span>{images.length || 0}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="photo-check-card-body">
+                  <div className="photo-check-thumbnail-list">
+                    {images.length > 0 ? (
+                      images.map((image) => (
+                        <button
+                          key={image.filename}
+                          type="button"
+                          className="photo-check-thumbnail-button"
+                          onClick={() => openPhotoPreview(request, image)}
+                          title="Open image preview"
+                        >
+                          <img
+                            src={getPhotoCheckImageUrl(request.requestId, image.filename)}
+                            alt={image.originalName}
+                            className="photo-check-thumbnail"
+                          />
+                        </button>
+                      ))
+                    ) : (
+                      <div className="photo-check-thumbnail-empty">No images</div>
+                    )}
+                  </div>
+
+                  <div className="photo-check-details-grid">
+                    <div className="photo-check-detail-row">
+                      <span className="label">Customer</span>
+                      <span>{request.customer?.name || 'Unknown'}</span>
+                    </div>
+                    <div className="photo-check-detail-row">
+                      <span className="label">Email</span>
+                      <span>{request.customer?.email || 'Unknown'}</span>
+                    </div>
+                    {request.customer?.phone && (
+                      <div className="photo-check-detail-row">
+                        <span className="label">Phone</span>
+                        <span>{request.customer.phone}</span>
+                      </div>
+                    )}
+                    <div className="photo-check-detail-row">
+                      <span className="label">Product</span>
+                      <span>{request.product || 'Photo check'}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {request.notes && (
+                  <div className="photo-check-notes">
+                    <div className="photo-check-notes-label">Notes</div>
+                    <p>{request.notes}</p>
+                  </div>
+                )}
+
+                <div className="photo-check-card-actions">
+                  <div className="photo-check-status-row">
+                    <label htmlFor={`photo-check-status-${request.requestId}`} className="photo-check-status-label">
+                      Status
+                    </label>
+                    <select
+                      id={`photo-check-status-${request.requestId}`}
+                      className="photo-check-status-select"
+                      value={selectedStatus}
+                      onChange={(e) => handlePhotoCheckStatusChange(request.requestId, e.target.value)}
+                    >
+                      {photoCheckStatuses.map((status) => (
+                        <option key={status} value={status}>
+                          {status.charAt(0).toUpperCase() + status.slice(1)}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      className="secondary-button small-button"
+                      disabled={selectedStatus === request.status}
+                      onClick={() => handleSavePhotoCheckStatus(request)}
+                    >
+                      Update
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {photoPreview && (
+          <div className="photo-check-preview-backdrop" onClick={closePhotoPreview}>
+            <div className="photo-check-preview-modal" onClick={(event) => event.stopPropagation()}>
+              <div className="photo-check-preview-header">
+                <div>
+                  <h3>{photoPreview.request.requestId}</h3>
+                  <p className="photo-check-preview-subject">
+                    {photoPreview.request.customer?.name || 'Unknown customer'} • {photoPreview.request.customer?.email || 'No email'}
+                  </p>
+                </div>
+                <button type="button" className="photo-check-preview-close" onClick={closePhotoPreview}>
+                  ×
+                </button>
+              </div>
+              <div className="photo-check-preview-body">
+                <img
+                  src={getPhotoCheckImageUrl(photoPreview.request.requestId, photoPreview.image.filename)}
+                  alt={photoPreview.image.originalName}
+                  className="photo-check-preview-image"
+                />
+                <div className="photo-check-preview-context">
+                  <div className="photo-check-detail-row">
+                    <span className="label">Product</span>
+                    <span>{photoPreview.request.product || 'Photo check'}</span>
+                  </div>
+                  <div className="photo-check-detail-row">
+                    <span className="label">Status</span>
+                    <span>{photoPreview.request.status}</span>
+                  </div>
+                  <div className="photo-check-detail-row">
+                    <span className="label">Created</span>
+                    <span>{new Date(photoPreview.request.createdAt).toLocaleString()}</span>
+                  </div>
+                  <div className="photo-check-detail-row">
+                    <span className="label">Image</span>
+                    <span>{photoPreview.image.originalName}</span>
+                  </div>
+                  {photoPreview.request.notes && (
+                    <div className="photo-check-notes photo-check-preview-notes">
+                      <div className="photo-check-notes-label">Notes</div>
+                      <p>{photoPreview.request.notes}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </>
+    );
+  };
+
+  const renderPhotoCheckTab = () => (
+    <div>
+      <div className="admin-order-filter-row">
+        <h2 className="section-header">PHOTO CHECK REQUESTS</h2>
+        <div className="admin-order-filter-controls">
+          <button type="button" className="tab refresh-button" onClick={handleRefreshPhotoChecks}>
+            Refresh
+          </button>
+        </div>
+      </div>
+      {renderPhotoChecks()}
+    </div>
+  );
 
   // ---------- HELPERS ----------
   const normalizeName = (name) => name.replace(/\s+/g, '').toLowerCase();
@@ -2792,6 +3087,12 @@ export default function AdminPage() {
           Custom Lamp Orders
         </button>
         <button
+          className={activeTab === 'photo-checks' ? 'tab active' : 'tab'}
+          onClick={() => setActiveTab('photo-checks')}
+        >
+          Photo Checks
+        </button>
+        <button
           className={activeTab === 'production-queue' ? 'tab active' : 'tab'}
           onClick={() => setActiveTab('production-queue')}
         >
@@ -4175,6 +4476,8 @@ export default function AdminPage() {
           </div>
         </div>
       )}
+
+      {activeTab === 'photo-checks' && renderPhotoCheckTab()}
 
       {activeTab === 'production-queue' && (
         <div>
