@@ -7,7 +7,8 @@ const API_BASE =
   "/mcp";
 
 export function useContentEngineChat(_config = {}) {
-  const [messages, setMessages] = useState([]); // { role: 'user' | 'assistant', content: string }
+  const { initialMessages = [] } = _config;
+  const [messages, setMessages] = useState(initialMessages); // { role: 'user' | 'assistant', content: string }
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
