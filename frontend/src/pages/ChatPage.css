@@ -127,6 +127,44 @@
   color: #bde7d6;
 }
 
+.hf-photo-check-file-count {
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+}
+
+.hf-photo-check-file-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.hf-photo-check-file-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  padding: 0.6rem 0.75rem;
+  background: rgba(34, 197, 154, 0.08);
+  border: 1px solid rgba(34, 197, 154, 0.15);
+  border-radius: 0.75rem;
+}
+
+.hf-photo-check-file-remove {
+  background: transparent;
+  border: 1px solid rgba(34, 197, 154, 0.35);
+  color: #bde7d6;
+  border-radius: 0.65rem;
+  padding: 0.35rem 0.7rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.hf-photo-check-file-remove:hover {
+  background: rgba(34, 197, 154, 0.1);
+}
+
 .hf-photo-check-submit {
   align-self: flex-start;
   background: #22f7a9;

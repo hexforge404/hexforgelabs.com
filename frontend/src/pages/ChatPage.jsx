@@ -25,14 +25,15 @@ const ChatPage = () => {
       ? "globe lamp"
       : "lithophane";
 
-  const photoCheckIntro = `Hi! I can help check whether your photo will work well for a ${productLabel}.\nUpload the image you want to use, and I’ll help review:\n- brightness and contrast\n- face/detail visibility\n- cropping issues\n- whether it fits best as a night light, small shade, medium shade, or large shade`;
+  const photoCheckIntro = `Hi! I can help check whether your photos will work well for a ${productLabel}.\nUpload up to 5 photos, and I’ll help review:\n- brightness and contrast\n- face/detail visibility\n- composition and framing\n- whether they fit best as a night light, small shade, medium shade, or large shade`;
 
   const [photoName, setPhotoName] = useState('');
   const [photoEmail, setPhotoEmail] = useState('');
-  const [photoFile, setPhotoFile] = useState(null);
+  const [photoFiles, setPhotoFiles] = useState([]);
   const [photoCheckError, setPhotoCheckError] = useState('');
   const [photoCheckSuccess, setPhotoCheckSuccess] = useState('');
   const [isSubmittingPhotoCheck, setIsSubmittingPhotoCheck] = useState(false);
+  const photoInputRef = useRef(null);
 
   const chatSessionIdRef = useRef(`chat-${Date.now()}`);
   const {
@@ -95,8 +96,42 @@ const handleClickSend = useCallback(() => {
 }, [sendMessage, isLoading, bootDone]);
 
 const handlePhotoFileChange = useCallback((e) => {
-  const file = e.target.files?.[0] || null;
-  setPhotoFile(file);
+  const incomingFiles = Array.from(e.target.files || []);
+  e.target.value = '';
+
+  if (incomingFiles.length === 0) {
+    return;
+  }
+
+  const MAX_FILE_SIZE = 10 * 1024 * 1024;
+  const oversizedFile = incomingFiles.find((file) => file.size > MAX_FILE_SIZE);
+  if (oversizedFile) {
+    setPhotoCheckError('Each photo must be 10MB or smaller.');
+    return;
+  }
+
+  const existingKeys = new Set(photoFiles.map((file) => `${file.name}-${file.size}-${file.lastModified}`));
+  const uniqueIncoming = incomingFiles.filter((file) => {
+    const key = `${file.name}-${file.size}-${file.lastModified}`;
+    if (existingKeys.has(key)) {
+      return false;
+    }
+    existingKeys.add(key);
+    return true;
+  });
+
+  const newTotal = photoFiles.length + uniqueIncoming.length;
+  if (newTotal > 5) {
+    setPhotoCheckError('Please upload no more than 5 photos.');
+    return;
+  }
+
+  setPhotoFiles([...photoFiles, ...uniqueIncoming]);
+  setPhotoCheckError('');
+}, [photoFiles]);
+
+const handleRemovePhoto = useCallback((index) => {
+  setPhotoFiles((current) => current.filter((_, idx) => idx !== index));
 }, []);
 
 const handleSubmitPhotoCheck = useCallback(
@@ -105,8 +140,13 @@ const handleSubmitPhotoCheck = useCallback(
     setPhotoCheckError('');
     setPhotoCheckSuccess('');
 
-    if (!photoName.trim() || !photoEmail.trim() || !photoFile) {
-      setPhotoCheckError('Please provide your name, email, and a photo to upload.');
+    if (!photoName.trim() || !photoEmail.trim() || photoFiles.length === 0) {
+      setPhotoCheckError('Please provide your name, email, and at least one photo.');
+      return;
+    }
+
+    if (photoFiles.length > 5) {
+      setPhotoCheckError('Please upload no more than 5 photos.');
       return;
     }
 
@@ -114,7 +154,9 @@ const handleSubmitPhotoCheck = useCallback(
     formData.append('name', photoName.trim());
     formData.append('email', photoEmail.trim());
     formData.append('product', product || 'custom-lithophane');
-    formData.append('image', photoFile);
+    photoFiles.forEach((file) => {
+      formData.append('photos', file);
+    });
 
     setIsSubmittingPhotoCheck(true);
 
@@ -129,17 +171,20 @@ const handleSubmitPhotoCheck = useCallback(
         throw new Error(result?.errors?.[0] || result?.message || 'Unable to submit photo check.');
       }
 
-      setPhotoCheckSuccess(`Photo check request received. Request ID: ${result.requestId}`);
+      setPhotoCheckSuccess(`We’ll review your photos and follow up by email. Request ID: ${result.requestId}`);
       setPhotoName('');
       setPhotoEmail('');
-      setPhotoFile(null);
+      setPhotoFiles([]);
+      if (photoInputRef.current) {
+        photoInputRef.current.value = '';
+      }
     } catch (err) {
       setPhotoCheckError(err.message || 'Unable to submit photo check.');
     } finally {
       setIsSubmittingPhotoCheck(false);
     }
   },
-  [photoName, photoEmail, photoFile, product]
+  [photoName, photoEmail, photoFiles, product]
 );
 
 
@@ -156,7 +201,7 @@ const handleSubmitPhotoCheck = useCallback(
             <div className="hf-photo-check-panel__header">
               <div className="hf-photo-check-panel__title">Free Photo Check</div>
               <div className="hf-photo-check-panel__subtitle">
-                Submit one image and HexForge will review it for brightness, composition, and suitability for your selected product.
+                Upload up to 5 photos and HexForge will review them for brightness, contrast, composition, and suitability for your selected product.
               </div>
             </div>
             <form className="hf-photo-check-form" onSubmit={handleSubmitPhotoCheck}>
@@ -190,17 +235,37 @@ const handleSubmitPhotoCheck = useCallback(
                 />
               </label>
               <label className="hf-photo-check-field">
-                <span>Upload a photo</span>
+                <span>Upload photos, up to 5</span>
                 <input
+                  ref={photoInputRef}
                   type="file"
                   accept="image/*"
+                  multiple
                   className="hf-photo-check-file"
                   onChange={handlePhotoFileChange}
                 />
               </label>
-              {photoFile && (
+              {photoFiles.length > 0 && (
                 <div className="hf-photo-check-file-info">
-                  Selected file: {photoFile.name} ({Math.round(photoFile.size / 1024)} KB)
+                  <div className="hf-photo-check-file-count">
+                    {photoFiles.length === 1
+                      ? `1 photo selected`
+                      : `${photoFiles.length} photos selected`}
+                  </div>
+                  <ul className="hf-photo-check-file-list">
+                    {photoFiles.map((file, index) => (
+                      <li key={`${file.name}-${file.size}-${file.lastModified}`} className="hf-photo-check-file-item">
+                        <span>{file.name}</span>
+                        <button
+                          type="button"
+                          className="hf-photo-check-file-remove"
+                          onClick={() => handleRemovePhoto(index)}
+                        >
+                          Remove
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               )}
               {photoCheckError && (
