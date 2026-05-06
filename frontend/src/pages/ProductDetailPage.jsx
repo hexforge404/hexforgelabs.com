@@ -394,8 +394,52 @@ function ProductDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const [showAllThumbnails, setShowAllThumbnails] = useState(false);
   const [lightboxImage, setLightboxImage] = useState(null);
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
+
+  const handleGalleryImageError = (event) => {
+    const brokenSrc = event.currentTarget?.src;
+    if (brokenSrc) {
+      console.warn('Product gallery image failed to load:', brokenSrc);
+    }
+    event.currentTarget.src = DEFAULT_PLACEHOLDER;
+  };
+
+  const getCuratedGalleryImages = (slug, images) => {
+    if (!Array.isArray(images) || images.length === 0) return images;
+    if (slug !== 'multi-panel-lithophane-lamp') return [...images];
+
+    const preferredOrder = [
+      '/images/products/litho-multipanel/hero-main.jpg',
+      '/images/products/litho-multipanel/hero-alt.jpg',
+      '/images/products/litho-multipanel/panel-3.jpg',
+      '/images/products/litho-multipanel/panel-1.jpg',
+      '/images/products/litho-multipanel/panel-2.jpg',
+      '/images/products/litho-multipanel/panel-4.jpg',
+      '/images/products/litho-multipanel/process-1.jpg',
+      '/images/products/litho-multipanel/process-2.jpg',
+    ];
+
+    const ordered = [];
+    const seen = new Set();
+
+    preferredOrder.forEach((path) => {
+      if (images.includes(path) && !seen.has(path)) {
+        seen.add(path);
+        ordered.push(path);
+      }
+    });
+
+    images.forEach((path) => {
+      if (!seen.has(path)) {
+        seen.add(path);
+        ordered.push(path);
+      }
+    });
+
+    return ordered;
+  };
 
   // Custom order form state
   const [customOrder, setCustomOrder] = useState({
@@ -846,6 +890,12 @@ const activeAddons = getActiveAddons();
     }
   }, [product]);
 
+  useEffect(() => {
+    if (!showAllThumbnails && activeImageIndex >= 8) {
+      setActiveImageIndex(0);
+    }
+  }, [showAllThumbnails, activeImageIndex]);
+
   const getImageSrc = (image) => resolveImageUrl(image);
 
   const getAvailabilityStatus = (stock, status) => {
@@ -1246,6 +1296,11 @@ const activeAddons = getActiveAddons();
     return [];
   };
 
+  const getVisibleGalleryImages = (gallery, expanded) => {
+    if (!Array.isArray(gallery) || gallery.length === 0) return [];
+    return expanded ? gallery : gallery.slice(0, 8);
+  };
+
   if (loading) {
     return (
       <div className="product-detail-loading">
@@ -1298,7 +1353,9 @@ const activeAddons = getActiveAddons();
               : clampPanelCount(customOrder.lampshade.panelCount);
   const isLamp = isLampProduct(product);
   const galleryImages = getGalleryImages(normalized);
-  const heroImage = galleryImages[activeImageIndex] || normalized.image;
+  const orderedGalleryImages = getCuratedGalleryImages(slug, galleryImages);
+  const visibleThumbnailImages = getVisibleGalleryImages(orderedGalleryImages, showAllThumbnails);
+  const heroImage = orderedGalleryImages[activeImageIndex] || normalized.image;
   const customOrderTotal = (() => {
     if (customOrder.productType === 'familyBundle4') {
       return calculatePrice({ productType: 'familyBundle4' });
@@ -1451,31 +1508,40 @@ const activeAddons = getActiveAddons();
               <img
                 src={getImageSrc(heroImage)}
                 alt={normalized.title}
-                onError={(e) => {
-                  e.currentTarget.src = DEFAULT_PLACEHOLDER;
-                }}
+                onError={handleGalleryImageError}
                 className="product-detail-image"
               />
             </button>
-            {galleryImages.length > 1 && (
-              <div className="product-detail-thumbnails">
-                {galleryImages.map((image, index) => (
-                  <button
-                    key={`${image}-${index}`}
-                    type="button"
-                    className={`product-detail-thumbnail${index === activeImageIndex ? ' is-active' : ''}`}
-                    onClick={() => setActiveImageIndex(index)}
-                  >
-                    <img
-                      src={getImageSrc(image)}
-                      alt={`${normalized.title} thumbnail ${index + 1}`}
-                      onError={(e) => {
-                        e.currentTarget.src = DEFAULT_PLACEHOLDER;
-                      }}
-                    />
-                  </button>
-                ))}
-              </div>
+            {orderedGalleryImages.length > 1 && (
+              <>
+                <div className="product-detail-thumbnails">
+                  {visibleThumbnailImages.map((image, index) => (
+                    <button
+                      key={`${image}-${index}`}
+                      type="button"
+                      className={`product-detail-thumbnail${index === activeImageIndex ? ' is-active' : ''}`}
+                      onClick={() => setActiveImageIndex(index)}
+                    >
+                      <img
+                        src={getImageSrc(image)}
+                        alt={`${normalized.title} thumbnail ${index + 1}`}
+                        onError={handleGalleryImageError}
+                      />
+                    </button>
+                  ))}
+                </div>
+                {orderedGalleryImages.length > 8 && (
+                  <div className="product-detail-gallery-actions">
+                    <button
+                      type="button"
+                      className="gallery-toggle-button"
+                      onClick={() => setShowAllThumbnails((prev) => !prev)}
+                    >
+                      {showAllThumbnails ? 'Show fewer photos' : `Show more photos (${orderedGalleryImages.length})`}
+                    </button>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -2450,6 +2516,7 @@ const activeAddons = getActiveAddons();
             <img
               src={getImageSrc(lightboxImage)}
               alt="Expanded view"
+              onError={handleGalleryImageError}
             />
           </div>
         </div>
