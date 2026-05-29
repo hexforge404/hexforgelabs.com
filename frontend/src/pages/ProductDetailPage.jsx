@@ -1366,6 +1366,7 @@ const activeAddons = getActiveAddons();
         panelCount: requiredPanelCount,
         size: customOrder.cylinder.size,
         addons: customOrder.cylinder.addons,
+        lightType: customOrder.cylinder.lightType,
       });
     }
     if (customOrder.productType === 'fixedBox4') {
@@ -1426,8 +1427,7 @@ const activeAddons = getActiveAddons();
   };
 
   const getCtaLabel = () => {
-    const label = getProductLabel();
-    return `🔥 Start My Custom ${label}`;
+    return 'START MY CUSTOM ORDER';
   };
 
   const getHeroStartText = () => {
@@ -1567,7 +1567,7 @@ const activeAddons = getActiveAddons();
             </div>
           )}
           <div className="product-detail-price">
-            {customOrder.productType === 'cylinder' && Number.isFinite(customOrderTotal)
+            {isLamp && Number.isFinite(customOrderTotal)
               ? `$${customOrderTotal.toFixed(2)}`
               : normalized.priceFormatted}
           </div>
@@ -2051,7 +2051,7 @@ const activeAddons = getActiveAddons();
                     onLightTypeChange={(value) => updateLampshade({ lightType: value })}
                     onToggleAddon={(value) => toggleAddon('lampshade', value)}
                     onNotesChange={(value) => updateLampshade({ notes: value })}
-                    showSize={false}
+                    showSize={true}
                     showLightType={false}
                     showDiffuser={true}
                     showNightlight={false}
