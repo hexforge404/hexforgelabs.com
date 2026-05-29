@@ -4,7 +4,7 @@ import { useState, useCallback } from "react";
 const API_BASE =
   process.env.REACT_APP_ASSISTANT_BASE_URL ||
   process.env.REACT_APP_ASSISTANT_BASE ||
-  "/mcp";
+  "/api/mcp";
 
 export function useContentEngineChat(_config = {}) {
   const { initialMessages = [] } = _config;

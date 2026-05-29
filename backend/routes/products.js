@@ -150,6 +150,8 @@ const baseProductValidation = [
   body('status').optional().isIn(STATUS_VALUES),
   body('tags').optional().isArray(),
   body('sku').optional().isString(),
+  body('isPrivatePayment').optional().isBoolean().toBoolean(),
+  body('paymentPurpose').optional().isIn(['standard_product', 'final_balance', 'custom_payment']),
 ];
 
 const promoteValidation = [
@@ -591,6 +593,8 @@ function buildProductPayload(body) {
     brand: body.brand || 'HexForge',
     stock: Number.isFinite(body.stock) ? body.stock : Number(body.stock) || 0,
     isFeatured: !!body.isFeatured,
+    isPrivatePayment: !!body.isPrivatePayment,
+    paymentPurpose: body.paymentPurpose || undefined,
   };
 }
 
@@ -598,6 +602,7 @@ router.get('/', productLimiter, async (req, res) => {
   try {
     const { page = 1, limit = 20, featured, category, search, raw, status } = req.query;
     const conditions = [];
+    const isAdmin = !!req.session?.admin?.loggedIn;
 
     if (featured === 'true') conditions.push({ isFeatured: true });
     if (category) conditions.push({ category });
@@ -624,6 +629,15 @@ router.get('/', productLimiter, async (req, res) => {
         $or: [
           { status: 'active' },
           { status: { $exists: false } },
+        ],
+      });
+    }
+
+    if (!(isAdmin && req.query.includePrivate === 'true')) {
+      conditions.push({
+        $or: [
+          { isPrivatePayment: { $ne: true } },
+          { isPrivatePayment: { $exists: false } },
         ],
       });
     }

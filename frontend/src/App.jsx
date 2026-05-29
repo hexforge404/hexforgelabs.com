@@ -40,6 +40,7 @@ import { errorToast, successToast } from './utils/toastUtils';
 import HeightmapPage from "./pages/HeightmapPage";
 import ProductDetailPage from 'pages/ProductDetailPage';
 import OrderStatusPage from 'pages/OrderStatusPage';
+import ReviewPage from 'pages/ReviewPage';
 
 import './App.css';
 
@@ -289,6 +290,7 @@ const MainApp = () => {
             <Route path="/memory" element={<MemoryPage />} />
             <Route path="/heightmap" element={<HeightmapPage />} />
             <Route path="/surface" element={<SurfacePage />} />
+            <Route path="/review" element={<ReviewPage />} />
 
             {/* Member accounts */}
             <Route

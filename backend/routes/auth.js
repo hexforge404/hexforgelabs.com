@@ -34,33 +34,45 @@ router.post('/login', authLimiter, validateLogin, async (req, res) => {
     if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
     const { username, password } = req.body;
-    
-    // Simple comparison for development
+    if (!username || !password) {
+      return res.status(400).json({ message: 'Username and password are required' });
+    }
+
     if (process.env.NODE_ENV === 'development') {
-      if (username === process.env.ADMIN_USERNAME && 
-          password === process.env.ADMIN_PASSWORD) {
+      if (username === process.env.ADMIN_USERNAME && password === process.env.ADMIN_PASSWORD) {
         req.session.admin = {
           loggedIn: true,
-          username: username,
+          username,
           roles: parseAdminRoles(),
           ip: req.ip,
           userAgent: req.get('User-Agent'),
-          createdAt: new Date()
+          createdAt: new Date(),
         };
         return res.json({ message: 'Login successful' });
       }
-    }
-    // Production bcrypt comparison
-    else {
-      const isMatch = await bcrypt.compare(password, process.env.ADMIN_PASSWORD_HASH);
+    } else {
+      const passwordHash = process.env.ADMIN_PASSWORD_HASH;
+      if (!passwordHash) {
+        console.error('🔒 Admin password hash is not configured');
+        return res.status(500).json({ message: 'Server authentication configuration unavailable' });
+      }
+
+      let isMatch = false;
+      try {
+        isMatch = await bcrypt.compare(password, passwordHash);
+      } catch (compareErr) {
+        console.error('🔒 Password comparison failed:', compareErr);
+        return res.status(500).json({ message: 'Authentication failed' });
+      }
+
       if (username === process.env.ADMIN_USERNAME && isMatch) {
         req.session.admin = {
           loggedIn: true,
-          username: username,
+          username,
           roles: parseAdminRoles(),
           ip: req.ip,
           userAgent: req.get('User-Agent'),
-          createdAt: new Date()
+          createdAt: new Date(),
         };
         return res.json({ message: 'Login successful' });
       }

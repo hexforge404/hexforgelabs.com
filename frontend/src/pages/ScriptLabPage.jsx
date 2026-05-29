@@ -135,7 +135,7 @@ User question:
 ${aiInput || '(no explicit question – explain how this script works and how to customize it safely for Skull BadUSB / other devices)'}
       `.trim();
 
-      const res = await axios.post('/mcp/chat', {
+      const res = await axios.post('/api/mcp/chat', {
         // ✅ Backend requirement: must have prompt or message
         prompt,
         mode: 'script-lab',

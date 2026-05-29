@@ -1,0 +1,332 @@
+.review-page {
+  min-height: calc(100vh - 80px);
+  background: radial-gradient(circle at top left, rgba(255, 210, 140, 0.15), transparent 35%),
+    linear-gradient(180deg, #060b15 0%, #050812 50%, #060914 100%);
+  color: #e9f1ff;
+  padding: 3.5rem 1.5rem 4rem;
+}
+
+.review-hero {
+  max-width: 960px;
+  margin: 0 auto 2.5rem;
+  text-align: center;
+}
+
+.review-hero-kicker {
+  text-transform: uppercase;
+  letter-spacing: 0.32em;
+  font-size: 0.75rem;
+  color: #f6d6b8;
+  margin-bottom: 1rem;
+}
+
+.review-hero h1 {
+  margin: 0;
+  font-size: clamp(2.1rem, 4vw, 3.4rem);
+  letter-spacing: -0.03em;
+  color: #ffffff;
+}
+
+.review-hero-copy {
+  margin: 1.25rem auto 0;
+  max-width: 620px;
+  color: #cbd5e1;
+  line-height: 1.7;
+}
+
+.review-card {
+  max-width: 900px;
+  margin: 0 auto;
+  background: rgba(6, 14, 28, 0.9);
+  border-radius: 1.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 2.5rem;
+  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.45);
+}
+
+.review-form {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.review-form-header h2 {
+  margin: 0 0 0.35rem;
+  font-size: 1.6rem;
+  color: #f8f3e7;
+}
+
+.review-form-header p {
+  margin: 0;
+  color: #a8b8cc;
+  font-size: 0.95rem;
+}
+
+.review-error {
+  background: rgba(248, 113, 113, 0.15);
+  border: 1px solid rgba(248, 113, 113, 0.6);
+  color: #fecaca;
+  padding: 0.85rem 1rem;
+  border-radius: 0.75rem;
+  font-size: 0.95rem;
+}
+
+.review-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1.25rem;
+}
+
+.review-grid label,
+.review-text {
+  display: grid;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  color: #cbd5e1;
+}
+
+.review-grid input,
+.review-grid select,
+.review-text textarea {
+  background: rgba(8, 15, 28, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 0.75rem;
+  padding: 0.75rem 0.9rem;
+  color: #e2e8f0;
+  font-size: 0.95rem;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.review-grid input::placeholder,
+.review-text textarea::placeholder {
+  color: #64748b;
+}
+
+.review-grid input:focus,
+.review-grid select:focus,
+.review-text textarea:focus {
+  border-color: rgba(255, 211, 135, 0.85);
+  box-shadow: 0 0 0 1px rgba(255, 211, 135, 0.35);
+}
+
+.review-text textarea {
+  min-height: 160px;
+  resize: vertical;
+}
+
+.review-flags {
+  display: grid;
+  gap: 0.75rem;
+  color: #cbd5e1;
+  font-size: 0.92rem;
+}
+
+.review-flags label {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+}
+
+.review-flags input {
+  margin-top: 0.15rem;
+}
+
+.review-upload {
+  display: grid;
+  gap: 1rem;
+  padding: 1.25rem;
+  border-radius: 1rem;
+  background: rgba(8, 15, 28, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.review-upload-header {
+  display: grid;
+  gap: 0.35rem;
+  color: #cbd5e1;
+  font-size: 0.95rem;
+}
+
+.review-upload-header strong {
+  color: #f8f3e7;
+  font-size: 1rem;
+}
+
+.review-upload-limits {
+  margin: 0;
+  padding-left: 1.2rem;
+  color: #94a3b8;
+  font-size: 0.85rem;
+  display: grid;
+  gap: 0.2rem;
+}
+
+.review-upload-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.review-upload-field {
+  display: grid;
+  gap: 0.5rem;
+  color: #cbd5e1;
+  font-size: 0.9rem;
+}
+
+.review-upload-field input[type='file'] {
+  padding: 0.4rem;
+  background: rgba(8, 15, 28, 0.9);
+  border-radius: 0.65rem;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  color: #cbd5e1;
+}
+
+.review-upload-help,
+.review-upload-note {
+  color: #94a3b8;
+  font-size: 0.85rem;
+}
+
+.review-upload-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+  color: #e2e8f0;
+  font-size: 0.88rem;
+}
+
+.review-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.75rem;
+}
+
+.review-preview-card,
+.review-preview-video {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.6rem;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(8, 15, 28, 0.7);
+}
+
+.review-preview-image {
+  width: 100%;
+  height: 110px;
+  object-fit: cover;
+  border-radius: 0.6rem;
+}
+
+.review-preview-video-player {
+  width: 100%;
+  max-height: 160px;
+  border-radius: 0.6rem;
+  background: #0b1220;
+}
+
+.review-preview-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+  color: #cbd5e1;
+}
+
+.review-preview-remove {
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: transparent;
+  color: #f8f3e7;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.review-preview-remove:hover {
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.review-submit {
+  justify-self: start;
+  padding: 0.85rem 1.8rem;
+  border-radius: 999px;
+  border: none;
+  background: linear-gradient(135deg, #ffd387 0%, #ffa76d 100%);
+  color: #08101f;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.review-submit:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 16px 30px rgba(255, 140, 40, 0.25);
+}
+
+.review-submit:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.review-safety-note {
+  margin: 0.75rem 0 0;
+  color: #94a3b8;
+  font-size: 0.85rem;
+}
+
+.review-success {
+  text-align: center;
+  display: grid;
+  gap: 1rem;
+}
+
+.review-success h2 {
+  margin: 0;
+  color: #f8f3e7;
+  font-size: 2rem;
+}
+
+.review-success p {
+  margin: 0;
+  color: #cbd5e1;
+  line-height: 1.7;
+}
+
+.review-reset {
+  justify-self: center;
+  padding: 0.75rem 1.6rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: transparent;
+  color: #f8f3e7;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.review-reset:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+@media (max-width: 640px) {
+  .review-page {
+    padding: 2.5rem 1rem 3rem;
+  }
+
+  .review-card {
+    padding: 1.8rem;
+  }
+
+  .review-submit {
+    width: 100%;
+    justify-self: stretch;
+  }
+}
