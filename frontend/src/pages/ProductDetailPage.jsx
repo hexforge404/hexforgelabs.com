@@ -1784,12 +1784,14 @@ const activeAddons = getActiveAddons();
                   </label>
                   <p className="product-detail-custom-helper">
                     {customOrder.productType === 'cylinder'
-                      ? 'Use clear, high-quality images. Portraits work best. Upload 2–5 photos.'
+                      ? `Use clear, high-quality images. Portraits work best. Upload ${requiredPanelCount} photo${requiredPanelCount === 1 ? '' : 's'} for the selected photo count.`
                       : customOrder.productType === 'globeLamp'
-                        ? 'Upload up to 5 images to wrap around your globe lamp. Use a moon background to fill unused sections for a unique ambient look.'
+                        ? 'Upload 1 to 5 photos. Only one photo is required.'
                         : customOrder.productType === 'nightlight'
                           ? 'Upload one photo for your custom night light.'
-                          : 'Upload one image per panel in the order you want them displayed.'}
+                          : customOrder.productType === 'panel'
+                            ? 'Upload one image per selected panel. Each selected panel requires a photo.'
+                            : 'Upload one image per panel in the order you want them displayed.'}
                   </p>
                   <p className="product-detail-custom-helper" style={{ fontStyle: 'italic', marginTop: '6px' }}>
                     {RECOMMENDED_UPLOAD_TEXT} Max 10 MB per file.
@@ -1866,7 +1868,7 @@ const activeAddons = getActiveAddons();
                             {customOrder.productType === 'cylinder'
                               ? `Photo ${index + 1}`
                               : customOrder.productType === 'globeLamp'
-                                ? `Image ${index + 1}`
+                                ? `Image ${index + 1}${index === 0 ? ' (required)' : ' (optional)'}`
                                 : `Panel ${index + 1}`}
                           </div>
                           <input
