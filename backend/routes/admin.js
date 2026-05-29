@@ -10,6 +10,9 @@ const Batch = require('../models/Batch');
 const PromoCode = require('../models/PromoCode');
 const PromoAuditLog = require('../models/PromoAuditLog');
 const StripeWebhookEvent = require('../models/StripeWebhookEvent');
+const LandingPageConfig = require('../models/LandingPageConfig');
+const Review = require('../models/Review');
+const { getDefaultLandingPageConfig } = require('../utils/defaultLandingPageConfig');
 const stripe = process.env.STRIPE_SECRET_KEY ? require('stripe')(process.env.STRIPE_SECRET_KEY) : null;
 const multer = require('multer');
 const path = require('path');
@@ -30,6 +33,7 @@ const {
 } = require('../utils/sourceAssetUtils');
 
 const STATUS_VALUES = ['draft', 'active', 'archived'];
+const REVIEW_STATUS_VALUES = ['pending', 'approved', 'rejected'];
 
 const uploadsRoot = process.env.IMAGES_DIR || path.join(__dirname, '..', 'uploads');
 const allowedImageTypes = /jpeg|jpg|png|webp|gif/;
@@ -196,6 +200,316 @@ router.get('/session', (req, res) => {
 // ⛔ Everything below this line requires admin session
 router.use(requireAdmin);
 router.use(adminLimiter);
+
+const sanitizeString = (value) => String(value || '').trim();
+const sanitizeBoolean = (value) => {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    return value === 'true' || value === '1';
+  }
+  if (typeof value === 'number') return value === 1;
+  return false;
+};
+const sanitizeNumber = (value, fallback = 0) => {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+};
+
+const sanitizeReviewUpdate = (body = {}) => {
+  const status = REVIEW_STATUS_VALUES.includes(String(body.status)) ? String(body.status) : 'pending';
+  return {
+    customerName: sanitizeString(body.customerName),
+    email: sanitizeString(body.email),
+    rating: Math.min(5, Math.max(1, sanitizeNumber(body.rating, 1))),
+    reviewText: sanitizeString(body.reviewText),
+    productType: sanitizeString(body.productType),
+    imageUrl: sanitizeString(body.imageUrl),
+    permissionToDisplay: sanitizeBoolean(body.permissionToDisplay),
+    permissionToUseName: sanitizeBoolean(body.permissionToUseName),
+    status,
+    mediaApproved: status === 'approved',
+  };
+};
+
+const sanitizeFeaturedImages = (items) => {
+  if (!Array.isArray(items)) return [];
+  return items.map((item) => ({
+    imageUrl: sanitizeString(item?.imageUrl),
+    alt: sanitizeString(item?.alt),
+    caption: sanitizeString(item?.caption),
+    enabled: sanitizeBoolean(item?.enabled),
+    sortOrder: sanitizeNumber(item?.sortOrder, 0),
+  }));
+};
+
+const sanitizeReviews = (items) => {
+  if (!Array.isArray(items)) return [];
+  return items.map((item) => ({
+    name: sanitizeString(item?.name),
+    text: sanitizeString(item?.text),
+    rating: Math.min(5, Math.max(1, sanitizeNumber(item?.rating, 1))),
+    imageUrl: sanitizeString(item?.imageUrl),
+    enabled: sanitizeBoolean(item?.enabled),
+    sortOrder: sanitizeNumber(item?.sortOrder, 0),
+  }));
+};
+
+const sanitizeTrustBadges = (items) => {
+  if (!Array.isArray(items)) return [];
+  return items.map((item) => ({
+    title: sanitizeString(item?.title),
+    description: sanitizeString(item?.description),
+    icon: sanitizeString(item?.icon),
+    enabled: sanitizeBoolean(item?.enabled),
+    sortOrder: sanitizeNumber(item?.sortOrder, 0),
+  }));
+};
+
+const sanitizeFeaturedProductSlugs = (items) => {
+  if (!Array.isArray(items)) return [];
+  return items
+    .map((item) => sanitizeString(item))
+    .filter(Boolean);
+};
+
+const sanitizeLandingPageConfig = (body) => ({
+  hero: {
+    headline: sanitizeString(body?.hero?.headline),
+    subheadline: sanitizeString(body?.hero?.subheadline),
+    ctaText: sanitizeString(body?.hero?.ctaText),
+    ctaLink: sanitizeString(body?.hero?.ctaLink),
+    secondaryCtaText: sanitizeString(body?.hero?.secondaryCtaText),
+    secondaryCtaLink: sanitizeString(body?.hero?.secondaryCtaLink),
+    imageUrl: sanitizeString(body?.hero?.imageUrl),
+    imageAlt: sanitizeString(body?.hero?.imageAlt),
+  },
+  announcement: {
+    enabled: sanitizeBoolean(body?.announcement?.enabled),
+    text: sanitizeString(body?.announcement?.text),
+    link: sanitizeString(body?.announcement?.link),
+  },
+  featuredImages: sanitizeFeaturedImages(body?.featuredImages),
+  reviews: sanitizeReviews(body?.reviews),
+  featuredProductSlugs: sanitizeFeaturedProductSlugs(body?.featuredProductSlugs),
+  trustBadges: sanitizeTrustBadges(body?.trustBadges),
+  seo: {
+    title: sanitizeString(body?.seo?.title),
+    description: sanitizeString(body?.seo?.description),
+  },
+});
+
+const buildLandingPageConfig = (doc) => {
+  const defaults = getDefaultLandingPageConfig();
+  const data = doc || {};
+  return {
+    hero: { ...defaults.hero, ...(data.hero || {}) },
+    announcement: { ...defaults.announcement, ...(data.announcement || {}) },
+    featuredImages: Array.isArray(data.featuredImages) && data.featuredImages.length
+      ? data.featuredImages
+      : defaults.featuredImages,
+    reviews: Array.isArray(data.reviews) ? data.reviews : defaults.reviews,
+    featuredProductSlugs: Array.isArray(data.featuredProductSlugs) && data.featuredProductSlugs.length
+      ? data.featuredProductSlugs
+      : defaults.featuredProductSlugs,
+    trustBadges: Array.isArray(data.trustBadges) && data.trustBadges.length
+      ? data.trustBadges
+      : defaults.trustBadges,
+    seo: { ...defaults.seo, ...(data.seo || {}) },
+  };
+};
+
+const buildConfig = buildLandingPageConfig;
+
+router.get('/landing-page', async (req, res) => {
+  try {
+    const config = await LandingPageConfig.findOne().lean();
+    return res.json({ success: true, config: buildLandingPageConfig(config) });
+  } catch (err) {
+    console.error('[ADMIN LANDING PAGE] Failed to load admin landing page config:', err);
+    return res.status(500).json({ success: false, error: 'Failed to load landing page config' });
+  }
+});
+
+router.put('/landing-page', async (req, res) => {
+  try {
+    const sanitized = sanitizeLandingPageConfig(req.body || {});
+    const updated = await LandingPageConfig.findOneAndUpdate(
+      {},
+      { $set: sanitized },
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    ).lean();
+    return res.json({ success: true, config: buildLandingPageConfig(updated) });
+  } catch (err) {
+    console.error('[ADMIN LANDING PAGE] Failed to save landing page config:', err);
+    return res.status(500).json({ success: false, error: 'Failed to save landing page config' });
+  }
+});
+
+router.get('/reviews', async (req, res) => {
+  try {
+    const status = String(req.query.status || 'pending');
+    const query = REVIEW_STATUS_VALUES.includes(status) ? { status } : {};
+    const reviews = await Review.find(query).sort({ createdAt: -1 }).lean();
+    return res.json({ success: true, data: reviews });
+  } catch (err) {
+    console.error('[ADMIN REVIEWS] Failed to load reviews:', err);
+    return res.status(500).json({ success: false, error: 'Failed to load reviews' });
+  }
+});
+
+router.put('/reviews/:id', async (req, res) => {
+  try {
+    const updated = await Review.findByIdAndUpdate(
+      req.params.id,
+      sanitizeReviewUpdate(req.body || {}),
+      { new: true, runValidators: true }
+    ).lean();
+
+    if (!updated) {
+      return res.status(404).json({ success: false, error: 'Review not found' });
+    }
+
+    return res.json({ success: true, review: updated });
+  } catch (err) {
+    console.error('[ADMIN REVIEWS] Failed to update review:', err);
+    return res.status(500).json({ success: false, error: 'Failed to update review' });
+  }
+});
+
+router.delete('/reviews/:id', async (req, res) => {
+  try {
+    const deleted = await Review.findByIdAndDelete(req.params.id).lean();
+    if (!deleted) {
+      return res.status(404).json({ success: false, error: 'Review not found' });
+    }
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('[ADMIN REVIEWS] Failed to delete review:', err);
+    return res.status(500).json({ success: false, error: 'Failed to delete review' });
+  }
+});
+
+const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif']);
+const candidateFrontendImageDirs = [
+  path.resolve(__dirname, '..', '..', 'frontend', 'public', 'images'),
+  path.resolve('/mnt/hdd-storage/hexforge-store/frontend/public/images'),
+];
+const frontendImagesDir = candidateFrontendImageDirs.find((candidate) => fs.existsSync(candidate));
+const uploadsImagesDir = path.resolve(uploadsRoot);
+
+const isSafePath = (root, targetPath) => {
+  const normalizedRoot = path.resolve(root);
+  const normalizedTarget = path.resolve(targetPath);
+  return normalizedTarget === normalizedRoot || normalizedTarget.startsWith(`${normalizedRoot}${path.sep}`);
+};
+
+const buildImageEntry = (rootDir, filePath, urlPrefix) => {
+  const relativePath = path.relative(rootDir, filePath).split(path.sep).join('/');
+  if (!relativePath || relativePath.startsWith('..') || relativePath.includes('/.')) {
+    return null;
+  }
+
+  const extension = path.extname(filePath).toLowerCase();
+  if (!IMAGE_EXTENSIONS.has(extension)) {
+    return null;
+  }
+
+  const filename = path.basename(filePath);
+  const folder = path.dirname(relativePath).replace(/\\/g, '/');
+  const url = `${urlPrefix}/${relativePath}`.replace(/\\/g, '/');
+  const category = folder.startsWith('products/') ? folder.split('/')[1] : folder || '';
+
+  return {
+    url,
+    filename,
+    folder: folder === '.' ? '' : folder,
+    label: path.basename(filename, extension),
+    category,
+  };
+};
+
+const scanImageDirectory = (rootDir, urlPrefix) => {
+  const results = [];
+  if (!rootDir || !fs.existsSync(rootDir)) {
+    return results;
+  }
+
+  const walk = (currentDir) => {
+    let entries;
+    try {
+      entries = fs.readdirSync(currentDir, { withFileTypes: true });
+    } catch (err) {
+      console.error('[ADMIN IMAGES] Failed to read image directory:', currentDir, err.message);
+      return;
+    }
+
+    for (const entry of entries) {
+      if (entry.name.startsWith('.')) {
+        continue;
+      }
+
+      const absolutePath = path.join(currentDir, entry.name);
+      if (!isSafePath(rootDir, absolutePath)) {
+        continue;
+      }
+
+      if (entry.isDirectory()) {
+        walk(absolutePath);
+        continue;
+      }
+
+      const extension = path.extname(entry.name).toLowerCase();
+      if (!IMAGE_EXTENSIONS.has(extension)) {
+        continue;
+      }
+
+      const image = buildImageEntry(rootDir, absolutePath, urlPrefix);
+      if (image) {
+        results.push(image);
+      }
+    }
+  };
+
+  walk(rootDir);
+  return results;
+};
+
+router.get('/images', async (req, res) => {
+  try {
+    const images = [];
+
+    if (frontendImagesDir) {
+      images.push(...scanImageDirectory(frontendImagesDir, '/images'));
+    }
+
+    if (fs.existsSync(uploadsImagesDir)) {
+      images.push(...scanImageDirectory(uploadsImagesDir, '/uploads'));
+    }
+
+    const uniqueImages = [];
+    const seen = new Set();
+    for (const image of images) {
+      const key = `${image.url}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        uniqueImages.push(image);
+      }
+    }
+
+    uniqueImages.sort((a, b) => {
+      const aIsProduct = a.folder.startsWith('products/') ? 0 : 1;
+      const bIsProduct = b.folder.startsWith('products/') ? 0 : 1;
+      if (aIsProduct !== bIsProduct) return aIsProduct - bIsProduct;
+      if (a.folder !== b.folder) return a.folder.localeCompare(b.folder);
+      return a.filename.localeCompare(b.filename);
+    });
+
+    return res.json({ success: true, images: uniqueImages });
+  } catch (err) {
+    console.error('[ADMIN IMAGES] Failed to load images:', err.message);
+    return res.status(500).json({ success: false, error: 'Failed to load admin images' });
+  }
+});
 
 const hasAnyRole = (admin, allowedRoles) => {
   if (!admin?.loggedIn) return false;
@@ -371,6 +685,8 @@ const validateProduct = [
   body('stock').optional().isInt({ min: 0 }),
   body('images').optional().isArray(),
   body('imageGallery').optional().isArray(),
+  body('isPrivatePayment').optional().isBoolean().toBoolean(),
+  body('paymentPurpose').optional().isIn(['standard_product', 'final_balance', 'custom_payment']),
 ];
 
 const validatePromoCreate = [

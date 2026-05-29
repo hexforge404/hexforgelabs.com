@@ -4,7 +4,7 @@
 export async function checkPing() {
   try {
     // Prefer the assistant health endpoint
-    let res = await fetch("/mcp/health");
+    let res = await fetch("/api/mcp/health");
 
     if (res.ok) {
       // Any 2xx = online

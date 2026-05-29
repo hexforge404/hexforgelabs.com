@@ -5,6 +5,7 @@ import './AdminPage.css';
 import API_BASE_URL from '../utils/apiBase';
 import { successToast, errorToast, warningToast } from '../utils/toastUtils';
 import InventoryViewer from '../components/InventoryViewer';
+import LandingPageEditor from '../components/admin/LandingPageEditor';
 import { useAdmin } from '../context/AdminContext';
 import { resolveImageUrl } from '../utils/resolveImageUrl';
 
@@ -18,6 +19,8 @@ const EMPTY_PRODUCT = {
   stock: 0,
   categories: '',
   isFeatured: false,
+  isPrivatePayment: false,
+  paymentPurpose: 'standard_product',
 };
 
 const EMPTY_BLOG = {
@@ -512,6 +515,12 @@ export default function AdminPage() {
   const [monitoringSummary, setMonitoringSummary] = useState(null);
   const [isLoadingMonitoring, setIsLoadingMonitoring] = useState(false);
   const [monitoringError, setMonitoringError] = useState(null);
+  const [reviews, setReviews] = useState([]);
+  const [reviewsLoading, setReviewsLoading] = useState(false);
+  const [reviewsError, setReviewsError] = useState(null);
+  const [reviewStatusFilter, setReviewStatusFilter] = useState('pending');
+  const [reviewRefreshToken, setReviewRefreshToken] = useState(0);
+  const [reviewEdits, setReviewEdits] = useState({});
 
   // Gallery Manager
   const [galleryProductId, setGalleryProductId] = useState('');
@@ -758,6 +767,30 @@ export default function AdminPage() {
     promoAuditFilters.action,
     promoAuditFilters.actor,
   ]);
+
+  useEffect(() => {
+    if (activeTab !== 'reviews') return;
+
+    const loadReviews = async () => {
+      setReviewsLoading(true);
+      setReviewsError(null);
+      try {
+        const params = reviewStatusFilter === 'all' ? {} : { status: reviewStatusFilter };
+        const response = await axios.get(`${API_BASE_URL}/admin/reviews`, {
+          params,
+          withCredentials: true,
+        });
+        setReviews(response.data?.data || []);
+      } catch (err) {
+        console.error('Failed to fetch reviews:', err);
+        setReviewsError(err.response?.data?.error || err.message || 'Failed to load reviews');
+      } finally {
+        setReviewsLoading(false);
+      }
+    };
+
+    loadReviews();
+  }, [activeTab, reviewStatusFilter, reviewRefreshToken]);
 
   const fetchCustomOrders = async (status = 'all') => {
     try {
@@ -1096,6 +1129,266 @@ export default function AdminPage() {
         </div>
       </div>
       {renderPhotoChecks()}
+    </div>
+  );
+
+  const reviewStatusOptions = ['pending', 'approved', 'rejected'];
+
+  const formatBytes = (value) => {
+    const size = Number(value);
+    if (!Number.isFinite(size) || size <= 0) return '';
+    if (size < 1024) return `${size} B`;
+    if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+    if (size < 1024 * 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+    return `${(size / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+  };
+
+  const getReviewEditValue = (reviewId, field, fallback) =>
+    reviewEdits[reviewId]?.[field] ?? fallback;
+
+  const updateReviewEdit = (reviewId, field, value) => {
+    setReviewEdits((prev) => ({
+      ...prev,
+      [reviewId]: {
+        ...prev[reviewId],
+        [field]: value,
+      },
+    }));
+  };
+
+  const buildReviewPayload = (review, overrides = {}) => ({
+    customerName: getReviewEditValue(review._id, 'customerName', review.customerName),
+    email: getReviewEditValue(review._id, 'email', review.email),
+    rating: Number(getReviewEditValue(review._id, 'rating', review.rating)) || 1,
+    reviewText: getReviewEditValue(review._id, 'reviewText', review.reviewText),
+    productType: getReviewEditValue(review._id, 'productType', review.productType),
+    imageUrl: getReviewEditValue(review._id, 'imageUrl', review.imageUrl),
+    permissionToDisplay: Boolean(getReviewEditValue(review._id, 'permissionToDisplay', review.permissionToDisplay)),
+    permissionToUseName: Boolean(getReviewEditValue(review._id, 'permissionToUseName', review.permissionToUseName)),
+    status: getReviewEditValue(review._id, 'status', review.status),
+    ...overrides,
+  });
+
+  const handleSaveReview = async (review, overrides = {}) => {
+    try {
+      const response = await axios.put(
+        `${API_BASE_URL}/admin/reviews/${encodeURIComponent(review._id)}`,
+        buildReviewPayload(review, overrides),
+        { withCredentials: true }
+      );
+      const updated = response.data?.review || response.data;
+      setReviews((prev) => prev.map((item) => (item._id === review._id ? updated : item)));
+      setReviewEdits((prev) => {
+        const next = { ...prev };
+        delete next[review._id];
+        return next;
+      });
+      successToast('Review updated.');
+    } catch (err) {
+      console.error('Failed to update review:', err);
+      errorToast(err.response?.data?.error || err.message || 'Failed to update review');
+    }
+  };
+
+  const handleDeleteReview = async (review) => {
+    const confirmed = window.confirm('Delete this review? This cannot be undone.');
+    if (!confirmed) return;
+    try {
+      await axios.delete(`${API_BASE_URL}/admin/reviews/${encodeURIComponent(review._id)}`, {
+        withCredentials: true,
+      });
+      setReviews((prev) => prev.filter((item) => item._id !== review._id));
+      successToast('Review deleted.');
+    } catch (err) {
+      console.error('Failed to delete review:', err);
+      errorToast(err.response?.data?.error || err.message || 'Failed to delete review');
+    }
+  };
+
+  const renderReviewsTab = () => (
+    <div>
+      <div className="admin-order-filter-row">
+        <h2 className="section-header">REVIEWS</h2>
+        <div className="admin-order-filter-controls">
+          <select
+            className="admin-filter-select"
+            value={reviewStatusFilter}
+            onChange={(event) => setReviewStatusFilter(event.target.value)}
+          >
+            <option value="pending">Pending</option>
+            <option value="approved">Approved</option>
+            <option value="rejected">Rejected</option>
+            <option value="all">All</option>
+          </select>
+          <button type="button" className="tab refresh-button" onClick={() => setReviewRefreshToken((prev) => prev + 1)}>
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      {reviewsLoading && <div className="empty-state">Loading reviews…</div>}
+      {reviewsError && <div className="status-message error-message">{reviewsError}</div>}
+
+      {!reviewsLoading && !reviewsError && reviews.length === 0 && (
+        <div className="empty-state">No reviews found.</div>
+      )}
+
+      <div className="admin-reviews-grid">
+        {reviews.map((review) => (
+          <div key={review._id} className="admin-review-card">
+            <div className="admin-review-header">
+              <div>
+                <div className="admin-review-title">{review.customerName || 'Anonymous'}</div>
+                <div className="admin-review-meta">
+                  <span>Status: {review.status}</span>
+                  <span>Rating: {review.rating}</span>
+                  <span>Created: {new Date(review.createdAt).toLocaleString()}</span>
+                </div>
+              </div>
+              <div className="admin-review-actions">
+                <button type="button" className="secondary-button small-button" onClick={() => handleSaveReview(review, { status: 'approved' })}>
+                  Approve
+                </button>
+                <button type="button" className="secondary-button small-button" onClick={() => handleSaveReview(review, { status: 'rejected' })}>
+                  Reject
+                </button>
+                <button type="button" className="danger-button small-button" onClick={() => handleDeleteReview(review)}>
+                  Delete
+                </button>
+              </div>
+            </div>
+
+            <div className="admin-review-grid">
+              <label>
+                Name
+                <input
+                  className="form-input"
+                  value={getReviewEditValue(review._id, 'customerName', review.customerName)}
+                  onChange={(event) => updateReviewEdit(review._id, 'customerName', event.target.value)}
+                />
+              </label>
+              <label>
+                Email
+                <input
+                  className="form-input"
+                  value={getReviewEditValue(review._id, 'email', review.email)}
+                  onChange={(event) => updateReviewEdit(review._id, 'email', event.target.value)}
+                />
+              </label>
+              <label>
+                Product Type
+                <input
+                  className="form-input"
+                  value={getReviewEditValue(review._id, 'productType', review.productType)}
+                  onChange={(event) => updateReviewEdit(review._id, 'productType', event.target.value)}
+                />
+              </label>
+              <label>
+                Image URL
+                <input
+                  className="form-input"
+                  value={getReviewEditValue(review._id, 'imageUrl', review.imageUrl)}
+                  onChange={(event) => updateReviewEdit(review._id, 'imageUrl', event.target.value)}
+                />
+              </label>
+              <label>
+                Rating
+                <input
+                  className="form-input"
+                  type="number"
+                  min="1"
+                  max="5"
+                  value={getReviewEditValue(review._id, 'rating', review.rating)}
+                  onChange={(event) => updateReviewEdit(review._id, 'rating', event.target.value)}
+                />
+              </label>
+              <label>
+                Status
+                <select
+                  className="form-input"
+                  value={getReviewEditValue(review._id, 'status', review.status)}
+                  onChange={(event) => updateReviewEdit(review._id, 'status', event.target.value)}
+                >
+                  {reviewStatusOptions.map((status) => (
+                    <option key={status} value={status}>{status}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <label className="admin-review-text">
+              Review Text
+              <textarea
+                className="form-input form-textarea"
+                value={getReviewEditValue(review._id, 'reviewText', review.reviewText)}
+                onChange={(event) => updateReviewEdit(review._id, 'reviewText', event.target.value)}
+              />
+            </label>
+
+            {Array.isArray(review.media) && review.media.length > 0 && (
+              <div className="admin-review-media">
+                <div className="admin-review-media-header">Customer media</div>
+                <div className="admin-review-media-grid">
+                  {review.media.map((mediaItem, index) => (
+                    <div key={`${mediaItem.url}-${index}`} className="admin-review-media-card">
+                      {mediaItem.type === 'video' ? (
+                        <video
+                          className="admin-review-video"
+                          controls
+                          preload="metadata"
+                          src={mediaItem.url}
+                        >
+                          Your browser does not support the video tag.
+                        </video>
+                      ) : (
+                        <a href={mediaItem.url} target="_blank" rel="noreferrer">
+                          <img
+                            className="admin-review-media-thumb"
+                            src={mediaItem.url}
+                            alt={mediaItem.originalName || mediaItem.filename || 'Review media'}
+                          />
+                        </a>
+                      )}
+                      <div className="admin-review-media-meta">
+                        <span>{mediaItem.originalName || mediaItem.filename || 'media'}</span>
+                        <span>
+                          {mediaItem.mimeType || mediaItem.type || 'file'}
+                          {mediaItem.size ? ` • ${formatBytes(mediaItem.size)}` : ''}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="admin-review-flags">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={getReviewEditValue(review._id, 'permissionToDisplay', review.permissionToDisplay)}
+                  onChange={(event) => updateReviewEdit(review._id, 'permissionToDisplay', event.target.checked)}
+                />
+                Allow public display
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={getReviewEditValue(review._id, 'permissionToUseName', review.permissionToUseName)}
+                  onChange={(event) => updateReviewEdit(review._id, 'permissionToUseName', event.target.checked)}
+                />
+                Use first name publicly
+              </label>
+            </div>
+
+            <div className="admin-review-footer">
+              <button type="button" className="primary-button" onClick={() => handleSaveReview(review)}>
+                Save Changes
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 
@@ -1664,6 +1957,18 @@ export default function AdminPage() {
     }));
   };
 
+  const applyFinalPaymentTemplate = () => {
+    setForm((prev) => ({
+      ...prev,
+      name: prev.name || 'Final Payment — Custom Lamp Order',
+      description: prev.description || 'This private checkout item is for the remaining balance on a custom HexForge Labs lamp order. Please only use this link if it was sent to you directly.',
+      categories: prev.categories || 'payments',
+      isPrivatePayment: true,
+      paymentPurpose: 'final_balance',
+      isFeatured: false,
+    }));
+  };
+
   const setGalleryFromProduct = (payload) => {
     const list = Array.isArray(payload.imageGallery)
       ? payload.imageGallery.filter(Boolean)
@@ -1889,6 +2194,8 @@ export default function AdminPage() {
         .map((c) => c.trim())
         .filter(Boolean),
       isFeatured: !!form.isFeatured,
+      isPrivatePayment: !!form.isPrivatePayment,
+      paymentPurpose: form.paymentPurpose || 'standard_product',
       status: 'active',
     };
   };
@@ -2060,6 +2367,8 @@ export default function AdminPage() {
         ? product.categories.join(', ')
         : product.categories || '',
       isFeatured: !!product.isFeatured,
+      isPrivatePayment: !!product.isPrivatePayment,
+      paymentPurpose: product.paymentPurpose || 'standard_product',
     });
     setEditingProductId(product._id);
     setProductPreviewImage(product.image || null);
@@ -3151,6 +3460,18 @@ export default function AdminPage() {
           Blog Posts
         </button>
         <button
+          className={activeTab === 'landing-page' ? 'tab active' : 'tab'}
+          onClick={() => setActiveTab('landing-page')}
+        >
+          Landing Page
+        </button>
+        <button
+          className={activeTab === 'reviews' ? 'tab active' : 'tab'}
+          onClick={() => setActiveTab('reviews')}
+        >
+          Reviews
+        </button>
+        <button
           className={activeTab === 'inventory' ? 'tab active' : 'tab'}
           onClick={() => setActiveTab('inventory')}
         >
@@ -3258,6 +3579,39 @@ export default function AdminPage() {
                 />{' '}
                 Featured
               </label>
+              <label style={{ color: '#ccc' }}>
+                <input
+                  type="checkbox"
+                  name="isPrivatePayment"
+                  checked={form.isPrivatePayment}
+                  onChange={handleProductChange}
+                />{' '}
+                Private payment product
+              </label>
+              <small className="hint-text">
+                Use this for final balance links. It will not appear in the public store, but anyone with the direct link can open it.
+              </small>
+              <label className="form-label" htmlFor="paymentPurpose">
+                Payment purpose
+              </label>
+              <select
+                id="paymentPurpose"
+                className="form-input"
+                name="paymentPurpose"
+                value={form.paymentPurpose}
+                onChange={handleProductChange}
+              >
+                <option value="standard_product">Standard Product</option>
+                <option value="final_balance">Final Balance</option>
+                <option value="custom_payment">Custom Payment</option>
+              </select>
+              <button
+                type="button"
+                className="secondary-button small-button"
+                onClick={applyFinalPaymentTemplate}
+              >
+                Use Final Payment Template
+              </button>
             </div>
 
             <div
@@ -3293,6 +3647,11 @@ export default function AdminPage() {
                   />
                 )}
                 <h3>{product.name}</h3>
+                {product.isPrivatePayment && (
+                  <div>
+                    <span className="status-badge warning">Private Payment</span>
+                  </div>
+                )}
                 <p>{product.description}</p>
                 <p>
                   <strong>${product.price}</strong>
@@ -5717,6 +6076,9 @@ export default function AdminPage() {
         </div>
       )}
 
+      {/* ---------- REVIEWS TAB ---------- */}
+      {activeTab === 'reviews' && renderReviewsTab()}
+
       {/* ---------- BLOG TAB ---------- */}
       {activeTab === 'blog' && (
         <div>
@@ -5891,6 +6253,9 @@ export default function AdminPage() {
           </div>
         </div>
       )}
+
+      {/* ---------- LANDING PAGE TAB ---------- */}
+      {activeTab === 'landing-page' && <LandingPageEditor />}
 
       {/* ---------- INVENTORY TAB (NOTION) ---------- */}
       {activeTab === 'inventory' && <InventoryViewer />}

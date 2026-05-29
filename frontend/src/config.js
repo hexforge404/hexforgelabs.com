@@ -1,12 +1,12 @@
 // frontend/src/config.js
 
 // Base URLs for assistant, API, and site.
-// ASSISTANT_BASE defaults to "/mcp" so the React hook
-// will call POST /mcp/chat by default.
+// ASSISTANT_BASE defaults to "/api/mcp" so the React hook
+// will call POST /api/mcp/chat by default.
 const ASSISTANT_BASE =
   process.env.REACT_APP_ASSISTANT_BASE_URL ||
   process.env.REACT_APP_ASSISTANT_BASE ||
-  "/mcp";
+  "/api/mcp";
 
 const API_BASE =
   process.env.REACT_APP_API_BASE_URL ||

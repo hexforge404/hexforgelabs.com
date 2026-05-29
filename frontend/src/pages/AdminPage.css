@@ -2255,6 +2255,136 @@
   text-decoration: underline;
 }
 
+/* ===== REVIEWS (ADMIN) ===== */
+.admin-reviews-grid {
+  display: grid;
+  gap: 20px;
+}
+
+.admin-review-card {
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 20px;
+  background: #141414;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.25);
+}
+
+.admin-review-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.admin-review-title {
+  font-size: 1.1rem;
+  color: #00ffc8;
+  margin-bottom: 6px;
+}
+
+.admin-review-meta {
+  display: grid;
+  gap: 4px;
+  color: #c9d6e5;
+  font-size: 0.9rem;
+}
+
+.admin-review-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.admin-review-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.admin-review-grid label,
+.admin-review-text {
+  display: grid;
+  gap: 6px;
+  color: #c9d6e5;
+  font-size: 0.9rem;
+}
+
+.admin-review-text textarea {
+  min-height: 120px;
+}
+
+.admin-review-media {
+  margin-top: 16px;
+  display: grid;
+  gap: 10px;
+}
+
+.admin-review-media-header {
+  color: #f8f3e7;
+  font-weight: 600;
+}
+
+.admin-review-media-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.admin-review-media-card {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(6, 10, 16, 0.7);
+}
+
+.admin-review-media-thumb {
+  width: 100%;
+  height: 120px;
+  object-fit: cover;
+  border-radius: 6px;
+  display: block;
+}
+
+.admin-review-media-video,
+.admin-review-video {
+  width: 100%;
+  max-height: 240px;
+  border-radius: 6px;
+  background: #000;
+}
+
+.admin-review-media-meta {
+  display: grid;
+  gap: 4px;
+  font-size: 0.82rem;
+  color: #9fb3c8;
+}
+
+.admin-review-flags {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin: 16px 0;
+  color: #c9d6e5;
+  font-size: 0.9rem;
+}
+
+.admin-review-flags label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.admin-review-footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
 /* ===== CUSTOM ORDER STYLES ===== */
 .admin-custom-order-card {
   border-left: 4px solid #00ffcc;

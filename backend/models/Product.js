@@ -99,6 +99,16 @@ const productSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    isPrivatePayment: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    paymentPurpose: {
+      type: String,
+      enum: ['standard_product', 'final_balance', 'custom_payment'],
+      default: 'standard_product',
+    },
   },
   {
     timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' },

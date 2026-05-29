@@ -123,13 +123,25 @@ app.use(mongoSanitize());
 // ======================
 // SESSION CONFIGURATION
 // ======================
-const useMemorySessionStore = process.env.NODE_ENV === 'test';
+const mongoUri = process.env.MONGO_URI;
+const useMemorySessionStore = process.env.NODE_ENV === 'test' || !mongoUri;
 const sessionStore = useMemorySessionStore
   ? new session.MemoryStore()
   : MongoStore.create({
-      mongoUrl: process.env.MONGO_URI,
+      mongoUrl: mongoUri,
       ttl: 24 * 60 * 60,
+      autoRemove: 'native',
     });
+
+if (!useMemorySessionStore && sessionStore && typeof sessionStore.on === 'function') {
+  sessionStore.on('error', (err) => {
+    console.error('⚠️ Mongo session store error:', err);
+  });
+}
+
+if (!mongoUri) {
+  console.warn('⚠️ MONGO_URI is not configured. Falling back to in-memory session store.');
+}
 
 app.use(session({
   secret: process.env.SESSION_SECRET || 'hexforge-test-secret',
@@ -165,8 +177,8 @@ const assistantSessionsRouter = require("./routes/assistantSessions");
 const assistantProjectsRouter = require("./routes/assistantProjects");
 const mediaRoutes = require("./routes/media");
 const toolsProxyRoutes = require("./routes/toolsProxy");
-const heightmapRoutes = require("./routes/heightmap");
-
+const heightmapRoutes = require("./routes/heightmap");const landingPageRoutes = require('./routes/landingPage');
+const reviewRoutes = require('./routes/reviews');
 
 app.use("/api/tools", toolsProxyRoutes);
 app.use('/api/surface', apiLimiter, surfaceRoutes);
@@ -177,8 +189,10 @@ app.use("/api/assistant-sessions", apiLimiter, assistantSessionsRouter);
 app.use("/api/assistant/sessions", apiLimiter, assistantSessionsRouter);
 app.use('/api/mcp', mcpRoutes);
 app.use('/api/products', apiLimiter, productRoutes);
+app.use('/api/reviews', apiLimiter, reviewRoutes);
 app.use('/api/photo-checks', apiLimiter, photoCheckRoutes);
 app.use('/api/orders', apiLimiter, orderRoutes);
+app.use('/api/landing-page', apiLimiter, landingPageRoutes);
 app.use('/api/admin', apiLimiter, adminRoutes);
 app.use('/api/admin/test-pipeline', apiLimiter, testPipelineRoutes);
 app.use('/api/payments', apiLimiter, paymentRoutes);
@@ -289,6 +303,9 @@ app.use((req, res) => {
 
 app.use((err, req, res, next) => {
   console.error('⚠️  Server error:', err.stack);
+  if (res.headersSent) {
+    return next(err);
+  }
   res.status(500).json({
     error: process.env.NODE_ENV === 'development' ? err.message : 'Internal Server Error',
     ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
