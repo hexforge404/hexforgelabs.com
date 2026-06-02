@@ -34,6 +34,30 @@ app.use(express.static('frontend/build'));
 const IMAGES_DIR = process.env.IMAGES_DIR || path.join(__dirname, '..', 'uploads');
 
 
+// ------------------------------
+// Security: block private upload namespaces
+// ------------------------------
+// Block any request attempting to access customer media namespaces.
+// Return 404 and no-store cache to avoid revealing existence.
+app.use((req, res, next) => {
+  try {
+    const p = req.path || req.originalUrl || '';
+    if (
+      p === '/uploads/custom-orders' ||
+      p === '/uploads/photo-checks' ||
+      p.startsWith('/uploads/custom-orders/') ||
+      p.startsWith('/uploads/photo-checks/')
+    ) {
+      res.set('Cache-Control', 'no-store');
+      return res.status(404).end();
+    }
+  } catch (err) {
+    // If anything goes wrong, do not expose details; continue to next handler
+    return res.status(404).end();
+  }
+  return next();
+});
+
 // Serve uploaded images at /uploads/filename.ext
 app.use('/uploads', express.static(IMAGES_DIR));
 
