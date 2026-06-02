@@ -698,7 +698,7 @@ router.get('/:id', productLimiter, async (req, res) => {
   }
 });
 
-router.post('/', productLimiter, baseProductValidation, async (req, res) => {
+router.post('/', productLimiter, requireAdmin, baseProductValidation, async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -726,7 +726,7 @@ router.post('/', productLimiter, baseProductValidation, async (req, res) => {
   }
 });
 
-router.put('/:id', productLimiter, baseProductValidation, async (req, res) => {
+router.put('/:id', productLimiter, requireAdmin, baseProductValidation, async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -754,7 +754,7 @@ router.put('/:id', productLimiter, baseProductValidation, async (req, res) => {
   }
 });
 
-router.delete('/:id', productLimiter, async (req, res) => {
+router.delete('/:id', productLimiter, requireAdmin, async (req, res) => {
   try {
     const deletedProduct = await Product.findByIdAndDelete(req.params.id);
     if (!deletedProduct) {
@@ -1781,12 +1781,17 @@ router.post(
 );
 
 // Public endpoint to lookup a custom lamp order by orderId
+// TODO: Replace public lookup by orderId with an authenticated customer session
+// or a high-entropy, revocable customer access token. Public lookup currently
+// returns limited non-sensitive fields only as a temporary containment.
 router.get('/custom-orders/:orderId', async (req, res) => {
   try {
     const customOrder = await CustomOrder.findOne({ orderId: req.params.orderId });
     if (!customOrder) {
       return res.status(404).json({ error: 'Custom order not found' });
     }
+
+    // Redacted public response: include only non-personal, non-file fields.
     const safeOrder = {
       orderId: customOrder.orderId,
       productId: customOrder.productId,
@@ -1797,34 +1802,12 @@ router.get('/custom-orders/:orderId', async (req, res) => {
       panelCount: customOrder.panelCount,
       lightType: customOrder.lightType,
       extras: customOrder.extras,
-      addons: {
-        nightlight: customOrder.extras?.includes('nightlight') || false,
-        diffuser: customOrder.extras?.includes('diffuser') || false,
-        moonBackground: customOrder.extras?.includes('moonBackground') || false,
-      },
-      nightlightAddon: customOrder.extras?.includes('nightlight') ? {
-        ...customOrder.nightlightAddon,
-        separateImage: customOrder.nightlightAddon?.separateImage
-          ? {
-              ...customOrder.nightlightAddon.separateImage,
-              path: normalizeCustomOrderImagePath(customOrder.nightlightAddon.separateImage.path),
-            }
-          : undefined,
-      } : undefined,
-      boxOptions: customOrder.productType === 'fixedBox4' || customOrder.productType === 'panelBox5' ? customOrder.boxOptions : undefined,
-      boxModularOptions: customOrder.productType === 'swappableBox5' ? customOrder.boxModularOptions : undefined,
-      cylinderOptions: customOrder.productType === 'cylinder' ? customOrder.cylinderOptions : undefined,
-      images: Array.isArray(customOrder.images)
-        ? customOrder.images.map((img) => ({
-            ...img,
-            path: normalizeCustomOrderImagePath(img.path),
-          }))
-        : [],
-      imagesCount: customOrder.images?.length || 0,
+      // Do NOT include `images`, `customer`, `promoCode`, `trackingNumber`,
+      // `trackingUrl`, payment session identifiers, or any image paths or filenames.
+      imagesCount: Array.isArray(customOrder.images) ? customOrder.images.length : 0,
       totalPrice: customOrder.totalPrice,
       originalPrice: customOrder.originalPrice,
       discountedTotal: customOrder.discountedTotal,
-      promoCode: customOrder.promoCode,
       discountType: customOrder.discountType,
       discountValue: customOrder.discountValue,
       discountAmount: customOrder.discountAmount,
@@ -1834,22 +1817,14 @@ router.get('/custom-orders/:orderId', async (req, res) => {
       status: customOrder.status,
       fulfillmentStatus: customOrder.fulfillmentStatus,
       trackingCarrier: customOrder.trackingCarrier,
-      trackingNumber: customOrder.trackingNumber,
-      trackingUrl: customOrder.trackingUrl,
-      customer: {
-        name: customOrder.customer?.name || '',
-        email: customOrder.customer?.email || '',
-        phone: customOrder.customer?.phone || '',
-        shippingAddress: customOrder.customer?.shippingAddress || undefined,
-      },
       createdAt: customOrder.createdAt,
       updatedAt: customOrder.updatedAt,
     };
 
-    res.json(safeOrder);
+    return res.json(safeOrder);
   } catch (err) {
     console.error('❌ Failed to fetch custom order:', err);
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to fetch custom order',
       details: process.env.NODE_ENV === 'development' ? err.message : undefined,
     });
@@ -1906,7 +1881,14 @@ router.post('/custom-orders/:orderId/confirm-deposit', express.json(), async (re
     await sendCustomOrderDepositConfirmation(customOrder);
     await customOrder.save();
 
-    res.json({ success: true, customOrder });
+    // Return minimal confirmation response; do not expose private order fields
+    return res.json({
+      success: true,
+      orderId: customOrder.orderId,
+      status: customOrder.status,
+      fulfillmentStatus: customOrder.fulfillmentStatus,
+      paymentStatus: customOrder.paymentStatus,
+    });
   } catch (err) {
     console.error('❌ Failed to confirm deposit:', err);
     res.status(500).json({
