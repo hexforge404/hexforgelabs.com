@@ -1,8 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-
-const uploadsRoot = process.env.IMAGES_DIR || path.join(__dirname, '..', '..', 'uploads');
-const customOrdersRoot = path.join(uploadsRoot, 'custom-orders');
+const { CUSTOM_ORDER_PRIVATE_DIR } = require('./privateIntakePaths');
 
 const FULFILLMENT_STAGES = [
   'submitted',
@@ -90,10 +88,16 @@ const resolveCustomOrderImageDiskPath = (image) => {
     relativePath = relativePath.slice('uploads/'.length);
   }
   if (relativePath.startsWith('custom-orders/')) {
-    return path.join(customOrdersRoot, relativePath.slice('custom-orders/'.length));
+    relativePath = relativePath.slice('custom-orders/'.length);
   }
 
-  return path.join(customOrdersRoot, relativePath);
+  const resolvedPath = path.resolve(CUSTOM_ORDER_PRIVATE_DIR, relativePath);
+  const normalizedRoot = path.resolve(CUSTOM_ORDER_PRIVATE_DIR);
+  if (resolvedPath !== normalizedRoot && !resolvedPath.startsWith(`${normalizedRoot}${path.sep}`)) {
+    return null;
+  }
+
+  return resolvedPath;
 };
 
 const isCustomOrderPrintReady = (customOrder) => {

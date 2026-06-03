@@ -17,6 +17,7 @@ const { roundMoney, calculateDeposit, applyPromo } = require('../utils/pricing')
 const {
   normalizeCustomOrderImagePath,
 } = require('../utils/customOrderUtils');
+const { CUSTOM_ORDER_PRIVATE_DIR } = require('../utils/privateIntakePaths');
 const formData = require('form-data');
 const Mailgun = require('mailgun.js');
 const mailgun = new Mailgun(formData);
@@ -56,7 +57,7 @@ const customOrderUpload = multer({
   }
 });
 
-const CUSTOM_ORDER_UPLOAD_DIR = path.join(__dirname, '../uploads/custom-orders');
+const CUSTOM_ORDER_UPLOAD_DIR = CUSTOM_ORDER_PRIVATE_DIR;
 const CUSTOM_ORDER_UPLOAD_TMP_DIR = path.join(CUSTOM_ORDER_UPLOAD_DIR, 'tmp');
 
 const ensureDir = async (dirPath) => {
