@@ -12,14 +12,14 @@ const RuntimeSetting = require('../models/RuntimeSetting');
 const {
   normalizeCustomOrder,
 } = require('../utils/customOrderUtils');
+const { CUSTOM_ORDER_PRIVATE_DIR } = require('../utils/privateIntakePaths');
 
 const TEST_PIPELINE_MODE = process.env.TEST_PIPELINE_MODE === 'true' || process.env.TEST_PIPELINE_MODE === '1';
 const TEST_PIPELINE_DISABLE_EMAILS = process.env.TEST_PIPELINE_DISABLE_EMAILS === 'true' || process.env.TEST_PIPELINE_DISABLE_EMAILS === '1';
 const TEST_PIPELINE_RUNTIME_KEY = 'test_pipeline_runtime_enabled';
 const TEST_PIPELINE_AUTO_DISABLE_MINUTES = Number(process.env.TEST_PIPELINE_AUTO_DISABLE_MINUTES || 30);
-const uploadsRoot = process.env.IMAGES_DIR || path.join(__dirname, '..', 'uploads');
-const customOrdersRoot = path.join(uploadsRoot, 'custom-orders');
 const seededAssetsDir = path.join(__dirname, '..', 'test-assets', 'custom-orders');
+const customOrdersRoot = CUSTOM_ORDER_PRIVATE_DIR;
 
 const adminLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,

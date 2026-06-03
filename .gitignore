@@ -100,3 +100,4 @@ frontend/public/images/project_file's/
 # Private customer intake media — runtime storage only, never commit
 /uploads/custom-orders/
 /uploads/photo-checks/
+/backend/private-intake/
