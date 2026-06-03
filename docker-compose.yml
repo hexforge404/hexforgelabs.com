@@ -86,6 +86,7 @@ services:
       - /mnt/hdd-storage/ai-tools/engines/hexforge3d/surface:/var/www/hexforge3d/surface:ro
       - /mnt/hdd-storage:/mnt/hdd-storage
       - ./uploads:/app/uploads
+      - ${PRIVATE_INTAKE_HOST_DIR:-/mnt/hdd-storage/hexforge-private-intake}:/private-intake
     environment:
       MEDIA_API_URL: http://hexforge-media-api:8700
       MEDIA_API_KEY: ${MEDIA_API_KEY}
@@ -94,6 +95,7 @@ services:
       SURFACE_OUTPUT_DIR: /var/www/hexforge3d/surface
       BUILD_ID: ${BUILD_ID:-unknown}
       BUILD_TIMESTAMP: ${BUILD_TIMESTAMP:-unknown}
+      PRIVATE_INTAKE_DIR: /private-intake
 
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
