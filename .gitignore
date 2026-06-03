@@ -96,3 +96,7 @@ frontend/public/images/project_file's/
 # package-lock.json
 # yarn.lock
 # pnpm-lock.yaml
+
+# Private customer intake media — runtime storage only, never commit
+/uploads/custom-orders/
+/uploads/photo-checks/
