@@ -248,3 +248,111 @@ body {
 .auth-login-link:hover {
   background: #e9ecef;
 }
+
+/* Funeral home landing page restored from e1d4be0 — surgical CSS only */
+.funeral-home-page {
+  display: grid;
+  gap: 40px;
+  padding: 20px 0;
+}
+
+.funeral-home-hero {
+  position: relative;
+  min-height: 56vh;
+  background: linear-gradient(180deg, rgba(10, 25, 47, 0.94), rgba(6, 16, 34, 0.96));
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.funeral-home-hero-overlay {
+  padding: 48px 24px;
+  max-width: 960px;
+  width: 100%;
+}
+
+.funeral-home-hero-copy {
+  color: #f0f7ff;
+}
+
+.funeral-home-eyebrow {
+  font-size: 0.95rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #64ffda;
+  margin-bottom: 1rem;
+}
+
+.funeral-home-hero-copy h1 {
+  font-size: clamp(2.1rem, 3.5vw, 4rem);
+  line-height: 1.05;
+  margin-bottom: 1.25rem;
+  max-width: 860px;
+}
+
+.funeral-home-hero-copy p {
+  font-size: 1.05rem;
+  line-height: 1.8;
+  max-width: 740px;
+  margin-bottom: 1.75rem;
+}
+
+.funeral-home-cta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.funeral-home-section {
+  background: rgba(16, 29, 53, 0.9);
+  border: 1px solid rgba(100, 255, 218, 0.12);
+  border-radius: 16px;
+  padding: 32px;
+}
+
+.funeral-home-section h2 {
+  margin-top: 0;
+  color: #64ffda;
+}
+
+.funeral-home-section p,
+.funeral-home-section li {
+  color: #dfe7ff;
+  line-height: 1.75;
+}
+
+.funeral-home-section ul,
+.funeral-home-section ol {
+  margin: 1rem 0 0 1.2rem;
+}
+
+.funeral-home-section li {
+  margin-bottom: 0.8rem;
+}
+
+.funeral-home-footer a {
+  color: #64ffda;
+  text-decoration: underline;
+}
+
+@media (max-width: 768px) {
+  .funeral-home-hero {
+    min-height: auto;
+    padding: 40px 0;
+  }
+
+  .funeral-home-hero-overlay {
+    padding: 32px 18px;
+  }
+
+  .funeral-home-hero-copy h1 {
+    font-size: 2.4rem;
+  }
+
+  .funeral-home-cta-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
