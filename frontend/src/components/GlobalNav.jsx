@@ -19,10 +19,20 @@ const routes = [
 
 const funeralHomeRoutes = [
   { path: '/', label: 'Home' },
-  { path: '/store', label: 'Memorial Options' },
+  { path: '/memorial', label: 'Memorial Options' },
   { path: '/blog', label: 'Blog' },
   {
     href: `mailto:${SUPPORT_EMAIL}?subject=Funeral Home Information Request`,
+    label: 'Request Info'
+  }
+];
+
+const memorialRoutes = [
+  { path: '/', label: 'Home' },
+  { path: '/memorial', label: 'Memorial Keepsakes' },
+  { path: '/blog', label: 'Blog' },
+  {
+    href: `mailto:${SUPPORT_EMAIL}?subject=Memorial Keepsake Information Request`,
     label: 'Request Info'
   }
 ];
@@ -37,8 +47,14 @@ const GlobalNav = ({ onLogout, member, onMemberLogout }) => {
 
   const isAdminRoute = location.pathname.startsWith('/admin');
   const isFuneralHomeRoute = location.pathname === '/funeral-homes';
+  const isMemorialRoute = location.pathname === '/memorial';
+  const usesMemorialPublicNav = isFuneralHomeRoute || isMemorialRoute;
   const adminChecking = adminStatus === 'checking' || adminStatus === 'unknown';
-  const visibleRoutes = isFuneralHomeRoute ? funeralHomeRoutes : routes;
+  const visibleRoutes = isFuneralHomeRoute
+    ? funeralHomeRoutes
+    : isMemorialRoute
+      ? memorialRoutes
+      : routes;
 
   return (
     <div className="hf-global-nav">
@@ -89,7 +105,7 @@ const GlobalNav = ({ onLogout, member, onMemberLogout }) => {
               );
             })}
 
-            {!isFuneralHomeRoute && (
+            {!usesMemorialPublicNav && (
               <>
                 {/* Member account controls */}
                 {member ? (
