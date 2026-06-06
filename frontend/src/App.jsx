@@ -40,6 +40,7 @@ import { errorToast, successToast } from './utils/toastUtils';
 import HeightmapPage from "./pages/HeightmapPage";
 import ProductDetailPage from 'pages/ProductDetailPage';
 import OrderStatusPage from 'pages/OrderStatusPage';
+import FuneralHomePage from './pages/FuneralHomePage';
 
 import './App.css';
 
@@ -305,6 +306,8 @@ const MainApp = () => {
                 member ? <AccountPage /> : <Navigate to="/login" replace />
               }
             />
+
+            <Route path="/funeral-homes" element={<FuneralHomePage />} />
 
             {/* Fallback */}
             <Route path="*" element={<Navigate to="/" />} />
