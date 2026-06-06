@@ -304,6 +304,42 @@ body {
   gap: 16px;
 }
 
+.funeral-home-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 0.75rem 1.25rem;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font-weight: 700;
+  line-height: 1.25;
+  text-align: center;
+  text-decoration: none;
+}
+
+.funeral-home-button--primary {
+  background: #64ffda;
+  color: #071426;
+}
+
+.funeral-home-button--primary:hover {
+  background: #8effe4;
+  color: #071426;
+}
+
+.funeral-home-button--secondary {
+  border-color: rgba(100, 255, 218, 0.7);
+  background: rgba(7, 20, 38, 0.72);
+  color: #f0f7ff;
+}
+
+.funeral-home-button--secondary:hover {
+  border-color: #64ffda;
+  background: rgba(100, 255, 218, 0.1);
+  color: #ffffff;
+}
+
 .funeral-home-section {
   background: rgba(16, 29, 53, 0.9);
   border: 1px solid rgba(100, 255, 218, 0.12);
@@ -355,4 +391,3 @@ body {
     align-items: stretch;
   }
 }
-
