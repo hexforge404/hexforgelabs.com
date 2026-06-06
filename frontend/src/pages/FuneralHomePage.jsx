@@ -22,7 +22,7 @@ const FuneralHomePage = () => (
             >
               Request Funeral Home Info Packet
             </a>
-            <Link className="funeral-home-button funeral-home-button--secondary" to="/store">
+            <Link className="funeral-home-button funeral-home-button--secondary" to="/memorial">
               View Memorial Keepsake Options
             </Link>
           </div>

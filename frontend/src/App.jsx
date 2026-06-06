@@ -41,6 +41,7 @@ import HeightmapPage from "./pages/HeightmapPage";
 import ProductDetailPage from 'pages/ProductDetailPage';
 import OrderStatusPage from 'pages/OrderStatusPage';
 import FuneralHomePage from './pages/FuneralHomePage';
+import MemorialPage from './pages/MemorialPage';
 
 import './App.css';
 
@@ -308,6 +309,7 @@ const MainApp = () => {
             />
 
             <Route path="/funeral-homes" element={<FuneralHomePage />} />
+            <Route path="/memorial" element={<MemorialPage />} />
 
             {/* Fallback */}
             <Route path="*" element={<Navigate to="/" />} />
