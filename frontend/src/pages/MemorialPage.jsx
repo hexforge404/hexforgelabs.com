@@ -1,10 +1,7 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { SUPPORT_EMAIL } from '../config';
 import '../App.css';
-
-const memorialRequestHref = `mailto:${SUPPORT_EMAIL}?subject=Memorial%20Keepsake%20Request`;
-const familySetHref = `mailto:${SUPPORT_EMAIL}?subject=Family%20Memorial%20Keepsake%20Set`;
-const sampleInfoHref = `mailto:${SUPPORT_EMAIL}?subject=Funeral%20Home%20Sample%20Information`;
 
 const MemorialPage = () => (
   <div className="memorial-page">
@@ -19,9 +16,12 @@ const MemorialPage = () => (
           close family gifts.
         </p>
         <div className="memorial-cta-row">
-          <a className="memorial-button memorial-button--primary" href={memorialRequestHref}>
+          <Link
+            className="memorial-button memorial-button--primary"
+            to="/store/custom-lithophane-lamp-cylinder"
+          >
             Start a Memorial Keepsake Request
-          </a>
+          </Link>
           <a className="memorial-button memorial-button--secondary" href="#keepsake-packages">
             View Keepsake Packages
           </a>
@@ -51,9 +51,12 @@ const MemorialPage = () => (
           <p className="memorial-package-best-for">
             <strong>Best for:</strong> One primary memorial photo
           </p>
-          <a className="memorial-button memorial-button--secondary" href={memorialRequestHref}>
+          <Link
+            className="memorial-button memorial-button--secondary"
+            to="/store/custom-lithophane-lamp-cylinder"
+          >
             Request This Option
-          </a>
+          </Link>
         </article>
 
         <article className="memorial-package-card">
@@ -65,24 +68,12 @@ const MemorialPage = () => (
           <p className="memorial-package-best-for">
             <strong>Best for:</strong> Multiple family members or shared remembrance gifts
           </p>
-          <a className="memorial-button memorial-button--secondary" href={familySetHref}>
+          <Link
+            className="memorial-button memorial-button--secondary"
+            to="/store/custom-family-lithophane-bundle"
+          >
             Ask About Family Sets
-          </a>
-        </article>
-
-        <article className="memorial-package-card memorial-package-card--staff">
-          <p className="memorial-package-label">For funeral-home staff</p>
-          <h3>Director / Display Sample</h3>
-          <p>
-            A limited sample option for funeral homes or staff who want to understand the process before
-            sharing it with families.
-          </p>
-          <p className="memorial-package-best-for">
-            <strong>Best for:</strong> Funeral home review and display discussion
-          </p>
-          <a className="memorial-button memorial-button--secondary" href={sampleInfoHref}>
-            Request Sample Info
-          </a>
+          </Link>
         </article>
       </div>
     </section>
@@ -112,13 +103,10 @@ const MemorialPage = () => (
     <section className="memorial-section memorial-contact">
       <h2>Start a request</h2>
       <p>
-        To ask about a memorial keepsake, email HexForge Labs at{' '}
-        <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a> with your name, the type of keepsake you are
+        If the request buttons do not work for you, email{' '}
+        <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a> with your name, the keepsake option you are
         interested in, and whether you already have a photo selected.
       </p>
-      <a className="memorial-button memorial-button--primary" href={memorialRequestHref}>
-        Email Memorial Keepsake Request
-      </a>
     </section>
   </div>
 );
