@@ -10,6 +10,8 @@ const Batch = require('../models/Batch');
 const PromoCode = require('../models/PromoCode');
 const PromoAuditLog = require('../models/PromoAuditLog');
 const StripeWebhookEvent = require('../models/StripeWebhookEvent');
+const { getDefaultLandingPageConfig } = require('../utils/defaultLandingPageConfig');
+const LandingPageConfig = require('../models/LandingPageConfig');
 const stripe = process.env.STRIPE_SECRET_KEY ? require('stripe')(process.env.STRIPE_SECRET_KEY) : null;
 const multer = require('multer');
 const path = require('path');
@@ -145,6 +147,134 @@ router.get('/session', (req, res) => {
 // ⛔ Everything below this line requires admin session
 router.use(requireAdmin);
 router.use(adminLimiter);
+
+
+const sanitizeString = (value) => String(value || '').trim();
+const sanitizeBoolean = (value) => {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    return value === 'true' || value === '1';
+  }
+  if (typeof value === 'number') return value === 1;
+  return false;
+};
+const sanitizeNumber = (value, fallback = 0) => {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+};
+
+const sanitizeFeaturedImages = (items) => {
+  if (!Array.isArray(items)) return [];
+  return items.map((item) => ({
+    imageUrl: sanitizeString(item?.imageUrl),
+    alt: sanitizeString(item?.alt),
+    caption: sanitizeString(item?.caption),
+    enabled: sanitizeBoolean(item?.enabled),
+    sortOrder: sanitizeNumber(item?.sortOrder, 0),
+  }));
+};
+
+const sanitizeLandingReviews = (items) => {
+  if (!Array.isArray(items)) return [];
+  return items.map((item) => ({
+    name: sanitizeString(item?.name),
+    text: sanitizeString(item?.text),
+    rating: Math.min(5, Math.max(1, sanitizeNumber(item?.rating, 1))),
+    imageUrl: sanitizeString(item?.imageUrl),
+    enabled: sanitizeBoolean(item?.enabled),
+    sortOrder: sanitizeNumber(item?.sortOrder, 0),
+  }));
+};
+
+const sanitizeTrustBadges = (items) => {
+  if (!Array.isArray(items)) return [];
+  return items.map((item) => ({
+    title: sanitizeString(item?.title),
+    description: sanitizeString(item?.description),
+    icon: sanitizeString(item?.icon),
+    enabled: sanitizeBoolean(item?.enabled),
+    sortOrder: sanitizeNumber(item?.sortOrder, 0),
+  }));
+};
+
+const sanitizeFeaturedProductSlugs = (items) => {
+  if (!Array.isArray(items)) return [];
+  return items
+    .map((item) => sanitizeString(item))
+    .filter(Boolean);
+};
+
+const sanitizeLandingPageConfig = (body) => ({
+  hero: {
+    headline: sanitizeString(body?.hero?.headline),
+    subheadline: sanitizeString(body?.hero?.subheadline),
+    ctaText: sanitizeString(body?.hero?.ctaText),
+    ctaLink: sanitizeString(body?.hero?.ctaLink),
+    secondaryCtaText: sanitizeString(body?.hero?.secondaryCtaText),
+    secondaryCtaLink: sanitizeString(body?.hero?.secondaryCtaLink),
+    imageUrl: sanitizeString(body?.hero?.imageUrl),
+    imageAlt: sanitizeString(body?.hero?.imageAlt),
+  },
+  announcement: {
+    enabled: sanitizeBoolean(body?.announcement?.enabled),
+    text: sanitizeString(body?.announcement?.text),
+    link: sanitizeString(body?.announcement?.link),
+  },
+  featuredImages: sanitizeFeaturedImages(body?.featuredImages),
+  reviews: sanitizeLandingReviews(body?.reviews),
+  featuredProductSlugs: sanitizeFeaturedProductSlugs(body?.featuredProductSlugs),
+  trustBadges: sanitizeTrustBadges(body?.trustBadges),
+  seo: {
+    title: sanitizeString(body?.seo?.title),
+    description: sanitizeString(body?.seo?.description),
+  },
+});
+
+const buildLandingPageConfig = (doc) => {
+  const defaults = getDefaultLandingPageConfig();
+  const data = doc || {};
+  return {
+    hero: { ...defaults.hero, ...(data.hero || {}) },
+    announcement: { ...defaults.announcement, ...(data.announcement || {}) },
+    featuredImages: Array.isArray(data.featuredImages) && data.featuredImages.length
+      ? data.featuredImages
+      : defaults.featuredImages,
+    reviews: Array.isArray(data.reviews) ? data.reviews : defaults.reviews,
+    featuredProductSlugs: Array.isArray(data.featuredProductSlugs) && data.featuredProductSlugs.length
+      ? data.featuredProductSlugs
+      : defaults.featuredProductSlugs,
+    trustBadges: Array.isArray(data.trustBadges) && data.trustBadges.length
+      ? data.trustBadges
+      : defaults.trustBadges,
+    seo: { ...defaults.seo, ...(data.seo || {}) },
+  };
+};
+
+router.get('/landing-page', async (req, res) => {
+  try {
+    const config = await LandingPageConfig.findOne().lean();
+    return res.json({ success: true, config: buildLandingPageConfig(config) });
+  } catch (err) {
+    console.error('[ADMIN LANDING PAGE] Failed to load admin landing page config:', err);
+    return res.status(500).json({ success: false, error: 'Failed to load landing page config' });
+  }
+});
+
+router.put('/landing-page', async (req, res) => {
+  try {
+    const sanitized = sanitizeLandingPageConfig(req.body || {});
+    const updated = await LandingPageConfig.findOneAndUpdate(
+      {},
+      { $set: sanitized },
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    ).lean();
+    return res.json({ success: true, config: buildLandingPageConfig(updated) });
+  } catch (err) {
+    console.error('[ADMIN LANDING PAGE] Failed to save landing page config:', err);
+    return res.status(500).json({ success: false, error: 'Failed to save landing page config' });
+  }
+});
+
 
 const hasAnyRole = (admin, allowedRoles) => {
   if (!admin?.loggedIn) return false;

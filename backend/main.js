@@ -189,6 +189,7 @@ const assistantProjectsRouter = require("./routes/assistantProjects");
 const mediaRoutes = require("./routes/media");
 const toolsProxyRoutes = require("./routes/toolsProxy");
 const heightmapRoutes = require("./routes/heightmap");
+const landingPageRoutes = require('./routes/landingPage');
 
 
 app.use("/api/tools", toolsProxyRoutes);
@@ -200,6 +201,7 @@ app.use("/api/assistant-sessions", apiLimiter, assistantSessionsRouter);
 app.use("/api/assistant/sessions", apiLimiter, assistantSessionsRouter);
 app.use('/api/mcp', mcpRoutes);
 app.use('/api/products', apiLimiter, productRoutes);
+app.use('/api/landing-page', apiLimiter, landingPageRoutes);
 app.use('/api/orders', apiLimiter, orderRoutes);
 app.use('/api/admin', apiLimiter, adminRoutes);
 app.use('/api/admin/test-pipeline', apiLimiter, testPipelineRoutes);
