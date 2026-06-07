@@ -80,10 +80,8 @@ const FuneralHomePage = () => (
     <section className="funeral-home-section">
       <h2>Optional director sample</h2>
       <p>
-        Funeral directors who want to evaluate the process firsthand may request a limited personal sample.
-        Send one or two personal photos, experience the same guidance a family would receive, and receive a
-        personal keepsake sample to review quality, presentation, and fit before sharing the option with
-        families.
+        Limited director samples can be discussed after your team reviews the information packet, especially
+        if you want to experience the same photo review and keepsake process a family would receive.
       </p>
     </section>
 
