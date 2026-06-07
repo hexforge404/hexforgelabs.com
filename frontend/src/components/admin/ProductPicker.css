@@ -1,0 +1,132 @@
+.product-picker-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  overflow: hidden;
+}
+
+.product-picker-modal {
+  width: min(1100px, 96vw);
+  max-height: 88vh;
+  overflow: hidden;
+  background: #0b1220;
+  border: 1px solid rgba(0, 255, 200, 0.14);
+  border-radius: 18px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 22px;
+  position: relative;
+}
+
+.product-picker-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.product-picker-header h2 {
+  margin: 0;
+}
+
+.product-picker-search-row {
+  display: grid;
+  gap: 8px;
+}
+
+.product-picker-loading,
+.product-picker-error,
+.product-picker-empty {
+  background: #0e1624;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 22px;
+  text-align: center;
+}
+
+.product-picker-results {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 58vh;
+  overflow-y: auto;
+  padding: 18px 8px 10px 0;
+}
+
+.product-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 16px;
+  width: 100%;
+}
+
+.product-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 360px;
+  background: #101827;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.product-card-thumb {
+  width: 100%;
+  min-height: 150px;
+  height: 150px;
+  background-color: rgba(255, 255, 255, 0.05);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.product-card-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.product-thumb-error {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+.product-card-body {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  flex: 1 1 auto;
+}
+
+.product-card-title {
+  font-weight: 700;
+  color: #f8f8f8;
+}
+
+.product-card-meta {
+  color: #a1bac7;
+  font-size: 0.92rem;
+  line-height: 1.4;
+}
+
+.product-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 16px 16px;
+}
+
+.product-card-actions .action-button {
+  width: 100%;
+}
+
+@media (max-width: 860px) {
+  .product-picker-grid {
+    grid-template-columns: 1fr;
+  }
+}
