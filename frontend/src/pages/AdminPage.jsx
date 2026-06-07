@@ -5,6 +5,7 @@ import './AdminPage.css';
 import API_BASE_URL from '../utils/apiBase';
 import { successToast, errorToast, warningToast } from '../utils/toastUtils';
 import InventoryViewer from '../components/InventoryViewer';
+import LandingPageEditor from '../components/admin/LandingPageEditor';
 import { useAdmin } from '../context/AdminContext';
 import { resolveImageUrl } from '../utils/resolveImageUrl';
 
@@ -2537,6 +2538,12 @@ export default function AdminPage() {
           onClick={() => setActiveTab('blog')}
         >
           Blog Posts
+        </button>
+        <button
+          className={activeTab === 'landing-page' ? 'tab active' : 'tab'}
+          onClick={() => setActiveTab('landing-page')}
+        >
+          Landing Page
         </button>
         <button
           className={activeTab === 'inventory' ? 'tab active' : 'tab'}
@@ -5151,6 +5158,8 @@ export default function AdminPage() {
       )}
 
       {/* ---------- INVENTORY TAB (NOTION) ---------- */}
+      {activeTab === 'landing-page' && <LandingPageEditor />}
+
       {activeTab === 'inventory' && <InventoryViewer />}
     </div>
   );
