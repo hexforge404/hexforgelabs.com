@@ -2744,6 +2744,10 @@ export default function AdminPage() {
                 ))}
               </select>
             </div>
+            <p className="hint-text">
+              The first gallery image is shown first on the product detail page.
+              Store card hero and product gallery order are managed separately.
+            </p>
 
             {galleryError && (
               <div className="status-message error-message">
@@ -2781,6 +2785,22 @@ export default function AdminPage() {
                             <span className="gallery-hero-badge">Hero</span>
                           )}
                           <div className="gallery-card-actions">
+                            <button
+                              type="button"
+                              className="secondary-button small-button"
+                              onClick={() => moveGalleryItem(index, index - 1)}
+                              disabled={index === 0}
+                            >
+                              Move Up
+                            </button>
+                            <button
+                              type="button"
+                              className="secondary-button small-button"
+                              onClick={() => moveGalleryItem(index, index + 1)}
+                              disabled={index === galleryItems.length - 1}
+                            >
+                              Move Down
+                            </button>
                             <button
                               type="button"
                               className="secondary-button small-button"
