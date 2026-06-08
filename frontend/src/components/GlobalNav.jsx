@@ -18,9 +18,7 @@ const routes = [
 ];
 
 const funeralHomeRoutes = [
-  { path: '/', label: 'Home' },
-  { path: '/memorial', label: 'Memorial Options' },
-  { path: '/blog', label: 'Blog' },
+  { path: '/memorial', label: 'Family Memorial Page' },
   {
     href: `mailto:${SUPPORT_EMAIL}?subject=Funeral Home Information Request`,
     label: 'Request Info'
@@ -28,9 +26,7 @@ const funeralHomeRoutes = [
 ];
 
 const memorialRoutes = [
-  { path: '/', label: 'Home' },
-  { path: '/memorial', label: 'Memorial Keepsakes' },
-  { path: '/blog', label: 'Blog' },
+  { path: '/funeral-homes', label: 'Funeral Home Info' },
   {
     href: `mailto:${SUPPORT_EMAIL}?subject=Memorial Keepsake Information Request`,
     label: 'Request Info'
