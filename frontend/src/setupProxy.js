@@ -3,10 +3,16 @@ const rateLimit = require('express-rate-limit');
 
 require('dotenv').config();
 
+const apiProxyTarget =
+  process.env.API_PROXY_TARGET ||
+  process.env.REACT_APP_API_PROXY_TARGET ||
+  'http://127.0.0.1:8000';
+
 const proxyConfig = {
-  target: 'http://backend:8000',
+  target: apiProxyTarget,
   changeOrigin: true,
   logLevel: 'debug',
+  pathRewrite: (path) => `/api${path}`,
   
   secure: process.env.NODE_ENV === 'production',
   xfwd: true,

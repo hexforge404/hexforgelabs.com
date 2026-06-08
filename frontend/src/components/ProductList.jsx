@@ -4,23 +4,10 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useCart } from 'context/CartContext';
 import { resolveImageUrl, DEFAULT_PLACEHOLDER } from '../utils/resolveImageUrl';
 import { calculatePrice } from '../utils/pricing';
+import { storeFallbackProducts } from '../storeFallbackProducts';
+import { getProductImage, getProductImageFallback } from '../productImageFallbacks';
 
-const FALLBACK_PRODUCTS = [
-  {
-    _id: 'fallback-1',
-    title: 'Surface Relief Case',
-    price: 129,
-    hero_image_url: '/images/hexforge-logo-removebg.png',
-    category: 'surface',
-  },
-  {
-    _id: 'fallback-2',
-    title: 'Relief Shell',
-    price: 89,
-    hero_image_url: '/images/hexforge-logo-removebg.png',
-    category: 'surface',
-  },
-];
+const FALLBACK_PRODUCTS = storeFallbackProducts;
 
 const getLampBasePrice = (product) => {
   const sku = String(product.sku || '').toUpperCase();
@@ -70,7 +57,7 @@ const normalizeProduct = (product) => {
   const gallery = Array.isArray(product.imageGallery)
     ? product.imageGallery.filter(Boolean)
     : [];
-  const heroImage = product.image || product.hero_image_url || gallery[0] || '';
+  const heroImage = getProductImage({ ...product, imageGallery: gallery });
   return {
     ...product,
     categories,
@@ -82,6 +69,26 @@ const normalizeProduct = (product) => {
 };
 
 const getImageSrc = (image) => resolveImageUrl(image);
+
+const handleProductImageError = (event, product) => {
+  const fallback = resolveImageUrl(getProductImageFallback(product));
+  if (fallback && event.currentTarget.src !== new URL(fallback, window.location.origin).href) {
+    event.currentTarget.src = fallback;
+    return;
+  }
+  event.currentTarget.src = DEFAULT_PLACEHOLDER;
+};
+
+const isPublicStoreProduct = (product) => {
+  const slug = String(product?.slug || '').toLowerCase();
+  const title = String(product?.title || product?.name || '').toLowerCase();
+  return !(
+    product?.isPrivatePayment === true ||
+    String(product?.category || '').toLowerCase() === 'custom-payment' ||
+    slug.includes('final-payment') ||
+    title.includes('final payment')
+  );
+};
 
 const getProductCardMeta = (product) => {
   const sku = String(product.sku || '').toUpperCase();
@@ -126,7 +133,7 @@ const getProductCardMeta = (product) => {
   return {
     badge,
     microcopy: microcopyMap[sku] || (isCustomKeepsake ? 'Handmade custom keepsake from your photos' : defaultMicrocopy),
-    cta,
+    cta: product.isStoreFallback ? 'View Details' : cta,
     pricePrefix,
     priceNote,
     isCustomKeepsake,
@@ -240,9 +247,7 @@ const ProductSection = ({ title, subtitle, products, addToCart }) => {
                   <img
                     src={getImageSrc(product.image)}
                     alt={product.name}
-                    onError={(e) => {
-                      e.currentTarget.src = DEFAULT_PLACEHOLDER;
-                    }}
+                    onError={(event) => handleProductImageError(event, product)}
                     style={{ width: '100%', height: 'auto', borderRadius: '10px', marginBottom: '14px' }}
                   />
                 </div>
@@ -267,6 +272,10 @@ const ProductSection = ({ title, subtitle, products, addToCart }) => {
 
               <button
                 onClick={() => {
+                  if (product.isStoreFallback) {
+                    navigate(`/store/${product.slug}`);
+                    return;
+                  }
                   if (meta.isCustomKeepsake) {
                     navigate(`/store/${product.slug}`);
                     return;
@@ -316,7 +325,7 @@ function ProductList() {
         }
         const data = await res.json();
         const list = Array.isArray(data) ? data : Array.isArray(data.data) ? data.data : [];
-        const normalized = list.map(normalizeProduct);
+        const normalized = list.filter(isPublicStoreProduct).map(normalizeProduct);
         setProducts(normalized.length ? normalized : FALLBACK_PRODUCTS.map(normalizeProduct));
       } catch (err) {
         console.error('❌ Error fetching products:', err);
@@ -599,4 +608,3 @@ function ProductList() {
 }
 
 export default ProductList;
-

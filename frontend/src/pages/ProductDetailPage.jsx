@@ -3,8 +3,15 @@ import { useParams, Link } from 'react-router-dom';
 import { useCart } from 'context/CartContext';
 import { toast } from 'react-toastify';
 import { getProductContent } from '../data/productOverrides';
+import { SUPPORT_EMAIL } from '../config';
 import { resolveImageUrl, DEFAULT_PLACEHOLDER } from '../utils/resolveImageUrl';
 import { calculatePrice } from '../utils/pricing';
+import {
+  getMemorialFallbackProduct,
+  getMemorialProductContent
+} from '../memorialFallbackProducts';
+import { getStoreFallbackProduct } from '../storeFallbackProducts';
+import { getProductImage, getProductImageFallback } from '../productImageFallbacks';
 import './ProductDetailPage.css';
 
 function PanelConfigurator({
@@ -799,11 +806,19 @@ const activeAddons = getActiveAddons();
       try {
         const res = await fetch(`/api/products/slug/${slug}`);
         if (!res.ok) {
-          if (res.status === 404) {
-            setError('not-found');
-          } else {
-            throw new Error(`HTTP ${res.status}`);
+          const fallbackProduct = getStoreFallbackProduct(slug) || getMemorialFallbackProduct(slug);
+          if (fallbackProduct) {
+            setProduct(fallbackProduct);
+            setError(null);
+            setCustomOrder((prev) => ({
+              ...prev,
+              productType: resolveProductType(fallbackProduct, slug),
+            }));
+            return;
           }
+
+          if (res.status === 404) setError('not-found');
+          else throw new Error(`HTTP ${res.status}`);
           return;
         }
         const data = await res.json();
@@ -830,7 +845,17 @@ const activeAddons = getActiveAddons();
         }
       } catch (err) {
         console.error('Error fetching product:', err);
-        setError('general');
+        const fallbackProduct = getStoreFallbackProduct(slug) || getMemorialFallbackProduct(slug);
+        if (fallbackProduct) {
+          setProduct(fallbackProduct);
+          setError(null);
+          setCustomOrder((prev) => ({
+            ...prev,
+            productType: resolveProductType(fallbackProduct, slug),
+          }));
+        } else {
+          setError('general');
+        }
       } finally {
         setLoading(false);
       }
@@ -846,6 +871,16 @@ const activeAddons = getActiveAddons();
   }, [product]);
 
   const getImageSrc = (image) => resolveImageUrl(image);
+  const handleProductImageError = (event, productData = product) => {
+    const fallback = resolveImageUrl(getProductImageFallback(productData));
+    if (!event.currentTarget.dataset.fallbackAttempted && fallback) {
+      event.currentTarget.dataset.fallbackAttempted = 'true';
+      event.currentTarget.src = fallback;
+      return;
+    }
+    event.currentTarget.onerror = null;
+    event.currentTarget.src = DEFAULT_PLACEHOLDER;
+  };
 
   const getAvailabilityStatus = (stock, status) => {
     if (status === 'archived' || status === 'draft') {
@@ -1230,7 +1265,7 @@ const activeAddons = getActiveAddons();
       name: p.name || p.title || 'Untitled',
       title: p.title || p.name || 'Untitled',
       imageGallery: Array.isArray(p.imageGallery) ? p.imageGallery.filter(Boolean) : [],
-      image: p.image || p.hero_image_url || (Array.isArray(p.imageGallery) ? p.imageGallery[0] : '') || '',
+      image: getProductImage(p),
       priceFormatted: p.priceFormatted || (Number.isFinite(basePrice) ? `$${basePrice.toFixed(2)}` : '$0.00'),
     };
   };
@@ -1293,6 +1328,7 @@ const activeAddons = getActiveAddons();
               ? 1
               : clampPanelCount(customOrder.lampshade.panelCount);
   const isLamp = isLampProduct(product);
+  const isFallbackProduct = Boolean(normalized.isStoreFallback || normalized.isMemorialFallback);
   const galleryImages = getGalleryImages(normalized);
   const heroImage = galleryImages[activeImageIndex] || normalized.image;
   const customOrderTotal = (() => {
@@ -1344,6 +1380,11 @@ const activeAddons = getActiveAddons();
   })();
 
   const formattedDeposit = `$${(customOrderTotal * 0.5).toFixed(2)}`;
+  const fallbackInquiryHref = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(
+    'Product Availability Question'
+  )}&body=${encodeURIComponent(
+    `I am interested in ${normalized.title || 'this product'}.\n\nProduct page: /store/${slug}`
+  )}`;
 
   const getProductLabel = () => {
     switch (customOrder.productType) {
@@ -1379,7 +1420,7 @@ const activeAddons = getActiveAddons();
     : [];
   
   // Use handcrafted content overrides if available, otherwise use dynamic generation
-  const productContent = getProductContent(slug, product, {
+  const productContent = (isFallbackProduct ? getMemorialProductContent(slug) : null) || getProductContent(slug, product, {
     highlights: getProductHighlights,
     useCases: getUseCasesGenerated,
     whatsIncluded: getWhatsIncludedGenerated,
@@ -1447,9 +1488,7 @@ const activeAddons = getActiveAddons();
               <img
                 src={getImageSrc(heroImage)}
                 alt={normalized.title}
-                onError={(e) => {
-                  e.currentTarget.src = DEFAULT_PLACEHOLDER;
-                }}
+                onError={(event) => handleProductImageError(event)}
                 className="product-detail-image"
               />
             </button>
@@ -1465,9 +1504,7 @@ const activeAddons = getActiveAddons();
                     <img
                       src={getImageSrc(image)}
                       alt={`${normalized.title} thumbnail ${index + 1}`}
-                      onError={(e) => {
-                        e.currentTarget.src = DEFAULT_PLACEHOLDER;
-                      }}
+                      onError={(event) => handleProductImageError(event)}
                     />
                   </button>
                 ))}
@@ -1572,7 +1609,29 @@ const activeAddons = getActiveAddons();
           )}
 
           {/* Add to Cart Actions or Custom Order Form */}
-          {isLamp ? (
+          {isFallbackProduct ? (
+            <div className="product-detail-custom-order">
+              <div className="product-detail-custom-order-title">
+                Product inquiry
+              </div>
+              <div className="product-detail-custom-note">
+                Online ordering for this item is temporarily unavailable.
+              </div>
+              <p className="product-detail-custom-order-copy">
+                Please contact HexForge Labs to confirm availability and the best next step for this item.
+              </p>
+              <a
+                href={fallbackInquiryHref}
+                className="product-detail-custom-submit"
+                style={{ display: 'inline-block', textAlign: 'center', textDecoration: 'none' }}
+              >
+                Ask About This Product
+              </a>
+              <div className="product-detail-custom-submit-note">
+                Email: {SUPPORT_EMAIL}
+              </div>
+            </div>
+          ) : isLamp ? (
             <div className="product-detail-custom-order">
               <div className="product-detail-custom-order-title">
                 {customOrder.productType === 'fixedBox4'
@@ -1587,11 +1646,11 @@ const activeAddons = getActiveAddons();
                           ? 'CUSTOM FAMILY LITHOPHANE BUNDLE'
                           : customOrder.productType === 'nightlight'
                             ? 'Custom Lithophane Night Light'
-                            : 'Custom Multi-Panel Lithophane Display'}
+                            : 'Custom Multi-Panel Lithophane Lamp'}
               </div>
               <div className="product-detail-custom-note">
                 {customOrder.productType === 'fixedBox4'
-                  ? 'A 4-sided lithophane box with a removable lid.'
+                  ? 'A four-sided photo box that glows from within using an LED tea light or e-tealight.'
                   : customOrder.productType === 'panelBox5'
                     ? 'A five-sided panel box with a removable lid.'
                     : customOrder.productType === 'globeLamp'
@@ -1601,12 +1660,12 @@ const activeAddons = getActiveAddons();
                         : customOrder.productType === 'familyBundle4'
                           ? 'A premium family bundle with matching lamps, night lights, and diffusers, handcrafted from your photos.'
                           : customOrder.productType === 'nightlight'
-                            ? 'A custom lithophane night light made from your photo.'
-                            : 'A custom multi-panel lithophane display made from your photos.'}
+                          ? 'A custom lithophane night light made from your photo.'
+                            : 'A custom multi-panel lithophane lamp shade made from your photos.'}
               </div>
               <p className="product-detail-custom-order-copy">
                 {customOrder.productType === 'fixedBox4'
-                  ? 'Upload your photos and we will craft a four-sided lithophane box with a removable lid.'
+                  ? 'Upload your photos and we will craft a four-sided lithophane box designed for LED tea light or e-tealight illumination.'
                   : customOrder.productType === 'panelBox5'
                     ? 'Upload your photos and we will craft a five-sided panel box with a removable lid.'
                     : customOrder.productType === 'globeLamp'
@@ -2115,7 +2174,9 @@ const activeAddons = getActiveAddons();
                 {customOrder.productType === 'familyBundle4'
                   ? 'This listing covers a complete family bundle with matching lamps, night lights, and diffuser inserts.'
                   : customOrder.productType === 'fixedBox4' || customOrder.productType === 'panelBox5'
-                    ? 'This listing is for the custom lithophane box only.'
+                    ? customOrder.productType === 'fixedBox4'
+                      ? 'This listing is for the four-sided lithophane box only. Use with an LED tea light or e-tealight.'
+                      : 'This listing is for the custom lithophane panel box only.'
                     : customOrder.productType === 'globeLamp'
                       ? 'Designed as a globe-style lithophane lamp.'
                       : 'Designed for use with a compatible lamp base. This listing is for the custom shade only.'}
@@ -2288,9 +2349,7 @@ const activeAddons = getActiveAddons();
                 <img
                   src={getImageSrc(image)}
                   alt={`Real build ${index + 1}`}
-                  onError={(e) => {
-                    e.currentTarget.src = DEFAULT_PLACEHOLDER;
-                  }}
+                  onError={(event) => handleProductImageError(event)}
                 />
               </button>
             ))}
@@ -2323,9 +2382,7 @@ const activeAddons = getActiveAddons();
                     <img
                       src={getImageSrc(relNormalized.image)}
                       alt={relNormalized.title}
-                      onError={(e) => {
-                        e.currentTarget.src = DEFAULT_PLACEHOLDER;
-                      }}
+                      onError={(event) => handleProductImageError(event, relProduct)}
                       className="product-detail-related-image"
                     />
                     <div className="product-detail-related-name">{relNormalized.title}</div>

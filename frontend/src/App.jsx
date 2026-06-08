@@ -6,7 +6,8 @@ import {
   BrowserRouter as Router,
   Routes,
   Route,
-  Navigate
+  Navigate,
+  useLocation
 } from 'react-router-dom';
 
 import { useCart } from 'context/CartContext';
@@ -27,6 +28,7 @@ import BlogPost from 'pages/BlogPost';
 import AdminWorkOrderPrintPage from 'pages/AdminWorkOrderPrintPage';
 import ChatPage from 'pages/ChatPage';
 import FloatingChatButton from 'components/FloatingChatButton';
+import MemorialGuide from 'components/MemorialGuide';
 import ScriptLabPage from 'pages/ScriptLabPage';
 import MemoryPage from 'pages/MemoryPage';
 import AssistantPage from 'pages/AssistantPage';
@@ -142,16 +144,37 @@ StorePage.propTypes = {
   isDrawerOpen: PropTypes.bool.isRequired
 };
 
+const AdminRoute = ({ isAuthenticated, loading, children }) => {
+  if (loading) {
+    return <LoadingSpinner fullPage />;
+  }
+
+  return isAuthenticated ? children : <Navigate to="/admin-login" replace />;
+};
+
+AdminRoute.propTypes = {
+  isAuthenticated: PropTypes.bool.isRequired,
+  loading: PropTypes.bool.isRequired,
+  children: PropTypes.node.isRequired
+};
+
 const MainApp = () => {
   const [isDrawerOpen, setDrawerOpen] = useState(false);
   const { cart } = useCart();
 
   // ✅ admin session
-  const { isAuthenticated, loading, error } = useAdminAuthCheck();
+  const { isAuthenticated, loading: adminLoading } = useAdminAuthCheck();
 
   // ✅ member session
   const [member, setMember] = useState(null);
   const [memberLoaded, setMemberLoaded] = useState(false);
+  const location = useLocation();
+  const memorialGuideSource =
+    location.pathname === '/funeral-homes'
+      ? 'funeralHomes'
+      : location.pathname === '/memorial'
+        ? 'memorial'
+        : null;
 
   const toggleDrawer = () => setDrawerOpen(v => !v);
 
@@ -198,30 +221,8 @@ const MainApp = () => {
     }
   };
 
-  if (loading || !memberLoaded) {
+  if (!memberLoaded) {
     return <LoadingSpinner fullPage />;
-  }
-
-  if (error) {
-    return (
-      <div className="auth-error-container">
-        <h2>Authentication Check Failed</h2>
-        <p>{error}</p>
-        <div className="debug-info">
-          <p>Technical Details:</p>
-          <ul>
-            <li>Endpoint: /api/admin/session</li>
-            <li>Cookies: {document.cookie || 'None detected'}</li>
-          </ul>
-        </div>
-        <button
-          onClick={() => window.location.reload()}
-          className="retry-button"
-        >
-          Retry Authentication
-        </button>
-      </div>
-    );
   }
 
   return (
@@ -255,27 +256,25 @@ const MainApp = () => {
             <Route
               path="/orders"
               element={
-                isAuthenticated ? <OrdersPage /> : <Navigate to="/" />
+                <AdminRoute isAuthenticated={isAuthenticated} loading={adminLoading}>
+                  <OrdersPage />
+                </AdminRoute>
               }
             />
             <Route
               path="/admin"
               element={
-                isAuthenticated ? (
+                <AdminRoute isAuthenticated={isAuthenticated} loading={adminLoading}>
                   <AdminPage />
-                ) : (
-                  <Navigate to="/admin-login" />
-                )
+                </AdminRoute>
               }
             />
             <Route
               path="/admin/work-order/:orderId"
               element={
-                isAuthenticated ? (
+                <AdminRoute isAuthenticated={isAuthenticated} loading={adminLoading}>
                   <AdminWorkOrderPrintPage />
-                ) : (
-                  <Navigate to="/admin-login" />
-                )
+                </AdminRoute>
               }
             />
             <Route path="/admin-login" element={<LoginPage />} />
@@ -322,7 +321,11 @@ const MainApp = () => {
           pauseOnHover
           draggable
         />
-        <FloatingChatButton />
+        {memorialGuideSource ? (
+          <MemorialGuide key={memorialGuideSource} pageSource={memorialGuideSource} />
+        ) : (
+          <FloatingChatButton />
+        )}
       </>
     </ErrorBoundary>
   );

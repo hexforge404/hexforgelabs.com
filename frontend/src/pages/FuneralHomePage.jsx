@@ -8,12 +8,18 @@ const FuneralHomePage = () => (
     <section className="funeral-home-hero">
       <div className="funeral-home-hero-overlay">
         <div className="funeral-home-hero-copy">
-          <p className="funeral-home-eyebrow">HexForge Labs | Funeral Home Referral Path</p>
-          <h1>A respectful local keepsake option for families</h1>
+          <p className="funeral-home-eyebrow">HexForge Labs | Funeral Home Memorial Keepsake Option</p>
+          <h1>A simple photo keepsake option for families who ask for something personal</h1>
           <p>
             HexForge Labs creates custom photo-based memorial lithophane lamps from family-submitted
-            photographs. Each piece is made as a warm, lighted keepsake families can display at home, place
-            on a remembrance table when appropriate, or give to close relatives after a service.
+            photographs. When lit from inside, the image becomes a soft illuminated portrait or memory scene
+            families can display at home, place on a remembrance table when appropriate, or give to close
+            relatives after a service.
+          </p>
+          <p>
+            Families work directly with HexForge Labs for photo review, ordering, payment, and fulfillment.
+            Your team can simply share the information sheet or QR code when a family asks about personalized
+            keepsakes.
           </p>
           <div className="funeral-home-cta-row">
             <a
@@ -23,10 +29,20 @@ const FuneralHomePage = () => (
               Request Funeral Home Info Packet
             </a>
             <Link className="funeral-home-button funeral-home-button--secondary" to="/memorial">
-              View Memorial Keepsake Options
+              View Family Memorial Page
             </Link>
           </div>
         </div>
+        <figure className="funeral-home-hero-visual">
+          <img
+            src="/images/products/litho-lamp/multi-lamp-2.jpg"
+            alt="A group of illuminated custom lithophane lamps"
+          />
+          <figcaption>
+            <strong>Memorial lithophane lamp preview</strong>
+            <span>Custom photo keepsakes illuminated from within.</span>
+          </figcaption>
+        </figure>
       </div>
     </section>
 
@@ -38,28 +54,33 @@ const FuneralHomePage = () => (
         need to manage inventory, collect photos, process payments, or add another formal vendor program
         before there is proven interest.
       </p>
-      <ul>
-        <li>Optional resource for families who want something personal, photo-based, handmade, and lasting.</li>
-        <li>Families work directly with HexForge Labs after they choose to inquire.</li>
-        <li>No inventory, commission structure, or vendor commitment is required for the first conversation.</li>
-      </ul>
+      <p className="funeral-home-callout">
+        No inventory, photo collection, payment processing, or fulfillment work is required from your team.
+      </p>
     </section>
 
     <section className="funeral-home-section">
-      <h2>What the memorial keepsake is</h2>
-      <p>
-        A memorial lithophane lamp is a custom lamp shade, panel, globe, or night-light style piece made from
-        a photograph. When lit from inside with LED lighting, the image becomes visible through the printed
-        material and creates a soft illuminated portrait or memory scene.
+      <h2>What families receive</h2>
+      <div className="funeral-home-card-grid">
+        <article className="funeral-home-info-card">
+          <span className="funeral-home-card-number">01</span>
+          <h3>Custom photo lamp</h3>
+          <p>A family-selected photograph becomes a warm illuminated portrait or memory scene.</p>
+        </article>
+        <article className="funeral-home-info-card">
+          <span className="funeral-home-card-number">02</span>
+          <h3>Photo review guidance</h3>
+          <p>HexForge Labs reviews the image and explains what will reproduce clearly before production.</p>
+        </article>
+        <article className="funeral-home-info-card">
+          <span className="funeral-home-card-number">03</span>
+          <h3>Direct order with HexForge Labs</h3>
+          <p>Families handle order details, payment, delivery, or pickup directly with HexForge Labs.</p>
+        </article>
+      </div>
+      <p className="funeral-home-privacy">
+        Family photos are handled privately and are not used publicly without permission.
       </p>
-      <ul>
-        <li>Made from family-submitted photos.</li>
-        <li>
-          Designed as an optional remembrance item, not a replacement for flowers, printed materials, or
-          existing services.
-        </li>
-        <li>Suitable for home display, remembrance tables when appropriate, or keepsake gifts for close family.</li>
-      </ul>
     </section>
 
     <section className="funeral-home-section">
