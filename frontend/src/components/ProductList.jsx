@@ -1,7 +1,5 @@
-import { toast } from 'react-toastify';
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useCart } from 'context/CartContext';
 import { resolveImageUrl, DEFAULT_PLACEHOLDER } from '../utils/resolveImageUrl';
 import { calculatePrice } from '../utils/pricing';
 import { storeFallbackProducts } from '../storeFallbackProducts';
@@ -9,13 +7,58 @@ import { getProductImage, getProductImageFallback } from '../productImageFallbac
 
 const FALLBACK_PRODUCTS = storeFallbackProducts;
 
+const PRODUCT_SLUG_BY_SKU = {
+  LITHCYL01: 'custom-lithophane-lamp-cylinder',
+  LITHMUL02: 'multi-panel-lithophane-lamp',
+  LITHBOX03: 'lithophane-box',
+  LITHBOX05: 'five-sided-lithophane-panel-box',
+  LITHGLB04: 'lithophane-globe-lamp',
+  LITHBUNDLE01: 'custom-family-lithophane-bundle',
+  LITHNL01: 'lithophane-night-light',
+  LITHDF01: 'lithophane-diffuser-insert',
+};
+
+const normalizeSlugKey = (value) =>
+  String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, 'and')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '');
+
+const PRODUCT_SLUG_BY_TITLE = {
+  'custom-lithophane-lamp-cylinder': 'custom-lithophane-lamp-cylinder',
+  'multi-panel-lithophane-lamp': 'multi-panel-lithophane-lamp',
+  'lithophane-box': 'lithophane-box',
+  'five-sided-lithophane-panel-box': 'five-sided-lithophane-panel-box',
+  'lithophane-globe-lamp': 'lithophane-globe-lamp',
+  'custom-family-lithophane-bundle': 'custom-family-lithophane-bundle',
+  'lithophane-night-light': 'lithophane-night-light',
+  'lithophane-diffuser-insert': 'lithophane-diffuser-insert',
+};
+
+const getPublicProductSlug = (product) => {
+  const skuSlug = PRODUCT_SLUG_BY_SKU[String(product.sku || '').toUpperCase()];
+  if (skuSlug) return skuSlug;
+
+  const titleSlug = PRODUCT_SLUG_BY_TITLE[normalizeSlugKey(product.title || product.name)];
+  if (titleSlug) return titleSlug;
+
+  const rawSlug = String(product.slug || '').trim();
+  if (/^https?:\/\//i.test(rawSlug) || rawSlug.includes('localhost') || rawSlug.includes('127.0.0.1')) {
+    return titleSlug || normalizeSlugKey(product.title || product.name);
+  }
+
+  return rawSlug || normalizeSlugKey(product.title || product.name);
+};
+
 const getLampBasePrice = (product) => {
   const sku = String(product.sku || '').toUpperCase();
   if (sku === 'LITHCYL01') {
     return calculatePrice({ productType: 'cylinder', panelCount: 2, size: 'small' });
   }
   if (sku === 'LITHMUL02') {
-    return calculatePrice({ productType: 'panel', panelCount: 2, size: 'medium' });
+    return calculatePrice({ productType: 'panel', panelCount: 2, size: 'small' });
   }
   if (sku === 'LITHBOX03') {
     return calculatePrice({ productType: 'fixedBox4' });
@@ -24,7 +67,7 @@ const getLampBasePrice = (product) => {
     return calculatePrice({ productType: 'panelBox5' });
   }
   if (sku === 'LITHGLB04') {
-    return calculatePrice({ productType: 'globeLamp', size: 'medium' });
+    return calculatePrice({ productType: 'globeLamp', size: 'small' });
   }
   if (sku === 'LITHBUNDLE01') {
     return calculatePrice({ productType: 'familyBundle4' });
@@ -60,11 +103,12 @@ const normalizeProduct = (product) => {
   const heroImage = getProductImage({ ...product, imageGallery: gallery });
   return {
     ...product,
+    slug: getPublicProductSlug(product),
     categories,
     name: product.name || product.title || 'Untitled product',
     image: heroImage,
     imageGallery: gallery,
-    priceFormatted: product.priceFormatted || (Number.isFinite(price) ? `$${price.toFixed(2)}` : '$0.00'),
+    priceFormatted: Number.isFinite(price) ? `$${price.toFixed(2)}` : product.priceFormatted || '$0.00',
   };
 };
 
@@ -125,7 +169,7 @@ const getProductCardMeta = (product) => {
     ? 'Build My Bundle'
     : isCustomKeepsake
       ? 'Start Custom Order'
-      : 'Add to Cart';
+      : 'View Details';
 
   const pricePrefix = isCustomKeepsake ? 'Starts at ' : '';
   const priceNote = isCustomKeepsake ? '50% deposit at checkout' : '';
@@ -142,7 +186,7 @@ const getProductCardMeta = (product) => {
   };
 };
 
-const ProductSection = ({ title, subtitle, products, addToCart }) => {
+const ProductSection = ({ title, subtitle, products }) => {
   const navigate = useNavigate();
 
   return (
@@ -280,8 +324,7 @@ const ProductSection = ({ title, subtitle, products, addToCart }) => {
                     navigate(`/store/${product.slug}`);
                     return;
                   }
-                  addToCart(product);
-                  toast.success(`${product.name} added to cart!`);
+                  navigate(`/store/${product.slug}`);
                 }}
                 style={{
                   padding: '10px 16px',
@@ -299,6 +342,26 @@ const ProductSection = ({ title, subtitle, products, addToCart }) => {
               >
                 {meta.cta}
               </button>
+              {meta.isCustomKeepsake && (
+                <button
+                  onClick={() => navigate(`/free-photo-check?product=${encodeURIComponent(product.slug)}`)}
+                  style={{
+                    padding: '9px 14px',
+                    backgroundColor: 'transparent',
+                    border: '1px solid rgba(0, 255, 200, 0.55)',
+                    borderRadius: '8px',
+                    color: '#9fffe8',
+                    fontWeight: 'bold',
+                    cursor: 'pointer',
+                    width: '100%',
+                    marginTop: '8px',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px',
+                  }}
+                >
+                  Request Free Photo Check
+                </button>
+              )}
             </div>
           );
         }))}
@@ -308,7 +371,6 @@ const ProductSection = ({ title, subtitle, products, addToCart }) => {
 };
 
 function ProductList() {
-  const { addToCart } = useCart();
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -583,7 +645,6 @@ function ProductList() {
               title="Tools & Devices"
               subtitle="Security tools, devices, and lab gear from HexForge Labs."
               products={getTechProducts()}
-              addToCart={addToCart}
             />
 
             {/* Custom Lamps & Prints Section */}
@@ -591,7 +652,6 @@ function ProductList() {
               title="Custom Lamps & Prints"
               subtitle="Turn your photos into custom illuminated prints and keepsakes."
               products={getLampProducts()}
-              addToCart={addToCart}
             />
           </div>
         ) : (
@@ -599,7 +659,6 @@ function ProductList() {
             title={getSectionTitle()}
             subtitle={getSectionSubtitle()}
             products={getFilteredProducts()}
-            addToCart={addToCart}
           />
         )}
       </div>

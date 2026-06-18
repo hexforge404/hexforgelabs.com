@@ -9,7 +9,7 @@ const fallbackLandingConfig = {
     ctaText: 'Shop Custom Lamps',
     ctaLink: '/store',
     secondaryCtaText: 'Get Free Photo Check',
-    secondaryCtaLink: '/chat?intent=photo-check&product=custom-lithophane',
+    secondaryCtaLink: '/free-photo-check?product=custom-lithophane-lamp-cylinder',
     imageUrl: '/images/products/litho-multipanel/hero-main.jpg',
     imageAlt: 'Multi-panel lithophane lamp glowing softly with a photo design',
   },
@@ -119,6 +119,12 @@ const fallbackTrustBadges = [
 ];
 
 const fallbackFeaturedProducts = featuredProducts;
+const photoCheckLink = '/free-photo-check?product=custom-lithophane-lamp-cylinder';
+
+const normalizePhotoCheckLink = (value) => {
+  const link = value || photoCheckLink;
+  return String(link).includes('intent=photo-check') ? photoCheckLink : link;
+};
 
 const sortByOrder = (items) => [...items].sort((a, b) => (Number(a.sortOrder) || 0) - (Number(b.sortOrder) || 0));
 
@@ -224,6 +230,7 @@ const HomePage = () => {
   const featuredImages = landingConfig.featuredImages.length ? landingConfig.featuredImages : fallbackLandingConfig.featuredImages;
   const activeReviews = landingConfig.reviews?.length ? landingConfig.reviews : approvedReviews;
   const trustBadges = landingConfig.trustBadges.length ? landingConfig.trustBadges : fallbackTrustBadges;
+  const secondaryCtaLink = normalizePhotoCheckLink(landingConfig.hero.secondaryCtaLink);
   const productLinks = landingConfig.featuredProductSlugs.length
     ? fallbackFeaturedProducts.filter((item) => landingConfig.featuredProductSlugs.includes(item.slug))
     : fallbackFeaturedProducts;
@@ -249,7 +256,7 @@ const HomePage = () => {
             <Link to={landingConfig.hero.ctaLink || '/store'} className="home-primary-cta">
               {landingConfig.hero.ctaText || 'Shop Custom Lamps'}
             </Link>
-            <Link to={landingConfig.hero.secondaryCtaLink || '/chat?intent=photo-check&product=custom-lithophane'} className="home-secondary-cta">
+            <Link to={secondaryCtaLink} className="home-secondary-cta">
               {landingConfig.hero.secondaryCtaText || 'Get Free Photo Check'}
             </Link>
           </div>
@@ -378,7 +385,7 @@ const HomePage = () => {
             <Link to="/store" className="home-primary-cta">
               Browse Custom Lamps
             </Link>
-            <Link to="/chat?intent=photo-check&product=custom-lithophane" className="home-secondary-cta">
+            <Link to="/free-photo-check?product=custom-lithophane-lamp-cylinder" className="home-secondary-cta">
               Get Free Photo Check
             </Link>
           </div>
@@ -389,4 +396,3 @@ const HomePage = () => {
 };
 
 export default HomePage;
-

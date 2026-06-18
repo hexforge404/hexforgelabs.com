@@ -168,6 +168,13 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('tab') === 'photo-reviews') {
+      setActiveTab('photo-reviews');
+    }
+  }, []);
+
+  useEffect(() => {
     if (selectedFulfillmentJob) {
       setFulfillmentStlFilename(selectedFulfillmentJob.stlFilename || '');
       setFulfillmentStlPath(selectedFulfillmentJob.stlPath || '');
@@ -266,7 +273,7 @@ export default function AdminPage() {
         const [productsRes, ordersRes, customOrdersRes, postsRes] = await Promise.all([
           axios.get(`${API_BASE_URL}/admin/products`, { withCredentials: true }),
           axios.get(`${API_BASE_URL}/orders`, { withCredentials: true }),
-          axios.get(`${API_BASE_URL}/admin/custom-orders${customOrderStatusFilter !== 'all' ? `?status=${encodeURIComponent(customOrderStatusFilter)}` : ''}`, { withCredentials: true }),
+          axios.get(`${API_BASE_URL}/admin/custom-orders?intakeType=custom_order${customOrderStatusFilter !== 'all' ? `&status=${encodeURIComponent(customOrderStatusFilter)}` : ''}`, { withCredentials: true }),
           axios.get(`${API_BASE_URL}/blog`, { withCredentials: true }),
         ]);
 
@@ -454,10 +461,13 @@ export default function AdminPage() {
     promoAuditFilters.actor,
   ]);
 
-  const fetchCustomOrders = async (status = 'all') => {
+  const fetchCustomOrders = async (status = 'all', intakeType = 'custom_order') => {
     try {
-      const statusParam = status && status !== 'all' ? `?status=${encodeURIComponent(status)}` : '';
-      const response = await axios.get(`${API_BASE_URL}/admin/custom-orders${statusParam}`, {
+      const params = new URLSearchParams();
+      if (status && status !== 'all') params.set('status', status);
+      if (intakeType) params.set('intakeType', intakeType);
+      const queryString = params.toString();
+      const response = await axios.get(`${API_BASE_URL}/admin/custom-orders${queryString ? `?${queryString}` : ''}`, {
         withCredentials: true,
       });
       return response.data?.data || [];
@@ -488,10 +498,11 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => {
-    if (activeTab !== 'custom-orders' && activeTab !== 'production-queue') return;
+    if (activeTab !== 'custom-orders' && activeTab !== 'photo-reviews' && activeTab !== 'production-queue') return;
     const loadFilteredCustomOrders = async () => {
       const targetStatus = activeTab === 'custom-orders' ? customOrderStatusFilter : 'all';
-      const customOrderData = await fetchCustomOrders(targetStatus);
+      const targetIntakeType = activeTab === 'photo-reviews' ? 'photo_check' : 'custom_order';
+      const customOrderData = await fetchCustomOrders(targetStatus, targetIntakeType);
       setCustomOrders(customOrderData);
       const orderIds = customOrderData.map((order) => order.orderId).filter(Boolean);
       if (orderIds.length) {
@@ -2482,6 +2493,15 @@ export default function AdminPage() {
           Custom Lamp Orders
         </button>
         <button
+          className={activeTab === 'photo-reviews' ? 'tab active' : 'tab'}
+          onClick={() => {
+            setActiveTab('photo-reviews');
+            window.history.replaceState(null, '', '/admin?tab=photo-reviews');
+          }}
+        >
+          Photo Reviews
+        </button>
+        <button
           className={activeTab === 'production-queue' ? 'tab active' : 'tab'}
           onClick={() => setActiveTab('production-queue')}
         >
@@ -3207,45 +3227,51 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* ---------- CUSTOM LAMP ORDERS TAB ---------- */}
-      {activeTab === 'custom-orders' && (
+      {/* ---------- CUSTOM LAMP ORDERS / PHOTO REVIEWS TAB ---------- */}
+      {(activeTab === 'custom-orders' || activeTab === 'photo-reviews') && (
         <div>
           <div className="admin-order-filter-row">
-            <h2 className="section-header">CUSTOM LAMP ORDERS</h2>
-            <div className="admin-order-filter-controls">
-              <label>
-                Filter by status:
-                <select
-                  value={customOrderStatusFilter}
-                  onChange={(e) => setCustomOrderStatusFilter(e.target.value)}
-                  className="admin-order-filter-select"
-                >
-                  <option value="all">All statuses</option>
-                  <option value="submitted">Submitted</option>
-                  <option value="awaiting_deposit">Awaiting Deposit</option>
-                  <option value="deposit_paid">Deposit Paid</option>
-                  <option value="reviewing_assets">Reviewing Assets</option>
-                  <option value="in_production">In Production</option>
-                  <option value="ready_to_ship">Ready To Ship</option>
-                  <option value="shipped">Shipped</option>
-                  <option value="completed">Completed</option>
-                  <option value="cancelled">Cancelled</option>
-                </select>
-              </label>
-              {customOrderStatusFilter !== 'all' && (
-                <button
-                  type="button"
-                  className="admin-order-filter-clear"
-                  onClick={() => setCustomOrderStatusFilter('all')}
-                >
-                  Clear filter
-                </button>
-              )}
-            </div>
+            <h2 className="section-header">
+              {activeTab === 'photo-reviews' ? 'PHOTO REVIEWS' : 'CUSTOM LAMP ORDERS'}
+            </h2>
+            {activeTab === 'custom-orders' && (
+              <div className="admin-order-filter-controls">
+                <label>
+                  Filter by status:
+                  <select
+                    value={customOrderStatusFilter}
+                    onChange={(e) => setCustomOrderStatusFilter(e.target.value)}
+                    className="admin-order-filter-select"
+                  >
+                    <option value="all">All statuses</option>
+                    <option value="submitted">Submitted</option>
+                    <option value="awaiting_deposit">Awaiting Deposit</option>
+                    <option value="deposit_paid">Deposit Paid</option>
+                    <option value="reviewing_assets">Reviewing Assets</option>
+                    <option value="in_production">In Production</option>
+                    <option value="ready_to_ship">Ready To Ship</option>
+                    <option value="shipped">Shipped</option>
+                    <option value="completed">Completed</option>
+                    <option value="cancelled">Cancelled</option>
+                  </select>
+                </label>
+                {customOrderStatusFilter !== 'all' && (
+                  <button
+                    type="button"
+                    className="admin-order-filter-clear"
+                    onClick={() => setCustomOrderStatusFilter('all')}
+                  >
+                    Clear filter
+                  </button>
+                )}
+              </div>
+            )}
           </div>
           <div className="admin-order-filter-summary">
-            Showing {customOrders?.length || 0} custom lamp {customOrders?.length === 1 ? 'order' : 'orders'}
-            {customOrderStatusFilter !== 'all' && (
+            {activeTab === 'photo-reviews'
+              ? 'Review customer-uploaded photos from custom lamp orders. Use Show details to view thumbnails, open full images, download the ZIP, add admin notes, or move an order into Reviewing Assets.'
+              : `Showing ${customOrders?.length || 0} custom lamp ${customOrders?.length === 1 ? 'order' : 'orders'}`}
+            {activeTab === 'custom-orders' && customOrderStatusFilter !== 'all' && (
               <span className="admin-order-filter-badge">
                 {CUSTOM_ORDER_STATUS_LABELS[customOrderStatusFilter] || customOrderStatusFilter}
               </span>
@@ -3266,6 +3292,9 @@ export default function AdminPage() {
                       <div className="admin-order-meta">
                         <span>
                           <span className="label">Product:</span> {order.productName}
+                        </span>
+                        <span>
+                          <span className="label">Intake:</span> {order.intakeType === 'photo_check' ? 'Free Photo Check' : 'Custom Order'}
                         </span>
                         <span>
                           <span className="label">Type:</span> {order.productType || 'panel'}

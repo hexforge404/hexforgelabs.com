@@ -16,7 +16,7 @@ export function calculatePrice({ productType, panelCount = 2, size = 'small', ad
       base += Math.max(0, count - 2) * 10;
       break;
     case 'panel':
-      base = 50 + sizeAdjustment;
+      base = 55 + sizeAdjustment;
       base += Math.max(0, count - 2) * 10;
       break;
     case 'globeLamp':

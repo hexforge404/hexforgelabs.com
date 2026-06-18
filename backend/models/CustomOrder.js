@@ -29,6 +29,12 @@ const customOrderSchema = new mongoose.Schema({
     default: 'panel',
     index: true
   },
+  intakeType: {
+    type: String,
+    enum: ['custom_order', 'photo_check'],
+    default: 'custom_order',
+    index: true
+  },
   boxOptions: {
     type: new mongoose.Schema({
       lidType: {
