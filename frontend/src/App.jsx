@@ -44,6 +44,7 @@ import ProductDetailPage from 'pages/ProductDetailPage';
 import OrderStatusPage from 'pages/OrderStatusPage';
 import FuneralHomePage from './pages/FuneralHomePage';
 import MemorialPage from './pages/MemorialPage';
+import FreePhotoCheckPage from './pages/FreePhotoCheckPage';
 
 import './App.css';
 
@@ -169,8 +170,9 @@ const MainApp = () => {
   const [member, setMember] = useState(null);
   const [memberLoaded, setMemberLoaded] = useState(false);
   const location = useLocation();
+  const isFuneralCampaignRoute = ['/funeral-homes', '/funeral-home', '/funeralhome'].includes(location.pathname);
   const memorialGuideSource =
-    location.pathname === '/funeral-homes'
+    isFuneralCampaignRoute
       ? 'funeralHomes'
       : location.pathname === '/memorial'
         ? 'memorial'
@@ -308,7 +310,10 @@ const MainApp = () => {
             />
 
             <Route path="/funeral-homes" element={<FuneralHomePage />} />
+            <Route path="/funeral-home" element={<FuneralHomePage />} />
+            <Route path="/funeralhome" element={<FuneralHomePage />} />
             <Route path="/memorial" element={<MemorialPage />} />
+            <Route path="/free-photo-check" element={<FreePhotoCheckPage />} />
 
             {/* Fallback */}
             <Route path="*" element={<Navigate to="/" />} />

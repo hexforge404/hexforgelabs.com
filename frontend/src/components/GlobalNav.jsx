@@ -42,7 +42,7 @@ const GlobalNav = ({ onLogout, member, onMemberLogout }) => {
   const close = () => setOpen(false);
 
   const isAdminRoute = location.pathname.startsWith('/admin');
-  const isFuneralHomeRoute = location.pathname === '/funeral-homes';
+  const isFuneralHomeRoute = ['/funeral-homes', '/funeral-home', '/funeralhome'].includes(location.pathname);
   const isMemorialRoute = location.pathname === '/memorial';
   const usesMemorialPublicNav = isFuneralHomeRoute || isMemorialRoute;
   const adminChecking = adminStatus === 'checking' || adminStatus === 'unknown';

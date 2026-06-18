@@ -408,7 +408,7 @@ function ProductDetailPage() {
     productType: 'panel',
     images: [null],
     lampshade: {
-      size: 'medium',
+      size: 'small',
       panelCount: 2,
       lightType: 'led',
       addons: {
@@ -502,7 +502,7 @@ function ProductDetailPage() {
       return calculatePrice({ productType: 'panelBox5' });
     }
     if (type === 'globeLamp') {
-      return calculatePrice({ productType: 'globeLamp', size: 'medium' });
+      return calculatePrice({ productType: 'globeLamp', size: 'small' });
     }
     if (type === 'familyBundle4') {
       return calculatePrice({ productType: 'familyBundle4' });
@@ -510,7 +510,7 @@ function ProductDetailPage() {
     if (type === 'cylinder') {
       return calculatePrice({ productType: 'cylinder', panelCount: 2, size: 'small' });
     }
-    return calculatePrice({ productType: 'panel', panelCount: 2, size: 'medium' });
+    return calculatePrice({ productType: 'panel', panelCount: 2, size: 'small' });
   };
 
   const updateLampshade = (updates) => {
@@ -1186,7 +1186,7 @@ const activeAddons = getActiveAddons();
         productType: 'panel',
         images: [null],
         lampshade: {
-          size: 'medium',
+          size: 'small',
           panelCount: 2,
           lightType: 'led',
           addons: {
@@ -1195,7 +1195,7 @@ const activeAddons = getActiveAddons();
           notes: '',
         },
         cylinder: {
-          size: 'medium',
+          size: 'small',
           panelCount: 2,
           imageStyle: 'wrap',
           lightType: 'led',
@@ -1266,7 +1266,7 @@ const activeAddons = getActiveAddons();
       title: p.title || p.name || 'Untitled',
       imageGallery: Array.isArray(p.imageGallery) ? p.imageGallery.filter(Boolean) : [],
       image: getProductImage(p),
-      priceFormatted: p.priceFormatted || (Number.isFinite(basePrice) ? `$${basePrice.toFixed(2)}` : '$0.00'),
+      priceFormatted: Number.isFinite(basePrice) ? `$${basePrice.toFixed(2)}` : p.priceFormatted || '$0.00',
     };
   };
 
@@ -1401,7 +1401,7 @@ const activeAddons = getActiveAddons();
       case 'nightlight':
         return 'Night Light';
       default:
-        return 'Custom Order';
+        return 'Order';
     }
   };
 
@@ -1530,13 +1530,24 @@ const activeAddons = getActiveAddons();
             </div>
           )}
           <div className="product-detail-price">
-            {customOrder.productType === 'cylinder' && Number.isFinite(customOrderTotal)
+            {isLamp && Number.isFinite(customOrderTotal)
               ? `$${customOrderTotal.toFixed(2)}`
               : normalized.priceFormatted}
           </div>
-          {customOrder.productType === 'cylinder' && (
+          {isLamp && (
             <div className="product-detail-price-subtext">
               {getHeroStartText()}
+            </div>
+          )}
+          {isLamp && (
+            <div className="product-detail-photo-check-actions">
+              <Link
+                to={`/free-photo-check?product=${encodeURIComponent(slug)}`}
+                className="product-detail-photo-check-link"
+              >
+                Request a Free Photo Check
+              </Link>
+              <span>Upload photos for a pre-order review before checkout.</span>
             </div>
           )}
           <div className={`product-detail-availability ${availability.className}`}>

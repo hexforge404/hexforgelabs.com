@@ -962,12 +962,17 @@ router.get('/monitoring/summary', async (req, res) => {
 // GET all custom lamp orders with filtering
 router.get('/custom-orders', async (req, res) => {
   try {
-    const { status, panels, limit = 100, offset = 0, includeTest = 'false' } = req.query;
+    const { status, panels, intakeType, limit = 100, offset = 0, includeTest = 'false' } = req.query;
     const allowTestData = String(includeTest).toLowerCase() === 'true';
     const filter = allowTestData ? {} : { isTest: { $ne: true } };
     
     if (status) filter.status = status;
     if (panels) filter.panels = panels;
+    if (intakeType === 'custom_order') {
+      filter.$or = [{ intakeType: 'custom_order' }, { intakeType: { $exists: false } }];
+    } else if (intakeType) {
+      filter.intakeType = intakeType;
+    }
 
     const customOrders = await CustomOrder.find(filter)
       .sort({ createdAt: -1 })

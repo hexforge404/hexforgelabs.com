@@ -944,7 +944,7 @@ const calculateCustomOrderPrice = ({ productType, panelCount, size = 'small', ad
     basePrice = 35 + sizeAdjustment + Math.max(0, count - 2) * 10;
   } else if (productType === 'panel') {
     const count = Math.max(2, Number(panelCount) || 2);
-    basePrice = 50 + sizeAdjustment + Math.max(0, count - 2) * 10;
+    basePrice = 55 + sizeAdjustment + Math.max(0, count - 2) * 10;
   } else if (productType === 'globeLamp') {
     basePrice = 50 + sizeAdjustment;
   } else if (productType === 'fixedBox4') {
@@ -1120,6 +1120,150 @@ const handleMulterErrors = (err, req, res, next) => {
   }
   next();
 };
+
+router.post(
+  '/photo-check',
+  customOrderUpload.fields([
+    { name: 'images[]', maxCount: 5 },
+    { name: 'images', maxCount: 5 },
+  ]),
+  handleMulterErrors,
+  async (req, res) => {
+    try {
+      const {
+        productId,
+        productSlug,
+        productType,
+        customerName,
+        customerEmail,
+        customerPhone,
+        notes,
+      } = req.body;
+
+      const uploadedFiles = ((req.files && req.files['images[]']) || [])
+        .concat((req.files && req.files.images) || [])
+        .filter(Boolean);
+
+      if (!customerName || !String(customerName).trim()) {
+        return res.status(400).json({ error: 'Name is required for a photo check.' });
+      }
+
+      const email = String(customerEmail || '').trim().toLowerCase();
+      const phone = String(customerPhone || '').trim();
+      if (!email && !phone) {
+        return res.status(400).json({ error: 'Please provide an email or phone number.' });
+      }
+      if (email && !/\S+@\S+\.\S+/.test(email)) {
+        return res.status(400).json({ error: 'Please enter a valid email address.' });
+      }
+      if (!uploadedFiles.length) {
+        return res.status(400).json({ error: 'Please upload at least one photo for review.' });
+      }
+
+      let product = null;
+      if (productId) {
+        product = await Product.findById(productId);
+      }
+      if (!product && productSlug) {
+        product = await Product.findOne({ slug: String(productSlug).trim().toLowerCase() });
+      }
+      if (!product) {
+        product = await Product.findOne({
+          slug: 'multi-panel-lithophane-lamp',
+          status: 'active',
+        });
+      }
+      if (!product) {
+        return res.status(400).json({ error: 'Photo check product context is unavailable.' });
+      }
+
+      const orderId = uuidv4();
+      const orderFolderPath = getCustomOrderUploadDir(orderId);
+      await ensureDir(orderFolderPath);
+
+      const images = await Promise.all(uploadedFiles.map(async (file, index) => {
+        const filename = path.basename(file.path);
+        const targetPath = path.join(orderFolderPath, filename);
+        try {
+          await fs.rename(file.path, targetPath);
+        } catch (err) {
+          console.warn('Failed to move photo check upload:', err.message || err);
+        }
+        const relativePath = getCustomOrderRelativePath(orderId, filename);
+        return {
+          path: getCustomOrderPublicUrl(relativePath),
+          publicUrl: getCustomOrderPublicUrl(relativePath),
+          relativePath,
+          originalName: file.originalname,
+          mimeType: file.mimetype,
+          size: file.size,
+          uploadedAt: new Date(),
+          panel: index + 1,
+          panelLabel: `Review Photo ${index + 1}`,
+        };
+      }));
+
+      const sku = String(product.sku || '').toUpperCase();
+      const resolvedProductType = normalizeProductType(productType || (sku === 'LITHCYL01' ? 'cylinder' : 'panel'));
+      const panelCount = Math.min(5, Math.max(1, images.length));
+      const savedOrder = await new CustomOrder({
+        orderId,
+        intakeType: 'photo_check',
+        createdBy: 'photo-check',
+        productId: String(product._id),
+        productName: product.title || product.name || 'Photo Check',
+        productType: resolvedProductType,
+        size: 'small',
+        panels: getPanelsLabel(panelCount),
+        panelCount,
+        lightType: 'none',
+        extras: [],
+        notes: notes || '',
+        images,
+        originalPrice: 0,
+        discountedTotal: 0,
+        totalPrice: 0,
+        depositAmount: 0,
+        remainingBalance: 0,
+        paymentMethod: 'manual',
+        paymentStatus: 'pending',
+        status: 'reviewing_assets',
+        fulfillmentStatus: 'reviewing_assets',
+        fulfillmentTimestamps: {
+          reviewingAssetsAt: new Date(),
+        },
+        adminNotes: 'Free photo check / pre-order review submission.',
+        customer: {
+          name: String(customerName).trim(),
+          email: email || `photo-check-${orderId}@hexforgelabs.local`,
+          phone: phone || 'Not provided',
+          shippingAddress: {
+            street: 'Photo check only',
+            city: 'Photo check only',
+            state: 'NA',
+            zipCode: '00000',
+            country: 'US',
+          },
+        },
+      }).save();
+
+      return res.json({
+        success: true,
+        message: 'Photo check submitted successfully',
+        orderId: savedOrder.orderId,
+        intakeType: savedOrder.intakeType,
+        imagesCount: images.length,
+        status: savedOrder.status,
+      });
+    } catch (error) {
+      console.error('Error processing photo check:', error.stack || error.message);
+      return res.status(500).json({
+        error: 'Failed to submit photo check',
+        details: process.env.NODE_ENV !== 'production' ? error.stack || error.message : undefined,
+      });
+    }
+  }
+);
 
 router.post(
   '/custom-orders',
@@ -1579,7 +1723,7 @@ router.post(
         productId,
         productName: product.title,
         productType: resolvedProductType,
-        size: size || 'medium',
+        size: size || 'small',
         panels: resolvedPanelsLabel,
         panelCount: requiredPanels,
         lightType: resolvedLightType,
@@ -1601,7 +1745,7 @@ router.post(
           : undefined,
         cylinderOptions: resolvedProductType === 'cylinder'
           ? {
-            size: size || 'medium',
+            size: size || 'small',
             imageStyle: imageStyle || 'wrap',
             lightType: resolvedLightType,
             extras: resolvedExtras,

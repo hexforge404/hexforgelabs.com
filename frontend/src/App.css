@@ -649,6 +649,127 @@ body {
   color: #64ffda;
 }
 
+.product-detail-photo-check-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 0 18px;
+  color: #d6efe8;
+  font-size: 0.95rem;
+}
+
+.product-detail-photo-check-link,
+.photo-check-submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(0, 255, 200, 0.65);
+  border-radius: 999px;
+  background: rgba(0, 255, 200, 0.12);
+  color: #9fffe8;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-decoration: none;
+  text-transform: uppercase;
+  padding: 0.75rem 1rem;
+}
+
+.photo-check-page {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 4rem 1.25rem;
+  color: #f4f7fb;
+}
+
+.photo-check-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(280px, 0.8fr);
+  gap: 1.5rem;
+  align-items: stretch;
+  margin-bottom: 2rem;
+}
+
+.photo-check-eyebrow {
+  color: #9fffe8;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.photo-check-hero h1 {
+  font-size: clamp(2rem, 5vw, 3.8rem);
+  margin: 0.25rem 0 1rem;
+}
+
+.photo-check-hero p {
+  color: #d6efe8;
+  line-height: 1.7;
+}
+
+.photo-check-product-context,
+.photo-check-note-card,
+.photo-check-form,
+.photo-check-success {
+  border: 1px solid rgba(0, 255, 200, 0.18);
+  border-radius: 18px;
+  background: rgba(4, 18, 28, 0.78);
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.28);
+}
+
+.photo-check-product-context {
+  display: inline-block;
+  padding: 0.7rem 0.9rem;
+}
+
+.photo-check-note-card,
+.photo-check-success {
+  padding: 1.25rem;
+}
+
+.photo-check-form {
+  display: grid;
+  gap: 1rem;
+  padding: 1.25rem;
+}
+
+.photo-check-form label {
+  display: grid;
+  gap: 0.45rem;
+  color: #e6fff8;
+  font-weight: 700;
+}
+
+.photo-check-form input,
+.photo-check-form textarea {
+  width: 100%;
+  border: 1px solid rgba(0, 255, 200, 0.25);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.35);
+  color: #fff;
+  padding: 0.8rem 0.9rem;
+}
+
+.photo-check-two-column {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.photo-check-file-count {
+  color: #e9c89a;
+  margin: 0;
+}
+
+.photo-check-submit {
+  cursor: pointer;
+}
+
+.photo-check-submit:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
 @media (max-width: 768px) {
   .funeral-home-hero {
     min-height: auto;
@@ -691,6 +812,11 @@ body {
   .memorial-cta-row {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .photo-check-hero,
+  .photo-check-two-column {
+    grid-template-columns: 1fr;
   }
 }
 

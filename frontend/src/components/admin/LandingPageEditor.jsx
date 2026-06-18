@@ -588,7 +588,7 @@ const LandingPageEditor = () => {
                       className="form-input"
                       value={formState.hero.secondaryCtaLink}
                       onChange={(event) => setHeroField('secondaryCtaLink', event.target.value)}
-                      placeholder="/chat?intent=photo-check&product=custom-lithophane"
+                      placeholder="/free-photo-check?product=custom-lithophane-lamp-cylinder"
                     />
                   </div>
                 </div>
