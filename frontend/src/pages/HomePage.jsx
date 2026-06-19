@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { formatPrice, getProductStartingPrice } from '../utils/pricing';
 import './HomePage.css';
 
 const fallbackLandingConfig = {
@@ -68,28 +69,28 @@ const fallbackLandingConfig = {
 const featuredProducts = [
   {
     title: 'Custom Lithophane Cylinder Lamp',
-    price: '$35',
+    sku: 'LITHCYL01',
     subtitle: 'Photo-lit cylinder lamp with a warm, ambient glow.',
     slug: 'custom-lithophane-lamp-cylinder',
     image: '/images/products/litho-cylinder/hero-main.jpg'
   },
   {
     title: 'Lithophane Night Light',
-    price: '$10',
+    sku: 'LITHNL01',
     subtitle: 'A compact glow for bedside tables and small spaces.',
     slug: 'lithophane-night-light',
     image: '/images/products/litho-lamp/glow-close.jpg'
   },
   {
     title: 'Multi-panel Lithophane Lamp',
-    price: '$55',
+    sku: 'LITHMUL02',
     subtitle: 'Multiple photo panels for a richer keepsake display.',
     slug: 'multi-panel-lithophane-lamp',
     image: '/images/products/litho-multipanel/hero-main.jpg'
   },
   {
     title: 'Lithophane Keepsake Box',
-    price: '$45',
+    sku: 'LITHBOX03',
     subtitle: 'A glowing storage box with custom photo panels.',
     slug: 'lithophane-box',
     image: '/images/products/litho-box/hero-main.jpg'
@@ -289,7 +290,9 @@ const HomePage = () => {
                 <h3>{item.title}</h3>
                 <p>{item.subtitle}</p>
               </div>
-              <div className="product-price">{item.price}</div>
+              <div className="product-price">
+                Starts at {formatPrice(getProductStartingPrice(item))}
+              </div>
             </Link>
           ))}
         </div>
