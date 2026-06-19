@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { resolveImageUrl, DEFAULT_PLACEHOLDER } from '../utils/resolveImageUrl';
-import { calculatePrice } from '../utils/pricing';
+import { formatPrice, getProductStartingPrice } from '../utils/pricing';
 import { storeFallbackProducts } from '../storeFallbackProducts';
 import { getProductImage, getProductImageFallback } from '../productImageFallbacks';
 
@@ -52,32 +52,6 @@ const getPublicProductSlug = (product) => {
   return rawSlug || normalizeSlugKey(product.title || product.name);
 };
 
-const getLampBasePrice = (product) => {
-  const sku = String(product.sku || '').toUpperCase();
-  if (sku === 'LITHCYL01') {
-    return calculatePrice({ productType: 'cylinder', panelCount: 2, size: 'small' });
-  }
-  if (sku === 'LITHMUL02') {
-    return calculatePrice({ productType: 'panel', panelCount: 2, size: 'small' });
-  }
-  if (sku === 'LITHBOX03') {
-    return calculatePrice({ productType: 'fixedBox4' });
-  }
-  if (sku === 'LITHBOX05') {
-    return calculatePrice({ productType: 'panelBox5' });
-  }
-  if (sku === 'LITHGLB04') {
-    return calculatePrice({ productType: 'globeLamp', size: 'small' });
-  }
-  if (sku === 'LITHBUNDLE01') {
-    return calculatePrice({ productType: 'familyBundle4' });
-  }
-  if (sku === 'LITHNL01') {
-    return calculatePrice({ productType: 'nightlight' });
-  }
-  return null;
-};
-
 const lampsOnlySkus = ['LITHNL01', 'LITHDF01', 'LITHBUNDLE01'];
 
 const getProductCategories = (product) => {
@@ -95,8 +69,9 @@ const isLampProduct = (product) => {
 
 const normalizeProduct = (product) => {
   const categories = getProductCategories(product);
-  const baseLampPrice = isLampProduct(product) ? getLampBasePrice(product) : null;
-  const price = Number(baseLampPrice ?? product.price);
+  const price = isLampProduct(product)
+    ? getProductStartingPrice(product, product.price)
+    : Number(product.price);
   const gallery = Array.isArray(product.imageGallery)
     ? product.imageGallery.filter(Boolean)
     : [];
@@ -108,7 +83,7 @@ const normalizeProduct = (product) => {
     name: product.name || product.title || 'Untitled product',
     image: heroImage,
     imageGallery: gallery,
-    priceFormatted: Number.isFinite(price) ? `$${price.toFixed(2)}` : product.priceFormatted || '$0.00',
+    priceFormatted: formatPrice(price, product.priceFormatted || '$0.00'),
   };
 };
 
@@ -190,43 +165,23 @@ const ProductSection = ({ title, subtitle, products }) => {
   const navigate = useNavigate();
 
   return (
-    <div style={{ marginBottom: '60px' }}>
+    <div className="store-product-section">
       {/* Section Header */}
-      <div style={{ textAlign: 'center', marginBottom: '40px' }}>
-        <h2 style={{
-          fontSize: '28px',
-          fontWeight: 'bold',
-          color: '#00ffc8',
-          marginBottom: '10px',
-          textTransform: 'uppercase',
-          letterSpacing: '2px'
-        }}>
+      <div className="store-section-heading">
+        <h2>
           {title}
         </h2>
         {subtitle && (
-          <p style={{
-            fontSize: '16px',
-            color: '#ccc',
-            marginBottom: '30px',
-            maxWidth: '600px',
-            margin: '0 auto 30px auto',
-            lineHeight: '1.5'
-          }}>
+          <p>
             {subtitle}
           </p>
         )}
       </div>
 
       {/* Products Grid */}
-      <div style={{
-        display: 'flex',
-        flexWrap: 'wrap',
-        justifyContent: 'center',
-        marginTop: '20px',
-        animation: 'fadeIn 0.5s ease-out'
-      }}>
+      <div className="store-product-grid">
         {products.length === 0 ? (
-          <div style={{ width: '100%', textAlign: 'center', color: '#ccc', marginTop: '40px' }}>
+          <div className="store-empty-state">
             <h3>No products found</h3>
             <p>Try clearing your search or selecting another category.</p>
           </div>
@@ -240,30 +195,9 @@ const ProductSection = ({ title, subtitle, products }) => {
           return (
             <div
               key={product._id}
-              className="product-card"
+              className={`product-card store-product-card${meta.isCustomKeepsake ? ' is-keepsake' : ''}`}
               style={{
-                width: '220px',
-                minHeight: '360px',
-                margin: '10px',
-                backgroundColor: '#111',
-                padding: '15px',
-                borderRadius: '12px',
-                color: '#fff',
-                textAlign: 'center',
-                transition: 'transform 0.2s, box-shadow 0.2s',
-                boxShadow: '0 0 0 rgba(0, 0, 0, 0)',
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'space-between',
                 ...cardHighlight,
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.boxShadow = '0 4px 15px rgba(0, 255, 200, 0.3)';
-                e.currentTarget.style.transform = 'translateY(-4px)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.boxShadow = '0 0 0 rgba(0, 0, 0, 0)';
-                e.currentTarget.style.transform = 'translateY(0)';
               }}
             >
               <Link to={`/store/${product.slug}`} style={{ textDecoration: 'none', color: 'inherit' }}>
@@ -292,7 +226,7 @@ const ProductSection = ({ title, subtitle, products }) => {
                     src={getImageSrc(product.image)}
                     alt={product.name}
                     onError={(event) => handleProductImageError(event, product)}
-                    style={{ width: '100%', height: 'auto', borderRadius: '10px', marginBottom: '14px' }}
+                    className="store-product-image"
                   />
                 </div>
               </Link>
@@ -514,7 +448,7 @@ function ProductList() {
   }
 
   return (
-    <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '20px' }}>
+    <div className="store-page-shell">
       {/* Main Section Header - Only show for 'all' filter */}
       {activeFilter === 'all' && (
         <div style={{ textAlign: 'center', marginBottom: '40px' }}>

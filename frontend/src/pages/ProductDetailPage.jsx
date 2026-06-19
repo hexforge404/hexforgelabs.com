@@ -5,7 +5,7 @@ import { toast } from 'react-toastify';
 import { getProductContent } from '../data/productOverrides';
 import { SUPPORT_EMAIL } from '../config';
 import { resolveImageUrl, DEFAULT_PLACEHOLDER } from '../utils/resolveImageUrl';
-import { calculatePrice } from '../utils/pricing';
+import { calculatePrice, formatPrice, getProductStartingPrice } from '../utils/pricing';
 import {
   getMemorialFallbackProduct,
   getMemorialProductContent
@@ -494,6 +494,9 @@ function ProductDetailPage() {
   };
 
   const getBasePriceForLamp = (productData, routeSlug) => {
+    const skuPrice = getProductStartingPrice(productData, null);
+    if (Number.isFinite(skuPrice)) return skuPrice;
+
     const type = resolveProductType(productData, routeSlug);
     if (type === 'fixedBox4') {
       return calculatePrice({ productType: 'fixedBox4' });
@@ -1266,7 +1269,7 @@ const activeAddons = getActiveAddons();
       title: p.title || p.name || 'Untitled',
       imageGallery: Array.isArray(p.imageGallery) ? p.imageGallery.filter(Boolean) : [],
       image: getProductImage(p),
-      priceFormatted: Number.isFinite(basePrice) ? `$${basePrice.toFixed(2)}` : p.priceFormatted || '$0.00',
+      priceFormatted: formatPrice(basePrice, p.priceFormatted || '$0.00'),
     };
   };
 
@@ -2220,7 +2223,14 @@ const activeAddons = getActiveAddons();
             <div className="product-detail-actions">
               <button
                 onClick={() => {
-                  addToCart(product);
+                  addToCart({
+                    ...product,
+                    name: normalized.name,
+                    title: normalized.title,
+                    image: normalized.image,
+                    price: Number(product.price) || 0,
+                    productId: product._id,
+                  });
                   toast.success(`${normalized.title} added to cart!`);
                 }}
                 className="product-detail-add-to-cart"

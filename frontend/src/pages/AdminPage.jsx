@@ -2772,8 +2772,7 @@ export default function AdminPage() {
               </select>
             </div>
             <p className="hint-text">
-              The first gallery image is shown first on the product detail page.
-              Store card hero and product gallery order are managed separately.
+              Upload multiple images, choose one as the hero, then save. The selected hero appears on product cards and first on the product page.
             </p>
 
             {galleryError && (

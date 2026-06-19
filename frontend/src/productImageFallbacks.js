@@ -21,10 +21,6 @@ export const PRODUCT_IMAGE_FALLBACKS = {
   'five-sided-lithophane-panel-box': '/images/products/litho-box/angle-1.jpg',
 };
 
-const PRODUCT_IMAGE_OVERRIDES = {
-  'five-sided-lithophane-panel-box': '/images/products/litho-box/angle-1.jpg',
-};
-
 const normalizeProductKey = (value) =>
   String(value || '')
     .trim()
@@ -84,15 +80,10 @@ export const getProductImage = (product) => {
   const gallery = Array.isArray(product?.imageGallery)
     ? product.imageGallery.map(getFirstImageValue).filter(Boolean)
     : [];
-  const keys = getProductKeys(product);
-  const preferredImage = keys
-    .map((key) => PRODUCT_IMAGE_OVERRIDES[PRODUCT_IMAGE_ALIASES[key] || key])
-    .find(Boolean);
 
   return (
-    preferredImage ||
-    getFirstImageValue(product?.image) ||
     getFirstImageValue(product?.hero_image_url) ||
+    getFirstImageValue(product?.image) ||
     getFirstImageValue(product?.imageUrl) ||
     getFirstImageValue(product?.thumbnail) ||
     getFirstImageValue(product?.images) ||
