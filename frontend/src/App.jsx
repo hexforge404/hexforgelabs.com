@@ -45,6 +45,8 @@ import OrderStatusPage from 'pages/OrderStatusPage';
 import FuneralHomePage from './pages/FuneralHomePage';
 import MemorialPage from './pages/MemorialPage';
 import FreePhotoCheckPage from './pages/FreePhotoCheckPage';
+import PortfolioPage from './pages/PortfolioPage';
+import HelpPage from './pages/HelpPage';
 
 import './App.css';
 
@@ -314,6 +316,9 @@ const MainApp = () => {
             <Route path="/funeralhome" element={<FuneralHomePage />} />
             <Route path="/memorial" element={<MemorialPage />} />
             <Route path="/free-photo-check" element={<FreePhotoCheckPage />} />
+            <Route path="/portfolio" element={<PortfolioPage />} />
+            <Route path="/work" element={<Navigate to="/portfolio" replace />} />
+            <Route path="/help" element={<HelpPage />} />
 
             {/* Fallback */}
             <Route path="*" element={<Navigate to="/" />} />
