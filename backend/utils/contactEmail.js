@@ -30,6 +30,8 @@ const getMailgunClient = () => {
   });
 };
 
+const isValidEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanString(value));
+
 const buildContactNotificationEmail = (submission) => {
   const createdAt = submission.createdAt
     ? new Date(submission.createdAt).toISOString()
@@ -87,13 +89,19 @@ const sendContactNotificationEmail = async (submission) => {
   }
 
   const { text, html } = buildContactNotificationEmail(submission);
-  await client.messages.create(process.env.MAILGUN_DOMAIN, {
+  const message = {
     from: `HexForge Labs <${fromEmail}>`,
     to: recipients,
-    subject: `New Contact Form Submission: ${submission.topic || submission.pageSource || 'HexForge Labs'}`,
+    subject: `New HexForge Labs contact: ${submission.topic || 'Other'}`,
     text,
     html
-  });
+  };
+
+  if (isValidEmail(submission.email)) {
+    message['h:Reply-To'] = submission.email;
+  }
+
+  await client.messages.create(process.env.MAILGUN_DOMAIN, message);
 
   return { sent: true, recipientCount: recipients.length };
 };
