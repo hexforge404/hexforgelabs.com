@@ -14,7 +14,9 @@ const routes = [
   { path: '/script-lab', label: 'Script Lab' },
   { path: '/heightmap', label: 'Heightmap' },
   { path: '/surface', label: 'Surface' },
-  { path: '/blog', label: 'Blog' }
+  { path: '/blog', label: 'Blog' },
+  { path: '/portfolio', label: 'Portfolio' },
+  { path: '/help', label: 'Help' }
 ];
 
 const funeralHomeRoutes = [
