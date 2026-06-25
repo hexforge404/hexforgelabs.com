@@ -3,6 +3,7 @@ const express = require('express');
 const rateLimit = require('express-rate-limit');
 const { body, validationResult } = require('express-validator');
 const ContactSubmission = require('../models/ContactSubmission');
+const { sendContactNotificationEmail } = require('../utils/contactEmail');
 
 const router = express.Router();
 const allowedPageSources = ['portfolio', 'help', 'general'];
@@ -73,6 +74,21 @@ router.post(
         hasEmail: Boolean(submission.email),
         hasPhone: Boolean(submission.phone)
       });
+
+      try {
+        const emailResult = await sendContactNotificationEmail(submission);
+        if (emailResult.sent) {
+          console.log('📧 Contact notification email sent', {
+            id: submission._id.toString(),
+            recipientCount: emailResult.recipientCount
+          });
+        }
+      } catch (emailErr) {
+        console.warn('⚠️ Contact notification email failed', {
+          id: submission._id.toString(),
+          error: emailErr.message || String(emailErr)
+        });
+      }
 
       res.status(201).json({
         message: 'Contact submission received',
