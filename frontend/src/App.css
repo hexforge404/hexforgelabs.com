@@ -1088,6 +1088,169 @@ body {
   color: #dffaf4;
 }
 
+.guided-helper {
+  margin: 0 0 1rem;
+  padding: 1.25rem;
+  border: 1px solid rgba(0, 255, 200, 0.18);
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(0, 255, 200, 0.08), transparent 28%),
+    linear-gradient(180deg, rgba(13, 16, 23, 0.95), rgba(7, 9, 14, 0.98));
+}
+
+.guided-helper-header h2,
+.contact-form-header h2 {
+  margin: 0 0 0.55rem;
+  color: #ffffff;
+  font-size: 1.35rem;
+}
+
+.guided-helper-header p:not(.public-info-eyebrow),
+.contact-form-header p {
+  margin: 0;
+  color: var(--hf-muted);
+  line-height: 1.65;
+}
+
+.guided-helper-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin: 1rem 0;
+}
+
+.guided-helper-button {
+  min-height: 40px;
+  padding: 0.6rem 0.85rem;
+  border: 1px solid rgba(0, 255, 200, 0.22);
+  border-radius: 8px;
+  background: rgba(0, 255, 200, 0.06);
+  color: #dffaf4;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.guided-helper-button:hover,
+.guided-helper-button--active {
+  border-color: rgba(255, 211, 135, 0.55);
+  background: rgba(255, 211, 135, 0.12);
+  color: #ffffff;
+}
+
+.guided-helper-response {
+  padding: 1rem;
+  border: 1px solid rgba(255, 211, 135, 0.16);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.guided-helper-response p {
+  margin: 0;
+  color: #dffaf4;
+  line-height: 1.65;
+}
+
+.guided-helper-response a,
+.contact-form-status a {
+  color: var(--hf-neon);
+}
+
+.contact-form {
+  display: grid;
+  gap: 1rem;
+}
+
+.contact-form * {
+  box-sizing: border-box;
+}
+
+.contact-form-honeypot {
+  position: absolute;
+  left: -10000px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+.contact-form-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.contact-form label {
+  display: grid;
+  gap: 0.45rem;
+  color: #e6fff8;
+  font-weight: 700;
+}
+
+.contact-form label span {
+  color: var(--hf-muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.contact-form input,
+.contact-form select,
+.contact-form textarea {
+  width: 100%;
+  border: 1px solid rgba(0, 255, 200, 0.22);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.32);
+  color: #ffffff;
+  padding: 0.8rem 0.9rem;
+}
+
+.contact-form select option {
+  background: #0d1017;
+  color: #ffffff;
+}
+
+.contact-form textarea {
+  resize: vertical;
+}
+
+.contact-form-status {
+  margin: 0;
+  padding: 0.85rem 1rem;
+  border-radius: 8px;
+  line-height: 1.55;
+}
+
+.contact-form-status--success {
+  border: 1px solid rgba(0, 255, 200, 0.26);
+  background: rgba(0, 255, 200, 0.08);
+  color: #dffaf4;
+}
+
+.contact-form-status--error {
+  border: 1px solid rgba(255, 120, 120, 0.3);
+  background: rgba(255, 120, 120, 0.08);
+  color: #ffe0e0;
+}
+
+.contact-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.contact-form-actions button {
+  cursor: pointer;
+}
+
+.contact-form-actions button:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.contact-form-fallback {
+  color: var(--hf-neon);
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 768px) {
   .funeral-home-hero {
     min-height: auto;
@@ -1136,7 +1299,8 @@ body {
   .photo-check-two-column,
   .public-info-grid,
   .public-info-split,
-  .public-info-contact-grid {
+  .public-info-contact-grid,
+  .contact-form-row {
     grid-template-columns: 1fr;
   }
 

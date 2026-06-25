@@ -1,5 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import ContactForm from 'components/ContactForm';
+import GuidedHelperWidget from 'components/GuidedHelperWidget';
 import { SUPPORT_EMAIL } from '../config';
 
 const portfolioSections = [
@@ -58,6 +60,33 @@ const currentQueue = [
   'Portfolio photos and screenshots'
 ];
 
+const portfolioTopics = [
+  'Employer / hiring inquiry',
+  'Technical project question',
+  'Local support question',
+  'Other'
+];
+
+const portfolioHelperPrompts = [
+  {
+    label: 'What kind of work do you do?',
+    response: 'Robert focuses on hands-on troubleshooting, device repair, Linux basics, self-hosted systems, documentation, 3D printing, and practical technical support.'
+  },
+  {
+    label: 'Show repair work',
+    response: 'The repair section covers phone/device projects, parts replacement, diagnostics, and bench workflow. More photo proof is being added as projects are documented.'
+  },
+  {
+    label: 'Show homelab skills',
+    response: 'The homelab section covers Proxmox, Docker/Docker Compose, Linux server basics, self-hosted tools, and support workflow experiments.'
+  },
+  {
+    label: 'How do I contact you?',
+    response: 'Use the contact form on this page or email',
+    includeEmail: true
+  }
+];
+
 function PortfolioPage() {
   return (
     <main className="public-info-page">
@@ -74,6 +103,12 @@ function PortfolioPage() {
           for employers and local clients.
         </p>
       </section>
+
+      <GuidedHelperWidget
+        title="Portfolio Guide"
+        intro="Looking for the quick version? Pick a topic and I'll point you to the right section."
+        prompts={portfolioHelperPrompts}
+      />
 
       <section className="public-info-grid" aria-label="Portfolio work examples">
         {portfolioSections.map((section) => (
@@ -108,14 +143,19 @@ function PortfolioPage() {
             <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>
           </p>
           <div className="public-info-actions">
-            <a className="public-info-button" href={`mailto:${SUPPORT_EMAIL}`}>
-              Email Robert
-            </a>
             <Link className="public-info-link" to="/help">
               View Help Page
             </Link>
           </div>
         </article>
+      </section>
+
+      <section className="public-info-contact public-info-contact--wide">
+        <ContactForm
+          pageSource="portfolio"
+          topics={portfolioTopics}
+          heading="Contact Robert"
+        />
       </section>
     </main>
   );
