@@ -10,8 +10,8 @@
 # Local env files
 .env*
 !.env.example
-/backend/.env.example
-/frontend/.env.example
+!/backend/.env.example
+!/frontend/.env.example
 
 # Runtime & archive
 mongo_data/
