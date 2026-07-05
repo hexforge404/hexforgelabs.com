@@ -1275,8 +1275,11 @@ const activeAddons = getActiveAddons();
 
   const getGalleryImages = (prod) => {
     const list = Array.isArray(prod.imageGallery) ? prod.imageGallery.filter(Boolean) : [];
+    const hero = prod.hero_image_url || prod.image;
+    if (hero) {
+      return [hero, ...list.filter((image) => image !== hero)];
+    }
     if (list.length) return list;
-    if (prod.image) return [prod.image];
     return [];
   };
 

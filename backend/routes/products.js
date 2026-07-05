@@ -661,6 +661,16 @@ router.get('/', productLimiter, async (req, res) => {
   }
 });
 
+// Explicit method guard for the photo-check submission endpoint.
+// POST /api/products/photo-check is handled later with multipart upload.
+// GET should not fall through to GET /:id and trigger a Mongo ObjectId error.
+router.get('/photo-check', productLimiter, (req, res) => {
+  return res.status(405).json({
+    error: 'Method not allowed',
+    message: 'Use POST /api/products/photo-check to submit a photo check.'
+  });
+});
+
 router.get('/slug/:slug', async (req, res) => {
   try {
     const slug = String(req.params.slug || '').toLowerCase().trim();

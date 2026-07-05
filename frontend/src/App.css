@@ -898,6 +898,10 @@ body {
   padding: 1.25rem;
 }
 
+.photo-check-form * {
+  box-sizing: border-box;
+}
+
 .photo-check-form label {
   display: grid;
   gap: 0.45rem;
@@ -918,7 +922,12 @@ body {
 .photo-check-two-column {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
   gap: 1rem;
+}
+
+.photo-check-two-column label {
+  min-width: 0;
 }
 
 .photo-check-file-count {
