@@ -129,6 +129,20 @@ const normalizePhotoCheckLink = (value) => {
 
 const sortByOrder = (items) => [...items].sort((a, b) => (Number(a.sortOrder) || 0) - (Number(b.sortOrder) || 0));
 
+const getFeaturedImageUrl = (item) => {
+  const value = String(item?.imageUrl || item?.image || '').trim();
+  if (!value || value === '#' || /^(null|undefined)$/i.test(value)) return '';
+  if (value.includes('/undefined') || value.includes('/null')) return '';
+  return value;
+};
+
+const filterUsableFeaturedImages = (items) =>
+  sortByOrder((Array.isArray(items) ? items : []).filter((item) => (
+    item &&
+    item.enabled !== false &&
+    Boolean(getFeaturedImageUrl(item))
+  )));
+
 const mergeLandingConfig = (apiConfig) => {
   if (!apiConfig || typeof apiConfig !== 'object') {
     return fallbackLandingConfig;
@@ -137,9 +151,10 @@ const mergeLandingConfig = (apiConfig) => {
   const hero = { ...fallbackLandingConfig.hero, ...(apiConfig.hero || {}) };
   const announcement = { ...fallbackLandingConfig.announcement, ...(apiConfig.announcement || {}) };
 
-  const featuredImages = Array.isArray(apiConfig.featuredImages) && apiConfig.featuredImages.length
-    ? sortByOrder(apiConfig.featuredImages.filter((item) => item && item.enabled !== false))
-    : fallbackLandingConfig.featuredImages;
+  const apiFeaturedImages = filterUsableFeaturedImages(apiConfig.featuredImages);
+  const featuredImages = apiFeaturedImages.length
+    ? apiFeaturedImages
+    : filterUsableFeaturedImages(fallbackLandingConfig.featuredImages);
 
   const reviews = Array.isArray(apiConfig.reviews)
     ? sortByOrder(apiConfig.reviews.filter((item) => item && item.enabled !== false))
@@ -228,7 +243,9 @@ const HomePage = () => {
 
   const heroImageUrl = landingConfig.hero.imageUrl || fallbackLandingConfig.hero.imageUrl;
   const heroImageAlt = landingConfig.hero.imageAlt || fallbackLandingConfig.hero.imageAlt;
-  const featuredImages = landingConfig.featuredImages.length ? landingConfig.featuredImages : fallbackLandingConfig.featuredImages;
+  const featuredImages = filterUsableFeaturedImages(
+    landingConfig.featuredImages.length ? landingConfig.featuredImages : fallbackLandingConfig.featuredImages
+  );
   const activeReviews = landingConfig.reviews?.length ? landingConfig.reviews : approvedReviews;
   const trustBadges = landingConfig.trustBadges.length ? landingConfig.trustBadges : fallbackTrustBadges;
   const secondaryCtaLink = normalizePhotoCheckLink(landingConfig.hero.secondaryCtaLink);
@@ -313,26 +330,31 @@ const HomePage = () => {
         </div>
       </section>
 
-      <section className="gallery-section">
-        <h2 className="section-title">Real photo lamp examples</h2>
-        <p className="section-copy">
-          See how custom photos become warm, glowing displays for living rooms, bedrooms, and gift-ready keepsakes.
-        </p>
-        <div className="gallery-grid">
-          {featuredImages.map((item, index) => (
-            <div
-              key={`${item.imageUrl || item.title}-${index}`}
-              className="gallery-card"
-              style={{ backgroundImage: `url(${item.imageUrl || item.image})` }}
-            >
-              <div className="gallery-card-overlay">
-                <h4>{item.caption || item.title}</h4>
-                {item.alt && <p>{item.alt}</p>}
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
+      {featuredImages.length > 0 && (
+        <section className="gallery-section">
+          <h2 className="section-title">Real photo lamp examples</h2>
+          <p className="section-copy">
+            See how custom photos become warm, glowing displays for living rooms, bedrooms, and gift-ready keepsakes.
+          </p>
+          <div className="gallery-grid">
+            {featuredImages.map((item, index) => {
+              const imageUrl = getFeaturedImageUrl(item);
+              return (
+                <div
+                  key={`${imageUrl || item.title}-${index}`}
+                  className="gallery-card"
+                  style={{ backgroundImage: `url(${imageUrl})` }}
+                >
+                  <div className="gallery-card-overlay">
+                    <h4>{item.caption || item.title}</h4>
+                    {item.alt && <p>{item.alt}</p>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       {activeReviews.length > 0 && (
         <section className="testimonial-section">
