@@ -483,6 +483,7 @@ function ProductDetailPage() {
     if (sku === 'LITHGLB04') return 'globeLamp';
     if (sku === 'LITHBUNDLE01') return 'familyBundle4';
     if (sku === 'LITHNL01') return 'nightlight';
+    if (sku === 'LITHDF01' || routeSlug === 'lithophane-diffuser-insert') return null;
     if (routeSlug === 'lithophane-night-light') return 'nightlight';
     if (routeSlug === 'lithophane-box') return 'fixedBox4';
     if (routeSlug === 'five-sided-lithophane-panel-box') return 'panelBox5';
@@ -513,7 +514,8 @@ function ProductDetailPage() {
     if (type === 'cylinder') {
       return calculatePrice({ productType: 'cylinder', panelCount: 2, size: 'small' });
     }
-    return calculatePrice({ productType: 'panel', panelCount: 2, size: 'small' });
+    const fallbackPrice = Number(productData?.price || 0);
+    return Number.isFinite(fallbackPrice) ? fallbackPrice : 0;
   };
 
   const updateLampshade = (updates) => {
@@ -1257,8 +1259,9 @@ const activeAddons = getActiveAddons();
 
   const isLampProduct = (productData) => {
     const sku = String(productData?.sku || '').toUpperCase();
+    if (sku === 'LITHDF01') return false;
     const categories = getProductCategories(productData);
-    return ['LITHNL01', 'LITHDF01', 'LITHBUNDLE01'].includes(sku) || categories.includes('lamps');
+    return ['LITHNL01', 'LITHBUNDLE01'].includes(sku) || categories.includes('lamps');
   };
 
   const normalizeProduct = (p) => {
