@@ -4,7 +4,10 @@ const slugify = require('slugify');
 
 exports.getAllPosts = async (req, res) => {
   try {
-    const posts = await Blog.find({ visibility: 'public' }).sort({ createdAt: -1 });
+    const posts = await Blog.find({
+      visibility: 'public',
+      isDraft: false
+    }).sort({ createdAt: -1 });
     res.json(posts);
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch blog posts' });
@@ -13,7 +16,11 @@ exports.getAllPosts = async (req, res) => {
 
 exports.getPostBySlug = async (req, res) => {
   try {
-    const post = await Blog.findOne({ slug: req.params.slug });
+    const post = await Blog.findOne({
+      slug: req.params.slug,
+      visibility: 'public',
+      isDraft: false
+    });
     if (!post) return res.status(404).json({ error: 'Post not found' });
     res.json(post);
   } catch (err) {
@@ -46,7 +53,7 @@ exports.createPost = async (req, res) => {
       meta,
       visibility,
       isDraft,
-      publishDate,
+      publishedAt: publishDate || undefined,
       slug: req.body.slug || slugify(title, { lower: true, strict: true })
     });
 
@@ -83,10 +90,10 @@ exports.updatePost = async (req, res) => {
         meta,
         visibility,
         isDraft,
-        publishDate,
+        publishedAt: publishDate || undefined,
         slug: req.body.slug || slugify(title, { lower: true, strict: true })
       },
-      { new: true }
+      { new: true, runValidators: true }
     );
 
     if (!updatedPost) return res.status(404).json({ error: 'Post not found' });
