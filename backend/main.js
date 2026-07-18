@@ -1,4 +1,3 @@
-const editorRouter = require('./routes/editor');
 const express = require('express');
 const mongoose = require('mongoose');
 const blogRoutes = require('./routes/blog');
@@ -219,7 +218,6 @@ app.use('/tool', toolRoutes);
 app.use('/api/store/surface', apiLimiter, surfaceRoutes);
 app.use('/api/surface', apiLimiter, surfaceRoutes);
 
-app.use('/api/editor', editorRouter);
 app.use('/api/tools', toolRoutes);
 app.use('/api/uploads', uploadsRouter);
 app.use('/api/script-lab', apiLimiter, scriptLabRoutes);
