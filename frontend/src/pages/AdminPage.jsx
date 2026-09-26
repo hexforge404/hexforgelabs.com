@@ -6,6 +6,7 @@ import API_BASE_URL from '../utils/apiBase';
 import { successToast, errorToast, warningToast } from '../utils/toastUtils';
 import InventoryViewer from '../components/InventoryViewer';
 import LandingPageEditor from '../components/admin/LandingPageEditor';
+import CampaignPageEditor from '../components/admin/CampaignPageEditor';
 import { useAdmin } from '../context/AdminContext';
 import { resolveImageUrl } from '../utils/resolveImageUrl';
 
@@ -2563,7 +2564,13 @@ export default function AdminPage() {
           className={activeTab === 'landing-page' ? 'tab active' : 'tab'}
           onClick={() => setActiveTab('landing-page')}
         >
-          Landing Page
+          Homepage
+        </button>
+        <button
+          className={activeTab === 'campaign-pages' ? 'tab active' : 'tab'}
+          onClick={() => setActiveTab('campaign-pages')}
+        >
+          Landing Pages
         </button>
         <button
           className={activeTab === 'inventory' ? 'tab active' : 'tab'}
@@ -5187,6 +5194,7 @@ export default function AdminPage() {
 
       {/* ---------- INVENTORY TAB (NOTION) ---------- */}
       {activeTab === 'landing-page' && <LandingPageEditor />}
+      {activeTab === 'campaign-pages' && <CampaignPageEditor />}
 
       {activeTab === 'inventory' && <InventoryViewer />}
     </div>

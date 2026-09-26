@@ -118,7 +118,7 @@
 }
 
 .memorial-guide-message--guide {
-  border: 1px solid rgba(100, 255, 218, 0.14);
+  border: 1px solid rgba(255, 211, 135, 0.14);
   background: rgba(17, 40, 63, 0.92);
   color: #e4ebf7;
 }
@@ -150,7 +150,7 @@
 
 .memorial-guide-suggestions button {
   padding: 7px 10px;
-  border: 1px solid rgba(100, 255, 218, 0.24);
+  border: 1px solid rgba(255, 211, 135, 0.24);
   border-radius: 999px;
   background: rgba(8, 24, 42, 0.8);
   color: #dce7f5;
@@ -159,7 +159,7 @@
 }
 
 .memorial-guide-suggestions button:hover {
-  border-color: rgba(100, 255, 218, 0.58);
+  border-color: rgba(255, 211, 135, 0.58);
 }
 
 .memorial-guide-form {
@@ -193,7 +193,7 @@
   padding: 0 14px;
   border: 0;
   border-radius: 8px;
-  background: #64ffda;
+  background: #ffd387;
   color: #071426;
   font-weight: 800;
   cursor: pointer;

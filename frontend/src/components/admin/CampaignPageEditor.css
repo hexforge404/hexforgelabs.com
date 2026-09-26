@@ -1,0 +1,16 @@
+.campaign-editor { padding: 1.5rem; color: #e7edf5; }
+.campaign-editor-list,.campaign-editor-actions { display: flex; flex-wrap: wrap; gap: .75rem; margin: 1rem 0; }
+.campaign-editor button { cursor: pointer; border: 1px solid rgba(255,211,135,.45); background: #20232d; color: #ffd387; border-radius: 8px; padding: .65rem .9rem; }
+.campaign-editor button:hover { background: #30323e; }
+.campaign-editor button:disabled { opacity: .55; cursor: wait; }
+.campaign-editor-form { max-width: 920px; display: grid; gap: 1rem; }
+.campaign-editor-form label { display: grid; gap: .4rem; min-width: 0; }
+.campaign-editor-form input,.campaign-editor-form textarea,.campaign-editor-form select { box-sizing: border-box; width: 100%; border: 1px solid #5a606d; border-radius: 6px; background: #11151d; color: #f2f4f8; padding: .7rem; }
+.campaign-editor-row { display: flex; gap: .75rem; align-items: end; }
+.campaign-editor-row label { flex: 1; }
+.campaign-editor-form .campaign-checkbox { display: flex; flex-direction: row; align-items: center; }
+.campaign-editor-form .campaign-checkbox input { width: auto; }
+.campaign-editor-card,.campaign-editor-preview { display: grid; gap: .8rem; padding: 1rem; border: 1px solid rgba(255,211,135,.2); border-radius: 8px; background: #161b24; }
+.campaign-editor-preview img { max-width: 100%; max-height: 350px; object-fit: contain; }
+.campaign-editor-preview p { white-space: pre-line; }
+@media(max-width:700px) { .campaign-editor-row { flex-direction: column; align-items: stretch; } }

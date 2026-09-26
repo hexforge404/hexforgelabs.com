@@ -22,7 +22,7 @@
 
 .user-auth-title {
   text-align: center;
-  color: #64ffda;
+  color: #ffd387;
   font-size: 1.6rem;
   font-weight: 700;
   margin-bottom: 1.75rem;
@@ -74,8 +74,8 @@
 }
 
 .user-auth-input:focus {
-  border-color: #64ffda;
-  box-shadow: 0 0 0 1px rgba(100, 255, 218, 0.35);
+  border-color: #ffd387;
+  box-shadow: 0 0 0 1px rgba(255, 211, 135, 0.35);
   background: #020617;
 }
 
@@ -126,7 +126,7 @@
 .user-auth-switch button {
   background: none;
   border: none;
-  color: #64ffda;
+  color: #ffd387;
   font-size: 0.85rem;
   cursor: pointer;
   padding: 0;

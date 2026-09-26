@@ -24,7 +24,7 @@ body {
   --hf-muted: #b7c0d1;
   --hf-amber: #ffd387;
   --hf-forge: #ff9f43;
-  --hf-neon: #00ffc8;
+  --hf-neon: #ffd387;
 }
 
 .home-page {
@@ -184,9 +184,9 @@ body {
 .store-title {
   text-align: center;
   margin: 20px 0 40px;
-  color: #64ffda;
+  color: var(--hf-amber);
   font-size: 2.5rem;
-  text-shadow: 0 0 10px rgba(100, 255, 218, 0.3);
+  text-shadow: 0 0 10px rgba(255, 211, 135, 0.3);
 }
 
 /* Header Controls */
@@ -208,7 +208,7 @@ body {
 
 
 .control-button {
-  background-color: #64ffda;
+  background-color: var(--hf-amber);
   color: #0a192f;
   font-weight: 600;
   padding: 10px 20px;
@@ -252,8 +252,8 @@ body {
   right: 30px;
   padding: 12px 24px;
   background-color: #112240;
-  color: #64ffda;
-  border: 1px solid #64ffda;
+  color: var(--hf-amber);
+  border: 1px solid var(--hf-amber);
   border-radius: 4px;
   cursor: pointer;
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
@@ -289,8 +289,8 @@ body {
 }
 
 .spinner {
-  border: 3px solid rgba(100, 255, 218, 0.3);
-  border-top: 3px solid #64ffda;
+  border: 3px solid rgba(255, 211, 135, 0.3);
+  border-top: 3px solid var(--hf-amber);
   border-radius: 50%;
   width: 20px;
   height: 20px;
@@ -424,7 +424,7 @@ body {
 .funeral-home-hero {
   min-height: 56vh;
   background:
-    radial-gradient(circle at 85% 20%, rgba(100, 255, 218, 0.1), transparent 32%),
+    radial-gradient(circle at 85% 20%, rgba(255, 211, 135, 0.1), transparent 32%),
     linear-gradient(145deg, rgba(10, 25, 47, 0.98), rgba(6, 16, 34, 0.98));
   border-radius: 16px;
   display: flex;
@@ -449,7 +449,7 @@ body {
   font-size: 0.95rem;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: #64ffda;
+  color: var(--hf-amber);
   margin-bottom: 1rem;
 }
 
@@ -524,37 +524,37 @@ body {
 }
 
 .funeral-home-button--primary {
-  background: #64ffda;
+  background: var(--hf-amber);
   color: #071426;
 }
 
 .funeral-home-button--primary:hover {
-  background: #8effe4;
+  background: #ffe2af;
   color: #071426;
 }
 
 .funeral-home-button--secondary {
-  border-color: rgba(100, 255, 218, 0.7);
+  border-color: rgba(255, 211, 135, 0.7);
   background: rgba(7, 20, 38, 0.72);
   color: #f0f7ff;
 }
 
 .funeral-home-button--secondary:hover {
-  border-color: #64ffda;
-  background: rgba(100, 255, 218, 0.1);
+  border-color: var(--hf-amber);
+  background: rgba(255, 211, 135, 0.1);
   color: #ffffff;
 }
 
 .funeral-home-section {
   background: rgba(16, 29, 53, 0.9);
-  border: 1px solid rgba(100, 255, 218, 0.12);
+  border: 1px solid rgba(255, 211, 135, 0.12);
   border-radius: 16px;
   padding: 32px;
 }
 
 .funeral-home-section h2 {
   margin-top: 0;
-  color: #64ffda;
+  color: var(--hf-amber);
 }
 
 .funeral-home-section p,
@@ -576,8 +576,8 @@ body {
 .funeral-home-privacy {
   margin: 1.25rem 0 0;
   padding: 14px 16px;
-  border-left: 3px solid #64ffda;
-  background: rgba(100, 255, 218, 0.06);
+  border-left: 3px solid var(--hf-amber);
+  background: rgba(255, 211, 135, 0.06);
 }
 
 .funeral-home-card-grid {
@@ -589,7 +589,7 @@ body {
 
 .funeral-home-info-card {
   padding: 22px;
-  border: 1px solid rgba(100, 255, 218, 0.16);
+  border: 1px solid rgba(255, 211, 135, 0.16);
   border-radius: 12px;
   background: rgba(6, 16, 34, 0.65);
 }
@@ -604,14 +604,14 @@ body {
 }
 
 .funeral-home-card-number {
-  color: #64ffda;
+  color: var(--hf-amber);
   font-size: 0.78rem;
   font-weight: 800;
   letter-spacing: 0.16em;
 }
 
 .funeral-home-footer a {
-  color: #64ffda;
+  color: var(--hf-amber);
   text-decoration: underline;
 }
 
@@ -628,7 +628,7 @@ body {
   gap: 42px;
   align-items: center;
   padding: 48px;
-  border: 1px solid rgba(100, 255, 218, 0.16);
+  border: 1px solid rgba(255, 211, 135, 0.16);
   border-radius: 16px;
   background:
     radial-gradient(circle at 85% 20%, rgba(247, 187, 107, 0.16), transparent 34%),
@@ -641,7 +641,7 @@ body {
 }
 
 .memorial-eyebrow {
-  color: #64ffda;
+  color: var(--hf-amber);
   font-size: 0.9rem;
   font-weight: 700;
   letter-spacing: 0.14em;
@@ -687,7 +687,7 @@ body {
 
 .memorial-section {
   padding: 32px;
-  border: 1px solid rgba(100, 255, 218, 0.12);
+  border: 1px solid rgba(255, 211, 135, 0.12);
   border-radius: 16px;
   background: rgba(16, 29, 53, 0.9);
 }
@@ -695,7 +695,7 @@ body {
 .memorial-section h2,
 .memorial-package-card h3 {
   margin-top: 0;
-  color: #64ffda;
+  color: var(--hf-amber);
 }
 
 .memorial-section p,
@@ -725,7 +725,7 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid rgba(100, 255, 218, 0.2);
+  border: 1px solid rgba(255, 211, 135, 0.2);
   border-radius: 12px;
   background: rgba(6, 16, 34, 0.7);
 }
@@ -785,24 +785,24 @@ body {
 }
 
 .memorial-button--primary {
-  background: #64ffda;
+  background: var(--hf-amber);
   color: #071426;
 }
 
 .memorial-button--primary:hover {
-  background: #8effe4;
+  background: #ffe2af;
   color: #071426;
 }
 
 .memorial-button--secondary {
-  border-color: rgba(100, 255, 218, 0.7);
+  border-color: rgba(255, 211, 135, 0.7);
   background: rgba(7, 20, 38, 0.72);
   color: #f0f7ff;
 }
 
 .memorial-button--secondary:hover {
-  border-color: #64ffda;
-  background: rgba(100, 255, 218, 0.1);
+  border-color: var(--hf-amber);
+  background: rgba(255, 211, 135, 0.1);
   color: #ffffff;
 }
 
@@ -811,7 +811,7 @@ body {
 }
 
 .memorial-contact a:not(.memorial-button) {
-  color: #64ffda;
+  color: var(--hf-amber);
 }
 
 .product-detail-photo-check-actions {
@@ -829,10 +829,10 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(0, 255, 200, 0.65);
+  border: 1px solid rgba(255, 211, 135, 0.65);
   border-radius: 999px;
-  background: rgba(0, 255, 200, 0.12);
-  color: #9fffe8;
+  background: rgba(255, 211, 135, 0.12);
+  color: var(--hf-amber);
   font-weight: 800;
   letter-spacing: 0.04em;
   text-decoration: none;
@@ -856,7 +856,7 @@ body {
 }
 
 .photo-check-eyebrow {
-  color: #9fffe8;
+  color: var(--hf-amber);
   font-weight: 800;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -876,7 +876,7 @@ body {
 .photo-check-note-card,
 .photo-check-form,
 .photo-check-success {
-  border: 1px solid rgba(0, 255, 200, 0.18);
+  border: 1px solid rgba(255, 211, 135, 0.18);
   border-radius: 18px;
   background: rgba(4, 18, 28, 0.78);
   box-shadow: 0 18px 45px rgba(0, 0, 0, 0.28);
@@ -912,7 +912,7 @@ body {
 .photo-check-form input,
 .photo-check-form textarea {
   width: 100%;
-  border: 1px solid rgba(0, 255, 200, 0.25);
+  border: 1px solid rgba(255, 211, 135, 0.25);
   border-radius: 12px;
   background: rgba(0, 0, 0, 0.35);
   color: #fff;
@@ -957,7 +957,7 @@ body {
   border: 1px solid var(--hf-border);
   border-radius: 8px;
   background:
-    radial-gradient(circle at 88% 12%, rgba(0, 255, 200, 0.1), transparent 30%),
+    radial-gradient(circle at 88% 12%, rgba(255, 211, 135, 0.1), transparent 30%),
     linear-gradient(180deg, rgba(20, 24, 33, 0.95), rgba(7, 9, 14, 0.98));
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.34);
 }
@@ -1087,8 +1087,8 @@ body {
 }
 
 .public-info-link {
-  border: 1px solid rgba(0, 255, 200, 0.28);
-  background: rgba(0, 255, 200, 0.08);
+  border: 1px solid rgba(255, 211, 135, 0.28);
+  background: rgba(255, 211, 135, 0.08);
   color: #dffaf4;
 }
 
@@ -1100,10 +1100,10 @@ body {
 .guided-helper {
   margin: 0 0 1rem;
   padding: 1.25rem;
-  border: 1px solid rgba(0, 255, 200, 0.18);
+  border: 1px solid rgba(255, 211, 135, 0.18);
   border-radius: 8px;
   background:
-    radial-gradient(circle at 100% 0%, rgba(0, 255, 200, 0.08), transparent 28%),
+    radial-gradient(circle at 100% 0%, rgba(255, 211, 135, 0.08), transparent 28%),
     linear-gradient(180deg, rgba(13, 16, 23, 0.95), rgba(7, 9, 14, 0.98));
 }
 
@@ -1131,9 +1131,9 @@ body {
 .guided-helper-button {
   min-height: 40px;
   padding: 0.6rem 0.85rem;
-  border: 1px solid rgba(0, 255, 200, 0.22);
+  border: 1px solid rgba(255, 211, 135, 0.22);
   border-radius: 8px;
-  background: rgba(0, 255, 200, 0.06);
+  background: rgba(255, 211, 135, 0.06);
   color: #dffaf4;
   cursor: pointer;
   font-weight: 700;
@@ -1204,7 +1204,7 @@ body {
 .contact-form select,
 .contact-form textarea {
   width: 100%;
-  border: 1px solid rgba(0, 255, 200, 0.22);
+  border: 1px solid rgba(255, 211, 135, 0.22);
   border-radius: 8px;
   background: rgba(0, 0, 0, 0.32);
   color: #ffffff;
@@ -1228,8 +1228,8 @@ body {
 }
 
 .contact-form-status--success {
-  border: 1px solid rgba(0, 255, 200, 0.26);
-  background: rgba(0, 255, 200, 0.08);
+  border: 1px solid rgba(255, 211, 135, 0.26);
+  background: rgba(255, 211, 135, 0.08);
   color: #dffaf4;
 }
 

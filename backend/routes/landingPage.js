@@ -43,4 +43,21 @@ router.get('/', async (req, res) => {
   }
 });
 
+const LandingPage = require('../models/LandingPage');
+
+router.get('/pages/:slug', async (req, res) => {
+  try {
+    const slug = String(req.params.slug || '');
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
+      return res.status(404).json({ success: false, error: 'Page not found' });
+    }
+    const page = await LandingPage.findOne({ slug, status: 'published' }).lean();
+    if (!page) return res.status(404).json({ success: false, error: 'Page not found' });
+    return res.json({ success: true, page });
+  } catch (err) {
+    console.error('Failed to load landing page:', err);
+    return res.status(500).json({ success: false, error: 'Failed to load landing page' });
+  }
+});
+
 module.exports = router;

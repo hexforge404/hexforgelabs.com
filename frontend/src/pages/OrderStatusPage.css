@@ -4,21 +4,21 @@
   display: flex;
   justify-content: center;
   align-items: center;
-  background: radial-gradient(circle at top, rgba(0, 255, 200, 0.08), transparent 40%), #070b16;
+  background: radial-gradient(circle at top, rgba(255, 211, 135, 0.08), transparent 40%), #070b16;
   color: #e6f1ff;
 }
 
 .order-status-card {
   width: min(960px, 100%);
   background: rgba(10, 18, 45, 0.98);
-  border: 1px solid rgba(0, 255, 200, 0.18);
+  border: 1px solid rgba(255, 211, 135, 0.18);
   border-radius: 18px;
   padding: 32px;
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
 }
 
 .order-status-card h2 {
-  color: #64ffda;
+  color: #ffd387;
   margin-bottom: 12px;
 }
 
@@ -30,20 +30,20 @@
 }
 
 .order-status-summary strong {
-  color: #00ffc8;
+  color: #ffd387;
 }
 
 .order-status-pricing {
   margin-top: 20px;
   padding: 16px;
   border-radius: 12px;
-  background: rgba(0, 255, 200, 0.05);
-  border: 1px solid rgba(0, 255, 200, 0.15);
+  background: rgba(255, 211, 135, 0.05);
+  border: 1px solid rgba(255, 211, 135, 0.15);
 }
 
 .order-status-pricing h3 {
   margin: 0 0 10px;
-  color: #00ffc8;
+  color: #ffd387;
   text-transform: uppercase;
   letter-spacing: 1px;
   font-size: 0.95rem;
@@ -85,12 +85,12 @@
 }
 
 .order-status-step.complete {
-  border-color: rgba(0, 255, 200, 0.4);
+  border-color: rgba(255, 211, 135, 0.4);
 }
 
 .order-status-step.active {
-  background: rgba(0, 255, 200, 0.1);
-  border-color: rgba(0, 255, 200, 0.6);
+  background: rgba(255, 211, 135, 0.1);
+  border-color: rgba(255, 211, 135, 0.6);
 }
 
 .order-status-step.cancelled {
@@ -102,7 +102,7 @@
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: #00ffc8;
+  background: #ffd387;
 }
 
 .order-status-step.cancelled .order-status-dot {
@@ -113,20 +113,20 @@
   margin-top: 24px;
   padding: 16px;
   border-radius: 12px;
-  background: rgba(0, 255, 200, 0.05);
-  border: 1px solid rgba(0, 255, 200, 0.15);
+  background: rgba(255, 211, 135, 0.05);
+  border: 1px solid rgba(255, 211, 135, 0.15);
 }
 
 .order-status-tracking h3 {
   margin: 0 0 10px;
-  color: #00ffc8;
+  color: #ffd387;
   text-transform: uppercase;
   letter-spacing: 1px;
   font-size: 0.95rem;
 }
 
 .order-status-tracking a {
-  color: #64ffda;
+  color: #ffd387;
   text-decoration: none;
 }
 
@@ -144,7 +144,7 @@
   display: inline-block;
   padding: 12px 20px;
   border-radius: 10px;
-  background: #00ffc8;
+  background: #ffd387;
   color: #071219;
   font-weight: bold;
   text-decoration: none;
