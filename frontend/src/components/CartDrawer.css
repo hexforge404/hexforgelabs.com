@@ -16,7 +16,7 @@
   .cart-drawer h2 {
     font-size: 1.5rem;
     margin-bottom: 1rem;
-    color: #00ffc8;
+    color: #ffd387;
   }
   
   .cart-item {
@@ -46,7 +46,7 @@
     border: none;
     border-radius: 6px;
     font-weight: bold;
-    background-color: #00ffc8;
+    background-color: #ffd387;
     color: #000;
     cursor: pointer;
     transition: background-color 0.2s ease;
