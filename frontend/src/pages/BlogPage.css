@@ -11,7 +11,7 @@
     text-align: center;
     font-size: 2.5rem;
     margin-bottom: 2rem;
-    color: #00ffc8;
+    color: #ffd387;
   }
   
   .blog-list {
@@ -26,14 +26,14 @@
     border-radius: 12px;
     max-width: 400px;
     width: 100%;
-    box-shadow: 0 4px 12px rgba(0, 255, 200, 0.1);
+    box-shadow: 0 4px 12px rgba(255, 211, 135, 0.1);
     overflow: hidden;
     transition: transform 0.2s ease, box-shadow 0.2s ease;
   }
   
   .blog-card:hover {
     transform: translateY(-6px);
-    box-shadow: 0 8px 24px rgba(0, 255, 200, 0.2);
+    box-shadow: 0 8px 24px rgba(255, 211, 135, 0.2);
   }
   
   .blog-image {
@@ -48,7 +48,7 @@
   
   .blog-content h2 {
     font-size: 1.5rem;
-    color: #00ffc8;
+    color: #ffd387;
     margin-bottom: 0.5rem;
   }
   
@@ -66,7 +66,7 @@
   
   .blog-readmore {
     display: inline-block;
-    color: #00ffc8;
+    color: #ffd387;
     font-weight: bold;
     text-decoration: none;
     border-bottom: 1px solid transparent;
@@ -74,6 +74,6 @@
   }
   
   .blog-readmore:hover {
-    border-color: #00ffc8;
+    border-color: #ffd387;
   }
   
