@@ -4,13 +4,13 @@
   justify-content: center;
   align-items: center;
   min-height: calc(100vh - 120px);
-  background: radial-gradient(circle at top, rgba(0, 255, 200, 0.08), transparent 40%), #070b16;
+  background: radial-gradient(circle at top, rgba(255, 211, 135, 0.08), transparent 40%), #070b16;
 }
 
 .custom-order-success-card {
   width: min(900px, 100%);
   background: rgba(10, 18, 45, 0.98);
-  border: 1px solid rgba(0, 255, 200, 0.18);
+  border: 1px solid rgba(255, 211, 135, 0.18);
   border-radius: 18px;
   padding: 32px;
   color: #e6f1ff;
@@ -18,7 +18,7 @@
 }
 
 .custom-order-success-card h2 {
-  color: #64ffda;
+  color: #ffd387;
   margin-bottom: 16px;
 }
 
@@ -44,15 +44,15 @@
 .custom-order-summary-block {
   padding: 16px;
   border-radius: 12px;
-  border: 1px solid rgba(0, 255, 200, 0.15);
-  background: rgba(0, 255, 200, 0.05);
+  border: 1px solid rgba(255, 211, 135, 0.15);
+  background: rgba(255, 211, 135, 0.05);
   display: grid;
   gap: 8px;
 }
 
 .custom-order-summary-block h3 {
   margin: 0 0 8px;
-  color: #00ffc8;
+  color: #ffd387;
   font-size: 1rem;
   text-transform: uppercase;
   letter-spacing: 1px;
@@ -75,14 +75,14 @@
 }
 
 .custom-order-success-details strong {
-  color: #00ffc8;
+  color: #ffd387;
 }
 
 .custom-order-success-message {
   margin-top: 24px;
   padding: 18px;
-  background: rgba(0, 255, 200, 0.08);
-  border: 1px solid rgba(0, 255, 200, 0.15);
+  background: rgba(255, 211, 135, 0.08);
+  border: 1px solid rgba(255, 211, 135, 0.15);
   border-radius: 12px;
   color: #d7f9ea;
 }
@@ -91,8 +91,8 @@
   margin-top: 20px;
   padding: 16px;
   border-radius: 12px;
-  background: rgba(100, 255, 218, 0.08);
-  border: 1px solid rgba(100, 255, 218, 0.2);
+  background: rgba(255, 211, 135, 0.08);
+  border: 1px solid rgba(255, 211, 135, 0.2);
   display: grid;
   gap: 8px;
 }
@@ -105,7 +105,7 @@
 }
 
 .custom-order-success-reminder a {
-  color: #64ffda;
+  color: #ffd387;
   font-weight: 600;
   text-decoration: none;
   word-break: break-all;
@@ -114,9 +114,9 @@
 .custom-order-success-copy {
   padding: 10px 16px;
   border-radius: 10px;
-  border: 1px solid rgba(100, 255, 218, 0.5);
-  background: rgba(100, 255, 218, 0.14);
-  color: #64ffda;
+  border: 1px solid rgba(255, 211, 135, 0.5);
+  background: rgba(255, 211, 135, 0.14);
+  color: #ffd387;
   font-weight: 600;
   cursor: pointer;
 }
@@ -144,8 +144,8 @@
   display: inline-block;
   padding: 14px 22px;
   border-radius: 10px;
-  border: 1px solid #00ffc8;
-  color: #00ffc8;
+  border: 1px solid #ffd387;
+  color: #ffd387;
   text-decoration: none;
   font-weight: bold;
   background: transparent;
@@ -155,7 +155,7 @@
   display: inline-block;
   margin-top: 24px;
   padding: 14px 22px;
-  background: #00ffc8;
+  background: #ffd387;
   color: #071219;
   font-weight: bold;
   border-radius: 10px;
