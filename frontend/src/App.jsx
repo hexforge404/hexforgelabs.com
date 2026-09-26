@@ -24,6 +24,7 @@ import CustomOrderSuccessPage from 'pages/CustomOrderSuccessPage';
 import LoginPage from 'pages/LoginPage';          // admin login
 import BlogPage from 'pages/BlogPage';
 import HomePage from 'pages/HomePage';
+import CustomLandingPage from 'pages/CustomLandingPage';
 import BlogPost from 'pages/BlogPost';
 import AdminWorkOrderPrintPage from 'pages/AdminWorkOrderPrintPage';
 import ChatPage from 'pages/ChatPage';
@@ -319,6 +320,9 @@ const MainApp = () => {
             <Route path="/portfolio" element={<PortfolioPage />} />
             <Route path="/work" element={<Navigate to="/portfolio" replace />} />
             <Route path="/help" element={<HelpPage />} />
+
+            {/* Published campaign pages live at their chosen root slug. */}
+            <Route path="/:slug" element={<CustomLandingPage />} />
 
             {/* Fallback */}
             <Route path="*" element={<Navigate to="/" />} />
