@@ -276,6 +276,100 @@ router.put('/landing-page', async (req, res) => {
 });
 
 
+
+const LandingPage = require('../models/LandingPage');
+const reservedLandingSlugs = new Set([
+  'store', 'admin', 'admin-login', 'orders', 'order', 'login', 'register', 'account',
+  'success', 'custom-order-success', 'blog', 'chat', 'assistant', 'script-lab',
+  'memory', 'heightmap', 'surface', 'funeral-homes', 'funeral-home', 'funeralhome',
+  'memorial', 'free-photo-check', 'portfolio', 'work', 'help', 'api'
+]);
+const landingText = (value, max = 500) => sanitizeString(value).slice(0, max);
+const landingImage = (value) => {
+  const url = landingText(value, 500);
+  return /^\/(?:uploads|images)\/[a-z0-9/_.,%~-]+$/i.test(url) ? url : '';
+};
+const landingLink = (value) => {
+  const url = landingText(value, 200);
+  return /^\/(?!\/)[a-z0-9/?=&%#._-]*$/i.test(url) ? url : '';
+};
+const cleanLandingPage = (body) => ({
+  title: landingText(body.title, 120),
+  status: body.status === 'published' ? 'published' : 'draft',
+  eyebrow: landingText(body.eyebrow, 100),
+  headline: landingText(body.headline, 180),
+  introduction: landingText(body.introduction, 2000),
+  heroImage: landingImage(body.heroImage),
+  heroAlt: landingText(body.heroAlt, 200),
+  heroConcept: body.heroConcept === true,
+  primaryCtaText: landingText(body.primaryCtaText, 100),
+  primaryCtaLink: landingLink(body.primaryCtaLink),
+  sections: (Array.isArray(body.sections) ? body.sections : []).slice(0, 12).map(item => ({
+    heading: landingText(item.heading, 160), body: landingText(item.body, 3000)
+  })),
+  images: (Array.isArray(body.images) ? body.images : []).slice(0, 30).map(item => ({
+    url: landingImage(item.url),
+    alt: landingText(item.alt, 200),
+    caption: landingText(item.caption, 200),
+    concept: item.concept === true
+  })).filter(item => item.url),
+  seo: {
+    title: landingText(body.seo?.title, 160),
+    description: landingText(body.seo?.description, 300)
+  }
+});
+const validateLandingPage = (page) => {
+  if (!page.title || !page.headline) return 'Title and headline are required.';
+  if (page.status === 'published' && (!page.heroImage || !page.heroAlt)) {
+    return 'A published page needs a hero image and description.';
+  }
+  return '';
+};
+
+router.get('/landing-pages', async (req, res) => {
+  try {
+    const pages = await LandingPage.find().sort({ updatedAt: -1 }).lean();
+    return res.json({ success: true, pages });
+  } catch (err) {
+    console.error('[LANDING PAGES] List failed:', err);
+    return res.status(500).json({ success: false, error: 'Could not list landing pages' });
+  }
+});
+
+router.post('/landing-pages', async (req, res) => {
+  try {
+    const slug = sanitizeSlug(req.body?.slug);
+    if (!slug || slug !== req.body?.slug || reservedLandingSlugs.has(slug)) {
+      return res.status(400).json({ success: false, error: 'Choose an unused, lowercase page slug.' });
+    }
+    const page = cleanLandingPage(req.body || {});
+    const invalid = validateLandingPage(page);
+    if (invalid) return res.status(400).json({ success: false, error: invalid });
+    const created = await LandingPage.create({ ...page, slug });
+    return res.status(201).json({ success: true, page: created });
+  } catch (err) {
+    if (err.code === 11000) return res.status(409).json({ success: false, error: 'Page URL already exists.' });
+    console.error('[LANDING PAGES] Create failed:', err);
+    return res.status(500).json({ success: false, error: 'Could not create landing page' });
+  }
+});
+
+router.put('/landing-pages/:slug', async (req, res) => {
+  try {
+    const page = cleanLandingPage(req.body || {});
+    const invalid = validateLandingPage(page);
+    if (invalid) return res.status(400).json({ success: false, error: invalid });
+    const updated = await LandingPage.findOneAndUpdate(
+      { slug: req.params.slug }, { $set: page }, { new: true, runValidators: true }
+    );
+    if (!updated) return res.status(404).json({ success: false, error: 'Page not found' });
+    return res.json({ success: true, page: updated });
+  } catch (err) {
+    console.error('[LANDING PAGES] Save failed:', err);
+    return res.status(500).json({ success: false, error: 'Could not save landing page' });
+  }
+});
+
 const hasAnyRole = (admin, allowedRoles) => {
   if (!admin?.loggedIn) return false;
   if (!Array.isArray(admin.roles) || admin.roles.length === 0) return true;
