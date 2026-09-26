@@ -39,6 +39,22 @@ function CampaignPageEditor() {
   const listChange = (key, index, field, value) => setForm(current => ({
     ...current, [key]: current[key].map((item, i) => i === index ? { ...item, [field]: value } : item)
   }));
+  const uploadImage = async (target, index, event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setError(''); setMessage('');
+    const payload = new FormData();
+    payload.append('image', file);
+    try {
+      const { data } = await axios.post(`${API_BASE_URL}/admin/upload-image`, payload, { withCredentials: true });
+      if (target === 'hero') change('heroImage', data.path);
+      else listChange('images', index, 'url', data.path);
+      setMessage('Image uploaded. Save the page to use it.');
+    } catch (err) {
+      setError(err.response?.data?.error || 'Image upload failed.');
+    }
+    event.target.value = '';
+  };
   const chooseImage = url => {
     if (picker === 'hero') change('heroImage', url);
     else if (picker?.type === 'gallery') listChange('images', picker.index, 'url', url);
@@ -89,6 +105,7 @@ function CampaignPageEditor() {
           <div className="campaign-editor-row">
             <label>Hero image path<input value={form.heroImage || ''} onChange={e => change('heroImage', e.target.value)} placeholder="/uploads/..." /></label>
             <button type="button" onClick={() => setPicker('hero')}>Choose hero image</button>
+            <label>Upload hero image<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={event => uploadImage('hero', null, event)} /></label>
           </div>
           <label>Hero image description<input value={form.heroAlt || ''} onChange={e => change('heroAlt', e.target.value)} /></label>
           <label className="campaign-checkbox"><input type="checkbox" checked={!!form.heroConcept} onChange={e => change('heroConcept', e.target.checked)} /> Hero is a concept preview</label>
@@ -111,6 +128,7 @@ function CampaignPageEditor() {
               <div className="campaign-editor-row">
                 <label>Image path<input value={item.url} onChange={e => listChange('images', index, 'url', e.target.value)} /></label>
                 <button type="button" onClick={() => setPicker({ type: 'gallery', index })}>Choose image</button>
+                <label>Upload image<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={event => uploadImage('gallery', index, event)} /></label>
               </div>
               <label>Description<input value={item.alt} onChange={e => listChange('images', index, 'alt', e.target.value)} /></label>
               <label>Caption<input value={item.caption} onChange={e => listChange('images', index, 'caption', e.target.value)} /></label>
