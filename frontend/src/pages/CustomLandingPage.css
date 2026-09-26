@@ -1,0 +1,20 @@
+.campaign-page { max-width: 1200px; margin: 0 auto; padding: clamp(2rem,5vw,5rem) 1.25rem; color: #f1f4fa; }
+.campaign-hero { display: grid; grid-template-columns: 1.1fr .9fr; align-items: center; gap: clamp(2rem,5vw,5rem); }
+.campaign-eyebrow { color: #ffd387; text-transform: uppercase; letter-spacing: .14em; font-weight: 800; font-size: .82rem; }
+.campaign-copy h1 { font-size: clamp(2.4rem,5vw,4.8rem); line-height: 1.08; margin: .5rem 0 1.25rem; }
+.campaign-copy > p:not(.campaign-eyebrow) { color: #c7d0df; font-size: 1.12rem; line-height: 1.7; white-space: pre-line; }
+.campaign-cta { display: inline-flex; margin-top: 1rem; padding: .9rem 1.3rem; background: linear-gradient(135deg,#ffd387,#ffa76d); border-radius: 8px; color: #08101f; font-weight: 800; text-decoration: none; }
+.campaign-visual, .campaign-grid figure { position: relative; margin: 0; border: 1px solid rgba(255,211,135,.22); border-radius: 12px; overflow: hidden; background: #111923; }
+.campaign-visual img { display: block; width: 100%; aspect-ratio: 4/3; object-fit: cover; }
+.campaign-visual figcaption { position: absolute; bottom: 12px; left: 12px; padding: .35rem .6rem; border-radius: 5px; background: #08101f; color: #ffd387; }
+.campaign-sections { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 1.25rem; margin: 4rem 0; }
+.campaign-section { padding: 1.6rem; border: 1px solid rgba(255,211,135,.18); border-radius: 10px; background: #141821; }
+.campaign-section h2,.campaign-gallery h2 { color: #ffd387; margin-top: 0; }
+.campaign-section p { color: #c7d0df; line-height: 1.7; white-space: pre-line; }
+.campaign-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 1rem; }
+.campaign-grid img { display: block; width: 100%; aspect-ratio: 4/3; object-fit: cover; }
+.campaign-grid figcaption { padding: .8rem; color: #c7d0df; }
+.campaign-grid figcaption strong { color: #ffd387; }
+.campaign-message { min-height: 45vh; }
+@media (max-width: 760px) { .campaign-hero,.campaign-sections { grid-template-columns: 1fr; } .campaign-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media (max-width: 480px) { .campaign-grid { grid-template-columns: 1fr; } }
