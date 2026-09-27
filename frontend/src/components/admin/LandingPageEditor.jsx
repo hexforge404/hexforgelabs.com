@@ -440,7 +440,7 @@ const LandingPageEditor = () => {
     <div className="landing-page-editor">
       <div className="editor-header">
         <div>
-          <h2 className="section-header">Landing Page Editor</h2>
+          <h2 className="section-header">Homepage Editor</h2>
           <p className="editor-intro">
             Use this page to control the homepage hero image, featured photos, reviews, announcement banner, and trust badges without editing code.
           </p>

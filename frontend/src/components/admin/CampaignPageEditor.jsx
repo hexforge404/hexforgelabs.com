@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import API_BASE_URL from '../../utils/apiBase';
 import ImagePicker from './ImagePicker';
+import FuneralHomePageEditor from './FuneralHomePageEditor';
+import MemorialPageEditor from './MemorialPageEditor';
 import './CampaignPageEditor.css';
 
 const blank = () => ({
@@ -9,6 +11,21 @@ const blank = () => ({
   heroImage: '', heroAlt: '', heroConcept: false, primaryCtaText: 'Request a free photo check',
   primaryCtaLink: '/free-photo-check', sections: [], images: [], seo: { title: '', description: '' }
 });
+const systemPages = [
+  {
+    slug: 'memorial',
+    title: 'Memorial / Family Page',
+    status: 'system',
+    path: '/memorial'
+  },
+  {
+    slug: 'funeral-homes',
+    title: 'Funeral Home Director',
+    status: 'system',
+    path: '/funeral-homes'
+  }
+];
+
 const templates = {
   'pet-memorial': { title: 'Pet Memorial Photo Lights', eyebrow: 'Honor a lifelong companion',
     headline: 'Keep their memory glowing', introduction: 'A custom photo light concept to celebrate the pets who are family. Explore the idea and send us a photo for a free review.' },
@@ -20,9 +37,11 @@ const templates = {
 
 function CampaignPageEditor() {
   const [pages, setPages] = useState([]);
+  const [selectedSlug, setSelectedSlug] = useState('');
   const [form, setForm] = useState(null);
   const [picker, setPicker] = useState(null);
   const [preview, setPreview] = useState(false);
+  const [systemEditor, setSystemEditor] = useState(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -61,9 +80,35 @@ function CampaignPageEditor() {
     setPicker(null);
   };
   const start = slug => {
+    setSelectedSlug('');
     setMessage(''); setError(''); setPreview(false);
     setForm({ ...blank(), slug, ...(templates[slug] || {}), heroConcept: Boolean(templates[slug]) });
   };
+
+  const editSelected = () => {
+    if (selectedSlug === 'funeral-homes' || selectedSlug === 'memorial') {
+      setForm(null);
+      setSystemEditor(selectedSlug);
+      setError('');
+      setMessage('');
+      setPreview(false);
+      return;
+    }
+
+    const page = pages.find(item => item.slug === selectedSlug);
+    if (!page) return;
+
+    setSystemEditor(null);
+    setForm(page);
+    setError('');
+    setMessage('');
+    setPreview(false);
+  };
+
+  const selectedSystemPage = systemPages.find(item => item.slug === selectedSlug);
+  const selectedManagedPage = pages.find(item => item.slug === selectedSlug);
+  const selectedPage = selectedSystemPage || selectedManagedPage;
+
   const save = async () => {
     setSaving(true); setError(''); setMessage('');
     try {
@@ -80,18 +125,93 @@ function CampaignPageEditor() {
     <section className="campaign-editor">
       <h2>Campaign landing pages</h2>
       <p>Build a draft, select images from the storefront gallery, preview it here, then publish when ready.</p>
-      <div className="campaign-editor-list">
-        <button type="button" onClick={() => start('')}>+ Blank page</button>
-        {Object.keys(templates).filter(slug => !pages.some(page => page.slug === slug)).map(slug => (
-          <button type="button" key={slug} onClick={() => start(slug)}>+ {templates[slug].title}</button>
-        ))}
-        {pages.map(page => (
-          <button type="button" key={page.slug} onClick={() => { setForm(page); setError(''); setMessage(''); setPreview(false); }}>
-            {page.title} · {page.status}
+      <div className="campaign-editor-existing">
+        <h3>Existing landing pages</h3>
+
+        <div className="campaign-editor-row">
+          <label>
+            Select landing page
+            <select
+              value={selectedSlug}
+              onChange={e => setSelectedSlug(e.target.value)}
+            >
+              <option value="">Choose a landing page…</option>
+              {systemPages.map(page => (
+                <option key={`system-${page.slug}`} value={page.slug}>
+                  {page.title} · system · {page.path}
+                </option>
+              ))}
+              {pages.map(page => (
+                <option key={page.slug} value={page.slug}>
+                  {page.title} · {page.status} · /{page.slug}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <button
+            type="button"
+            onClick={editSelected}
+            disabled={
+              !selectedManagedPage &&
+              !['funeral-homes', 'memorial'].includes(selectedSlug)
+            }
+          >
+            Edit selected
           </button>
-        ))}
+
+          {selectedPage && (selectedSystemPage || selectedManagedPage?.status === 'published') && (
+            <a
+              href={selectedSystemPage?.path || `/${selectedManagedPage.slug}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Open public page
+            </a>
+          )}
+        </div>
+
+        {selectedSystemPage && !systemEditor && (
+          <p>
+            Specialized system page · Select Edit selected to manage its content.
+          </p>
+        )}
+
+        {pages.length === 0 && (
+          <p>No campaign landing pages have been created yet.</p>
+        )}
       </div>
-      {form && (
+
+      {systemEditor === 'funeral-homes' && (
+        <FuneralHomePageEditor
+          onClose={() => {
+            setSystemEditor(null);
+            setSelectedSlug('funeral-homes');
+          }}
+        />
+      )}
+
+      {systemEditor === 'memorial' && (
+        <MemorialPageEditor
+          onClose={() => {
+            setSystemEditor(null);
+            setSelectedSlug('memorial');
+          }}
+        />
+      )}
+
+      {!systemEditor && <div className="campaign-editor-create">
+        <h3>Create new landing page</h3>
+        <div className="campaign-editor-list">
+          <button type="button" onClick={() => start('')}>+ Blank page</button>
+          {Object.keys(templates).filter(slug => !pages.some(page => page.slug === slug)).map(slug => (
+            <button type="button" key={slug} onClick={() => start(slug)}>
+              + {templates[slug].title}
+            </button>
+          ))}
+        </div>
+      </div>}
+      {!systemEditor && form && (
         <div className="campaign-editor-form">
           <div className="campaign-editor-row">
             <label>Page URL slug<input value={form.slug} disabled={pages.some(page => page.slug === form.slug)} onChange={e => change('slug', e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))} placeholder="pet-memorial" /></label>
