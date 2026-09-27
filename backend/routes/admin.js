@@ -12,6 +12,10 @@ const PromoAuditLog = require('../models/PromoAuditLog');
 const StripeWebhookEvent = require('../models/StripeWebhookEvent');
 const { getDefaultLandingPageConfig } = require('../utils/defaultLandingPageConfig');
 const LandingPageConfig = require('../models/LandingPageConfig');
+const { getDefaultFuneralHomePageConfig } = require('../utils/defaultFuneralHomePageConfig');
+const FuneralHomePageConfig = require('../models/FuneralHomePageConfig');
+const { getDefaultMemorialPageConfig } = require('../utils/defaultMemorialPageConfig');
+const MemorialPageConfig = require('../models/MemorialPageConfig');
 const stripe = process.env.STRIPE_SECRET_KEY ? require('stripe')(process.env.STRIPE_SECRET_KEY) : null;
 const multer = require('multer');
 const path = require('path');
@@ -204,6 +208,239 @@ const sanitizeFeaturedProductSlugs = (items) => {
     .filter(Boolean);
 };
 
+const funeralText = (value, max = 500) =>
+  sanitizeString(value).slice(0, max);
+
+const funeralImage = (value) => {
+  const url = funeralText(value, 500);
+  return /^\/(?:uploads|images)\/[a-z0-9/_.,%~-]+$/i.test(url) ? url : '';
+};
+
+const funeralInternalLink = (value) => {
+  const url = funeralText(value, 200);
+  return /^\/(?!\/)[a-z0-9/?=&%#._-]*$/i.test(url) ? url : '';
+};
+
+const sanitizeFuneralHomePageConfig = (body) => ({
+  hero: {
+    eyebrow: funeralText(body?.hero?.eyebrow, 120),
+    headline: funeralText(body?.hero?.headline, 200),
+    introPrimary: funeralText(body?.hero?.introPrimary, 2500),
+    introSecondary: funeralText(body?.hero?.introSecondary, 2500),
+    primaryCtaText: funeralText(body?.hero?.primaryCtaText, 120),
+    primaryCtaSubject: funeralText(body?.hero?.primaryCtaSubject, 180),
+    secondaryCtaText: funeralText(body?.hero?.secondaryCtaText, 120),
+    secondaryCtaLink: funeralInternalLink(body?.hero?.secondaryCtaLink),
+    imageUrl: funeralImage(body?.hero?.imageUrl),
+    imageAlt: funeralText(body?.hero?.imageAlt, 240),
+    imageCaptionTitle: funeralText(body?.hero?.imageCaptionTitle, 160),
+    imageCaptionText: funeralText(body?.hero?.imageCaptionText, 300),
+  },
+  referral: {
+    heading: funeralText(body?.referral?.heading, 200),
+    body: funeralText(body?.referral?.body, 3000),
+    callout: funeralText(body?.referral?.callout, 1000),
+  },
+  familyReceives: {
+    heading: funeralText(body?.familyReceives?.heading, 200),
+    cards: (Array.isArray(body?.familyReceives?.cards)
+      ? body.familyReceives.cards
+      : []
+    ).slice(0, 6).map((item) => ({
+      title: funeralText(item?.title, 160),
+      body: funeralText(item?.body, 1500),
+    })),
+    privacyText: funeralText(body?.familyReceives?.privacyText, 1000),
+  },
+  referralSteps: {
+    heading: funeralText(body?.referralSteps?.heading, 200),
+    steps: (Array.isArray(body?.referralSteps?.steps)
+      ? body.referralSteps.steps
+      : []
+    ).slice(0, 10).map((item) => funeralText(item, 1000)).filter(Boolean),
+  },
+  directorSample: {
+    heading: funeralText(body?.directorSample?.heading, 200),
+    body: funeralText(body?.directorSample?.body, 2500),
+  },
+  contact: {
+    heading: funeralText(body?.contact?.heading, 200),
+    bodyBeforeEmail: funeralText(body?.contact?.bodyBeforeEmail, 1500),
+    bodyAfterEmail: funeralText(body?.contact?.bodyAfterEmail, 1500),
+  },
+  seo: {
+    title: funeralText(body?.seo?.title, 180),
+    description: funeralText(body?.seo?.description, 400),
+  },
+});
+
+const buildFuneralHomePageConfig = (doc) => {
+  const defaults = getDefaultFuneralHomePageConfig();
+  const data = doc || {};
+
+  return {
+    hero: { ...defaults.hero, ...(data.hero || {}) },
+    referral: { ...defaults.referral, ...(data.referral || {}) },
+    familyReceives: {
+      ...defaults.familyReceives,
+      ...(data.familyReceives || {}),
+      cards: Array.isArray(data.familyReceives?.cards) && data.familyReceives.cards.length
+        ? data.familyReceives.cards
+        : defaults.familyReceives.cards,
+    },
+    referralSteps: {
+      ...defaults.referralSteps,
+      ...(data.referralSteps || {}),
+      steps: Array.isArray(data.referralSteps?.steps) && data.referralSteps.steps.length
+        ? data.referralSteps.steps
+        : defaults.referralSteps.steps,
+    },
+    directorSample: { ...defaults.directorSample, ...(data.directorSample || {}) },
+    contact: { ...defaults.contact, ...(data.contact || {}) },
+    seo: { ...defaults.seo, ...(data.seo || {}) },
+  };
+};
+
+const memorialText = (value, max = 500) =>
+  sanitizeString(value).slice(0, max);
+
+const memorialImage = (value) => {
+  const url = memorialText(value, 500);
+  return /^\/(?:uploads|images)\/[a-z0-9/_.,%~-]+$/i.test(url) ? url : '';
+};
+
+const memorialInternalLink = (value) => {
+  const url = memorialText(value, 200);
+
+  if (/^#[a-z0-9_-]+$/i.test(url)) {
+    return url;
+  }
+
+  return /^\/(?!\/)[a-z0-9/?=&%#._-]*$/i.test(url) ? url : '';
+};
+
+const sanitizeMemorialPageConfig = (body) => {
+  const defaults = getDefaultMemorialPageConfig();
+  const incomingItems = Array.isArray(body?.packages?.items)
+    ? body.packages.items
+    : [];
+
+  return {
+    hero: {
+      eyebrow: memorialText(body?.hero?.eyebrow, 120),
+      headline: memorialText(body?.hero?.headline, 220),
+      introPrimary: memorialText(body?.hero?.introPrimary, 2500),
+      introSecondary: memorialText(body?.hero?.introSecondary, 2500),
+      primaryCtaText: memorialText(body?.hero?.primaryCtaText, 120),
+      primaryCtaLink: memorialInternalLink(body?.hero?.primaryCtaLink),
+      secondaryCtaText: memorialText(body?.hero?.secondaryCtaText, 120),
+      secondaryCtaLink: memorialInternalLink(body?.hero?.secondaryCtaLink),
+      privacyText: memorialText(body?.hero?.privacyText, 1000),
+      imageUrl: memorialImage(body?.hero?.imageUrl),
+      imageAlt: memorialText(body?.hero?.imageAlt, 240),
+      imageCaption: memorialText(body?.hero?.imageCaption, 400),
+    },
+
+    howItWorks: {
+      heading: memorialText(body?.howItWorks?.heading, 200),
+      steps: (Array.isArray(body?.howItWorks?.steps)
+        ? body.howItWorks.steps
+        : []
+      ).slice(0, 10).map((item) => memorialText(item, 1000)).filter(Boolean),
+    },
+
+    packages: {
+      heading: memorialText(body?.packages?.heading, 200),
+      items: defaults.packages.items.map((defaultItem, index) => {
+        const item = incomingItems[index] || {};
+        return {
+          productSlug: defaultItem.productSlug,
+          title: memorialText(item?.title, 180),
+          description: memorialText(item?.description, 1800),
+          bestFor: memorialText(item?.bestFor, 700),
+          imageAlt: memorialText(item?.imageAlt, 240),
+          buttonText: memorialText(item?.buttonText, 120),
+          buttonLink: memorialInternalLink(item?.buttonLink),
+          statusText: memorialText(item?.statusText, 100),
+          availabilityOption: defaultItem.availabilityOption,
+        };
+      }),
+    },
+
+    photoGuidance: {
+      heading: memorialText(body?.photoGuidance?.heading, 200),
+      body: memorialText(body?.photoGuidance?.body, 2500),
+      tips: (Array.isArray(body?.photoGuidance?.tips)
+        ? body.photoGuidance.tips
+        : []
+      ).slice(0, 10).map((item) => memorialText(item, 1000)).filter(Boolean),
+    },
+
+    optionalKeepsake: {
+      heading: memorialText(body?.optionalKeepsake?.heading, 200),
+      body: memorialText(body?.optionalKeepsake?.body, 3000),
+    },
+
+    contact: {
+      heading: memorialText(body?.contact?.heading, 200),
+      bodyBeforeEmail: memorialText(body?.contact?.bodyBeforeEmail, 1500),
+      bodyAfterEmail: memorialText(body?.contact?.bodyAfterEmail, 1500),
+    },
+
+    seo: {
+      title: memorialText(body?.seo?.title, 180),
+      description: memorialText(body?.seo?.description, 400),
+    },
+  };
+};
+
+const buildMemorialPageConfig = (doc) => {
+  const defaults = getDefaultMemorialPageConfig();
+  const data = doc || {};
+  const storedItems = Array.isArray(data.packages?.items)
+    ? data.packages.items
+    : [];
+
+  return {
+    hero: { ...defaults.hero, ...(data.hero || {}) },
+
+    howItWorks: {
+      ...defaults.howItWorks,
+      ...(data.howItWorks || {}),
+      steps: Array.isArray(data.howItWorks?.steps) && data.howItWorks.steps.length
+        ? data.howItWorks.steps
+        : defaults.howItWorks.steps,
+    },
+
+    packages: {
+      ...defaults.packages,
+      ...(data.packages || {}),
+      items: defaults.packages.items.map((defaultItem, index) => ({
+        ...defaultItem,
+        ...(storedItems[index] || {}),
+        productSlug: defaultItem.productSlug,
+        availabilityOption: defaultItem.availabilityOption,
+      })),
+    },
+
+    photoGuidance: {
+      ...defaults.photoGuidance,
+      ...(data.photoGuidance || {}),
+      tips: Array.isArray(data.photoGuidance?.tips) && data.photoGuidance.tips.length
+        ? data.photoGuidance.tips
+        : defaults.photoGuidance.tips,
+    },
+
+    optionalKeepsake: {
+      ...defaults.optionalKeepsake,
+      ...(data.optionalKeepsake || {}),
+    },
+
+    contact: { ...defaults.contact, ...(data.contact || {}) },
+    seo: { ...defaults.seo, ...(data.seo || {}) },
+  };
+};
+
 const sanitizeLandingPageConfig = (body) => ({
   hero: {
     headline: sanitizeString(body?.hero?.headline),
@@ -276,6 +513,82 @@ router.put('/landing-page', async (req, res) => {
 });
 
 
+
+router.get('/funeral-home-page', async (req, res) => {
+  try {
+    const config = await FuneralHomePageConfig.findOne().lean();
+    return res.json({
+      success: true,
+      config: buildFuneralHomePageConfig(config),
+    });
+  } catch (err) {
+    console.error('[FUNERAL HOME PAGE] Failed to load config:', err);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to load funeral home page config',
+    });
+  }
+});
+
+router.put('/funeral-home-page', async (req, res) => {
+  try {
+    const sanitized = sanitizeFuneralHomePageConfig(req.body || {});
+    const updated = await FuneralHomePageConfig.findOneAndUpdate(
+      {},
+      { $set: sanitized },
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    ).lean();
+
+    return res.json({
+      success: true,
+      config: buildFuneralHomePageConfig(updated),
+    });
+  } catch (err) {
+    console.error('[FUNERAL HOME PAGE] Failed to save config:', err);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to save funeral home page config',
+    });
+  }
+});
+
+router.get('/memorial-page', async (req, res) => {
+  try {
+    const config = await MemorialPageConfig.findOne().lean();
+    return res.json({
+      success: true,
+      config: buildMemorialPageConfig(config),
+    });
+  } catch (err) {
+    console.error('[MEMORIAL PAGE] Failed to load config:', err);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to load memorial page config',
+    });
+  }
+});
+
+router.put('/memorial-page', async (req, res) => {
+  try {
+    const sanitized = sanitizeMemorialPageConfig(req.body || {});
+    const updated = await MemorialPageConfig.findOneAndUpdate(
+      {},
+      { $set: sanitized },
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    ).lean();
+
+    return res.json({
+      success: true,
+      config: buildMemorialPageConfig(updated),
+    });
+  } catch (err) {
+    console.error('[MEMORIAL PAGE] Failed to save config:', err);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to save memorial page config',
+    });
+  }
+});
 
 const LandingPage = require('../models/LandingPage');
 const reservedLandingSlugs = new Set([
