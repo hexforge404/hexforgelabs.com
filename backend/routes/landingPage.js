@@ -6,6 +6,8 @@ const FuneralHomePageConfig = require('../models/FuneralHomePageConfig');
 const { getDefaultFuneralHomePageConfig } = require('../utils/defaultFuneralHomePageConfig');
 const MemorialPageConfig = require('../models/MemorialPageConfig');
 const { getDefaultMemorialPageConfig } = require('../utils/defaultMemorialPageConfig');
+const PortfolioPageConfig = require('../models/PortfolioPageConfig');
+const { getDefaultPortfolioPageConfig } = require('../utils/defaultPortfolioPageConfig');
 
 const buildConfig = (doc) => {
   const defaultConfig = getDefaultLandingPageConfig();
@@ -149,6 +151,55 @@ router.get('/memorial', async (req, res) => {
     return res.status(500).json({
       success: false,
       error: 'Failed to load memorial page config',
+    });
+  }
+});
+
+const buildPortfolioConfig = (doc) => {
+  const defaults = getDefaultPortfolioPageConfig();
+  const data = doc || {};
+
+  return {
+    hero: { ...defaults.hero, ...(data.hero || {}) },
+
+    guide: {
+      ...defaults.guide,
+      ...(data.guide || {}),
+      prompts: Array.isArray(data.guide?.prompts) && data.guide.prompts.length
+        ? data.guide.prompts
+        : defaults.guide.prompts,
+    },
+
+    sections: Array.isArray(data.sections) && data.sections.length
+      ? data.sections
+      : defaults.sections,
+
+    currentQueue: {
+      ...defaults.currentQueue,
+      ...(data.currentQueue || {}),
+      items: Array.isArray(data.currentQueue?.items) && data.currentQueue.items.length
+        ? data.currentQueue.items
+        : defaults.currentQueue.items,
+    },
+
+    contact: { ...defaults.contact, ...(data.contact || {}) },
+    contactForm: { ...defaults.contactForm, ...(data.contactForm || {}) },
+    seo: { ...defaults.seo, ...(data.seo || {}) },
+  };
+};
+
+router.get('/portfolio', async (req, res) => {
+  try {
+    const config = await PortfolioPageConfig.findOne().lean();
+    return res.json({
+      success: true,
+      config: buildPortfolioConfig(config),
+    });
+  } catch (err) {
+    console.error('Failed to load portfolio page config:', err);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to load portfolio page config',
     });
   }
 });

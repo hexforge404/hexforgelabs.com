@@ -16,6 +16,8 @@ const { getDefaultFuneralHomePageConfig } = require('../utils/defaultFuneralHome
 const FuneralHomePageConfig = require('../models/FuneralHomePageConfig');
 const { getDefaultMemorialPageConfig } = require('../utils/defaultMemorialPageConfig');
 const MemorialPageConfig = require('../models/MemorialPageConfig');
+const { getDefaultPortfolioPageConfig } = require('../utils/defaultPortfolioPageConfig');
+const PortfolioPageConfig = require('../models/PortfolioPageConfig');
 const stripe = process.env.STRIPE_SECRET_KEY ? require('stripe')(process.env.STRIPE_SECRET_KEY) : null;
 const multer = require('multer');
 const path = require('path');
@@ -441,6 +443,99 @@ const buildMemorialPageConfig = (doc) => {
   };
 };
 
+const portfolioText = (value, max = 500) =>
+  sanitizeString(value).slice(0, max);
+
+const sanitizePortfolioPageConfig = (body) => ({
+  hero: {
+    eyebrow: portfolioText(body?.hero?.eyebrow, 120),
+    headline: portfolioText(body?.hero?.headline, 220),
+    subtitle: portfolioText(body?.hero?.subtitle, 1000),
+    body: portfolioText(body?.hero?.body, 3000),
+  },
+
+  guide: {
+    title: portfolioText(body?.guide?.title, 160),
+    intro: portfolioText(body?.guide?.intro, 1000),
+    prompts: (Array.isArray(body?.guide?.prompts)
+      ? body.guide.prompts
+      : []
+    ).slice(0, 12).map((item) => ({
+      label: portfolioText(item?.label, 180),
+      response: portfolioText(item?.response, 2000),
+      includeEmail: sanitizeBoolean(item?.includeEmail),
+    })).filter((item) => item.label || item.response),
+  },
+
+  sections: (Array.isArray(body?.sections)
+    ? body.sections
+    : []
+  ).slice(0, 12).map((section) => ({
+    title: portfolioText(section?.title, 200),
+    items: (Array.isArray(section?.items)
+      ? section.items
+      : []
+    ).slice(0, 20).map((item) => portfolioText(item, 1000)).filter(Boolean),
+  })).filter((section) => section.title || section.items.length),
+
+  currentQueue: {
+    heading: portfolioText(body?.currentQueue?.heading, 200),
+    items: (Array.isArray(body?.currentQueue?.items)
+      ? body.currentQueue.items
+      : []
+    ).slice(0, 30).map((item) => portfolioText(item, 1000)).filter(Boolean),
+  },
+
+  contact: {
+    heading: portfolioText(body?.contact?.heading, 200),
+    name: portfolioText(body?.contact?.name, 160),
+    location: portfolioText(body?.contact?.location, 200),
+    helpButtonText: portfolioText(body?.contact?.helpButtonText, 120),
+  },
+
+  contactForm: {
+    heading: portfolioText(body?.contactForm?.heading, 200),
+  },
+
+  seo: {
+    title: portfolioText(body?.seo?.title, 180),
+    description: portfolioText(body?.seo?.description, 400),
+  },
+});
+
+const buildPortfolioPageConfig = (doc) => {
+  const defaults = getDefaultPortfolioPageConfig();
+  const data = doc || {};
+
+  return {
+    hero: { ...defaults.hero, ...(data.hero || {}) },
+
+    guide: {
+      ...defaults.guide,
+      ...(data.guide || {}),
+      prompts: Array.isArray(data.guide?.prompts) && data.guide.prompts.length
+        ? data.guide.prompts
+        : defaults.guide.prompts,
+    },
+
+    sections: Array.isArray(data.sections) && data.sections.length
+      ? data.sections
+      : defaults.sections,
+
+    currentQueue: {
+      ...defaults.currentQueue,
+      ...(data.currentQueue || {}),
+      items: Array.isArray(data.currentQueue?.items) && data.currentQueue.items.length
+        ? data.currentQueue.items
+        : defaults.currentQueue.items,
+    },
+
+    contact: { ...defaults.contact, ...(data.contact || {}) },
+    contactForm: { ...defaults.contactForm, ...(data.contactForm || {}) },
+    seo: { ...defaults.seo, ...(data.seo || {}) },
+  };
+};
+
 const sanitizeLandingPageConfig = (body) => ({
   hero: {
     headline: sanitizeString(body?.hero?.headline),
@@ -586,6 +681,44 @@ router.put('/memorial-page', async (req, res) => {
     return res.status(500).json({
       success: false,
       error: 'Failed to save memorial page config',
+    });
+  }
+});
+
+router.get('/portfolio-page', async (req, res) => {
+  try {
+    const config = await PortfolioPageConfig.findOne().lean();
+    return res.json({
+      success: true,
+      config: buildPortfolioPageConfig(config),
+    });
+  } catch (err) {
+    console.error('[PORTFOLIO PAGE] Failed to load config:', err);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to load portfolio page config',
+    });
+  }
+});
+
+router.put('/portfolio-page', async (req, res) => {
+  try {
+    const sanitized = sanitizePortfolioPageConfig(req.body || {});
+    const updated = await PortfolioPageConfig.findOneAndUpdate(
+      {},
+      { $set: sanitized },
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    ).lean();
+
+    return res.json({
+      success: true,
+      config: buildPortfolioPageConfig(updated),
+    });
+  } catch (err) {
+    console.error('[PORTFOLIO PAGE] Failed to save config:', err);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to save portfolio page config',
     });
   }
 });
