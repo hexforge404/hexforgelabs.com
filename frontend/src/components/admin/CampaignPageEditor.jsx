@@ -4,6 +4,7 @@ import API_BASE_URL from '../../utils/apiBase';
 import ImagePicker from './ImagePicker';
 import FuneralHomePageEditor from './FuneralHomePageEditor';
 import MemorialPageEditor from './MemorialPageEditor';
+import PortfolioPageEditor from './PortfolioPageEditor';
 import './CampaignPageEditor.css';
 
 const blank = () => ({
@@ -23,6 +24,12 @@ const systemPages = [
     title: 'Funeral Home Director',
     status: 'system',
     path: '/funeral-homes'
+  },
+  {
+    slug: 'portfolio',
+    title: 'Technical Portfolio',
+    status: 'system',
+    path: '/portfolio'
   }
 ];
 
@@ -86,7 +93,7 @@ function CampaignPageEditor() {
   };
 
   const editSelected = () => {
-    if (selectedSlug === 'funeral-homes' || selectedSlug === 'memorial') {
+    if (['funeral-homes', 'memorial', 'portfolio'].includes(selectedSlug)) {
       setForm(null);
       setSystemEditor(selectedSlug);
       setError('');
@@ -154,7 +161,7 @@ function CampaignPageEditor() {
             onClick={editSelected}
             disabled={
               !selectedManagedPage &&
-              !['funeral-homes', 'memorial'].includes(selectedSlug)
+              !['funeral-homes', 'memorial', 'portfolio'].includes(selectedSlug)
             }
           >
             Edit selected
@@ -196,6 +203,15 @@ function CampaignPageEditor() {
           onClose={() => {
             setSystemEditor(null);
             setSelectedSlug('memorial');
+          }}
+        />
+      )}
+
+      {systemEditor === 'portfolio' && (
+        <PortfolioPageEditor
+          onClose={() => {
+            setSystemEditor(null);
+            setSelectedSlug('portfolio');
           }}
         />
       )}
