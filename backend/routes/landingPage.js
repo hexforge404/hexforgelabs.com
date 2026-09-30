@@ -7,7 +7,7 @@ const { getDefaultFuneralHomePageConfig } = require('../utils/defaultFuneralHome
 const MemorialPageConfig = require('../models/MemorialPageConfig');
 const { getDefaultMemorialPageConfig } = require('../utils/defaultMemorialPageConfig');
 const PortfolioPageConfig = require('../models/PortfolioPageConfig');
-const { getDefaultPortfolioPageConfig } = require('../utils/defaultPortfolioPageConfig');
+const { buildPortfolioPageConfig } = require('../utils/portfolioPageConfig');
 
 const buildConfig = (doc) => {
   const defaultConfig = getDefaultLandingPageConfig();
@@ -155,45 +155,12 @@ router.get('/memorial', async (req, res) => {
   }
 });
 
-const buildPortfolioConfig = (doc) => {
-  const defaults = getDefaultPortfolioPageConfig();
-  const data = doc || {};
-
-  return {
-    hero: { ...defaults.hero, ...(data.hero || {}) },
-
-    guide: {
-      ...defaults.guide,
-      ...(data.guide || {}),
-      prompts: Array.isArray(data.guide?.prompts) && data.guide.prompts.length
-        ? data.guide.prompts
-        : defaults.guide.prompts,
-    },
-
-    sections: Array.isArray(data.sections) && data.sections.length
-      ? data.sections
-      : defaults.sections,
-
-    currentQueue: {
-      ...defaults.currentQueue,
-      ...(data.currentQueue || {}),
-      items: Array.isArray(data.currentQueue?.items) && data.currentQueue.items.length
-        ? data.currentQueue.items
-        : defaults.currentQueue.items,
-    },
-
-    contact: { ...defaults.contact, ...(data.contact || {}) },
-    contactForm: { ...defaults.contactForm, ...(data.contactForm || {}) },
-    seo: { ...defaults.seo, ...(data.seo || {}) },
-  };
-};
-
 router.get('/portfolio', async (req, res) => {
   try {
     const config = await PortfolioPageConfig.findOne().lean();
     return res.json({
       success: true,
-      config: buildPortfolioConfig(config),
+      config: buildPortfolioPageConfig(config),
     });
   } catch (err) {
     console.error('Failed to load portfolio page config:', err);

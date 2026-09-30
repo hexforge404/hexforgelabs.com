@@ -11,6 +11,30 @@ const portfolioSectionSchema = new mongoose.Schema({
   items: [{ type: String, trim: true }]
 }, { _id: false });
 
+const portfolioScreenshotSchema = new mongoose.Schema({
+  src: { type: String, default: '', trim: true },
+  alt: { type: String, default: '', trim: true },
+  caption: { type: String, default: '', trim: true }
+}, { _id: false });
+
+const portfolioProjectSchema = new mongoose.Schema({
+  slug: { type: String, default: '', trim: true },
+  title: { type: String, default: '', trim: true },
+  category: { type: String, default: '', trim: true },
+  summary: { type: String, default: '', trim: true },
+  challenge: { type: String, default: '', trim: true },
+  workPerformed: [{ type: String, trim: true }],
+  technologies: [{ type: String, trim: true }],
+  verification: [{ type: String, trim: true }],
+  screenshots: [portfolioScreenshotSchema],
+  provenance: {
+    label: { type: String, default: '', trim: true },
+    baselineCommit: { type: String, default: '', trim: true },
+    evidenceCommit: { type: String, default: '', trim: true }
+  },
+  caseStudyPath: { type: String, default: '', trim: true }
+}, { _id: false });
+
 const portfolioPageConfigSchema = new mongoose.Schema({
   hero: {
     eyebrow: { type: String, default: '', trim: true },
@@ -26,6 +50,12 @@ const portfolioPageConfigSchema = new mongoose.Schema({
   },
 
   sections: [portfolioSectionSchema],
+
+  projects: {
+    heading: { type: String, default: '', trim: true },
+    intro: { type: String, default: '', trim: true },
+    items: [portfolioProjectSchema]
+  },
 
   currentQueue: {
     heading: { type: String, default: '', trim: true },

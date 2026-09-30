@@ -153,6 +153,100 @@ const PortfolioPageEditor = ({ onClose }) => {
     }));
   };
 
+  const projectSectionChange = (field, value) => {
+    setForm((current) => ({
+      ...current,
+      projects: { ...current.projects, [field]: value },
+    }));
+  };
+
+  const projectChange = (projectIndex, field, value) => {
+    setForm((current) => ({
+      ...current,
+      projects: {
+        ...current.projects,
+        items: current.projects.items.map((project, index) =>
+          index === projectIndex ? { ...project, [field]: value } : project
+        ),
+      },
+    }));
+  };
+
+  const projectProvenanceChange = (projectIndex, field, value) => {
+    setForm((current) => ({
+      ...current,
+      projects: {
+        ...current.projects,
+        items: current.projects.items.map((project, index) =>
+          index === projectIndex
+            ? { ...project, provenance: { ...project.provenance, [field]: value } }
+            : project
+        ),
+      },
+    }));
+  };
+
+  const projectScreenshotChange = (projectIndex, screenshotIndex, field, value) => {
+    setForm((current) => ({
+      ...current,
+      projects: {
+        ...current.projects,
+        items: current.projects.items.map((project, index) =>
+          index === projectIndex
+            ? {
+                ...project,
+                screenshots: project.screenshots.map((screenshot, imageIndex) =>
+                  imageIndex === screenshotIndex ? { ...screenshot, [field]: value } : screenshot
+                ),
+              }
+            : project
+        ),
+      },
+    }));
+  };
+
+  const addProject = () => projectSectionChange('items', [
+    ...form.projects.items,
+    {
+      slug: '', title: '', category: '', summary: '', challenge: '',
+      workPerformed: [], technologies: [], verification: [], screenshots: [],
+      provenance: { label: '', baselineCommit: '', evidenceCommit: '' },
+      caseStudyPath: '',
+    },
+  ]);
+
+  const removeProject = (projectIndex) => projectSectionChange(
+    'items',
+    form.projects.items.filter((_, index) => index !== projectIndex)
+  );
+
+  const moveProject = (projectIndex, direction) => {
+    const target = projectIndex + direction;
+    if (target < 0 || target >= form.projects.items.length) return;
+    const items = [...form.projects.items];
+    [items[projectIndex], items[target]] = [items[target], items[projectIndex]];
+    projectSectionChange('items', items);
+  };
+
+  const addProjectScreenshot = (projectIndex) => {
+    const project = form.projects.items[projectIndex];
+    projectChange(projectIndex, 'screenshots', [
+      ...(project.screenshots || []),
+      { src: '', alt: '', caption: '' },
+    ]);
+  };
+
+  const removeProjectScreenshot = (projectIndex, screenshotIndex) => {
+    const project = form.projects.items[projectIndex];
+    projectChange(
+      projectIndex,
+      'screenshots',
+      project.screenshots.filter((_, index) => index !== screenshotIndex)
+    );
+  };
+
+  const lines = (value) => String(value || '').split('\n').map((item) => item.trim()).filter(Boolean);
+
   const queueItemChange = (index, value) => {
     setForm((current) => ({
       ...current,
@@ -423,6 +517,166 @@ const PortfolioPageEditor = ({ onClose }) => {
       <button type="button" onClick={addPortfolioSection}>
         + Add work section
       </button>
+
+      <h3>Featured Projects / Proof of Work</h3>
+      <p className="hint-text">
+        Verification statements are public-facing and should remain grounded in reviewed evidence.
+      </p>
+
+      <label>
+        Section heading
+        <input
+          value={form.projects.heading || ''}
+          onChange={(e) => projectSectionChange('heading', e.target.value)}
+        />
+      </label>
+
+      <label>
+        Section introduction
+        <textarea
+          rows="3"
+          value={form.projects.intro || ''}
+          onChange={(e) => projectSectionChange('intro', e.target.value)}
+        />
+      </label>
+
+      {form.projects.items.map((project, projectIndex) => (
+        <details className="campaign-editor-card portfolio-project-editor" key={project.slug || projectIndex}>
+          <summary>
+            Project {indexLabel(projectIndex)} · {project.title || 'Untitled project'}
+          </summary>
+
+          <div className="campaign-editor-row">
+            <button type="button" onClick={() => moveProject(projectIndex, -1)} disabled={projectIndex === 0}>
+              Move up
+            </button>
+            <button
+              type="button"
+              onClick={() => moveProject(projectIndex, 1)}
+              disabled={projectIndex === form.projects.items.length - 1}
+            >
+              Move down
+            </button>
+            <button type="button" onClick={() => removeProject(projectIndex)}>Remove project</button>
+          </div>
+
+          <div className="campaign-editor-row">
+            <label>
+              Slug
+              <input value={project.slug || ''} onChange={(e) => projectChange(projectIndex, 'slug', e.target.value)} />
+            </label>
+            <label>
+              Category
+              <input value={project.category || ''} onChange={(e) => projectChange(projectIndex, 'category', e.target.value)} />
+            </label>
+          </div>
+
+          <label>
+            Title
+            <input value={project.title || ''} onChange={(e) => projectChange(projectIndex, 'title', e.target.value)} />
+          </label>
+          <label>
+            Summary
+            <textarea rows="4" value={project.summary || ''} onChange={(e) => projectChange(projectIndex, 'summary', e.target.value)} />
+          </label>
+          <label>
+            Challenge
+            <textarea rows="4" value={project.challenge || ''} onChange={(e) => projectChange(projectIndex, 'challenge', e.target.value)} />
+          </label>
+          <label>
+            Work performed — one item per line
+            <textarea
+              rows="8"
+              value={(project.workPerformed || []).join('\n')}
+              onChange={(e) => projectChange(projectIndex, 'workPerformed', lines(e.target.value))}
+            />
+          </label>
+          <label>
+            Technologies — one per line
+            <textarea
+              rows="6"
+              value={(project.technologies || []).join('\n')}
+              onChange={(e) => projectChange(projectIndex, 'technologies', lines(e.target.value))}
+            />
+          </label>
+          <label>
+            Public verification — one evidence-backed statement per line
+            <textarea
+              rows="8"
+              value={(project.verification || []).join('\n')}
+              onChange={(e) => projectChange(projectIndex, 'verification', lines(e.target.value))}
+            />
+          </label>
+
+          <h4>Screenshots</h4>
+          {(project.screenshots || []).map((screenshot, screenshotIndex) => (
+            <div className="campaign-editor-card" key={`${projectIndex}-${screenshotIndex}`}>
+              <label>
+                Public image path
+                <input
+                  value={screenshot.src || ''}
+                  placeholder="/images/portfolio/project/image.png"
+                  onChange={(e) => projectScreenshotChange(projectIndex, screenshotIndex, 'src', e.target.value)}
+                />
+              </label>
+              <label>
+                Alt text (required when an image path is present)
+                <input
+                  value={screenshot.alt || ''}
+                  onChange={(e) => projectScreenshotChange(projectIndex, screenshotIndex, 'alt', e.target.value)}
+                />
+              </label>
+              <label>
+                Caption
+                <textarea
+                  rows="2"
+                  value={screenshot.caption || ''}
+                  onChange={(e) => projectScreenshotChange(projectIndex, screenshotIndex, 'caption', e.target.value)}
+                />
+              </label>
+              <button type="button" onClick={() => removeProjectScreenshot(projectIndex, screenshotIndex)}>
+                Remove screenshot
+              </button>
+            </div>
+          ))}
+          <button type="button" onClick={() => addProjectScreenshot(projectIndex)}>+ Add screenshot</button>
+
+          <h4>Evidence provenance</h4>
+          <label>
+            Provenance label
+            <input
+              value={project.provenance?.label || ''}
+              onChange={(e) => projectProvenanceChange(projectIndex, 'label', e.target.value)}
+            />
+          </label>
+          <div className="campaign-editor-row">
+            <label>
+              Baseline commit
+              <input
+                value={project.provenance?.baselineCommit || ''}
+                onChange={(e) => projectProvenanceChange(projectIndex, 'baselineCommit', e.target.value)}
+              />
+            </label>
+            <label>
+              Evidence commit
+              <input
+                value={project.provenance?.evidenceCommit || ''}
+                onChange={(e) => projectProvenanceChange(projectIndex, 'evidenceCommit', e.target.value)}
+              />
+            </label>
+          </div>
+          <label>
+            Optional internal case-study path
+            <input
+              value={project.caseStudyPath || ''}
+              placeholder="/portfolio/projects/project-slug"
+              onChange={(e) => projectChange(projectIndex, 'caseStudyPath', e.target.value)}
+            />
+          </label>
+        </details>
+      ))}
+
+      <button type="button" onClick={addProject}>+ Add proof-backed project</button>
 
       <h3>Current Project Queue</h3>
 
