@@ -1,0 +1,24 @@
+HEXFORGE LABS WEBSITE PLATFORM — LOCAL VERIFICATION
+Captured: 2026-09-27T13:44:48-04:00
+Relevant commit: 92ba88926a5389fc1aab46ccbbf5c84f378291b2
+
+Frontend test command:
+CI=true npm test -- --watchAll=false --runInBand
+
+Result: PASS
+Test suites: 2 passed, 2 total
+Tests: 7 passed, 7 total
+Snapshots: 0 total
+Reported test time: 21.731 seconds
+
+Frontend build command:
+npm run build
+
+Exit status: 0
+Result: PASS
+Optimized production build: completed successfully
+Warnings: none reported
+
+An earlier attempt was blocked while cleaning stale, untracked generated output owned by a different runtime user. After authorized removal of only the untracked frontend/build directory, a fresh build as devuser succeeded and regenerated the output without root- or nobody-owned paths.
+
+The passing suite verifies the repository's general existing frontend tests; it is not Portfolio-specific test coverage. No deployment, container restart, database write, or production mutation was performed.

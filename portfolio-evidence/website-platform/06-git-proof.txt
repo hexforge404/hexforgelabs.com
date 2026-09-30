@@ -1,0 +1,16 @@
+HEXFORGE LABS WEBSITE PLATFORM — GIT PROOF
+Captured: 2026-09-27T13:44:48-04:00
+
+branch: main
+baseline_status_before_evidence_creation: clean
+baseline_tracking: main...origin/main
+current_commit_full: 92ba88926a5389fc1aab46ccbbf5c84f378291b2
+current_commit_short: 92ba889
+
+Relevant history:
+92ba889 Add editable technical portfolio page
+dd976bd Add editable Memorial and Funeral Home landing pages
+f5fa7bf Add campaign landing pages and align public theme (#19)
+
+Interpretation: The application source/configuration baseline was clean before this package was created.
+Any subsequent untracked paths under portfolio-evidence/ are evidence artifacts, not application changes.

@@ -1,0 +1,15 @@
+HEXFORGE LABS PORTFOLIO — PUBLIC API VERIFICATION
+Captured: 2026-09-27T13:41:00-04:00
+Source: live GET through the locally exposed deployed endpoint
+Application route: /api/landing-page/portfolio
+HTTP status: 200
+Relevant commit: 92ba88926a5389fc1aab46ccbbf5c84f378291b2
+
+success: true
+headline: Robert Duff — Technical Portfolio
+sections: 5
+queue_items: 5
+guide_prompts: 4
+
+Sanitization: This is a field/count summary. The complete response was not saved.
+Limitation: This verifies the deployed stack through its local endpoint; it does not independently establish external Internet availability.
