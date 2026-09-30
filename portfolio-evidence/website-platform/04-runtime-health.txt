@@ -1,0 +1,12 @@
+HEXFORGE LABS WEBSITE PLATFORM — RUNTIME HEALTH
+Captured: 2026-09-27T13:44:48-04:00
+Source: read-only Docker status/inspect fields
+Relevant commit: 92ba88926a5389fc1aab46ccbbf5c84f378291b2
+
+service             running_state  health_state  start_time (UTC)
+hexforge-nginx      running        healthy       2026-09-27T16:47:55.47459721Z
+hexforge-backend    running        healthy       2026-09-27T16:46:38.266422973Z
+hexforge-mongo      running        healthy       2026-09-16T17:02:08.220987803Z
+
+Sanitization: Only service name, running state, health state, and start time are included.
+Excluded: environment variables, mounts, labels, container configuration, and credentials.

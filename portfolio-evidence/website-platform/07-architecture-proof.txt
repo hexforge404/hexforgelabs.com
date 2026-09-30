@@ -1,0 +1,40 @@
+HEXFORGE LABS WEBSITE PLATFORM — ARCHITECTURE PROOF
+Captured: 2026-09-27T13:44:48-04:00
+Relevant commit: 92ba88926a5389fc1aab46ccbbf5c84f378291b2
+
+Configuration flow
+
+1. Defaults in code
+   backend/utils/defaultPortfolioPageConfig.js:1-112
+   Defines the Portfolio hero, guide prompts, work sections, project queue, contact content, and SEO defaults.
+
+2. Sanitized Mongo overrides
+   backend/models/PortfolioPageConfig.js:3-57
+   Defines the strict Mongoose configuration model.
+   backend/routes/admin.js:109-155
+   Requires a logged-in Admin session for the protected routes that follow.
+   backend/routes/admin.js:446-504
+   Sanitizes strings and booleans and caps prompt, section, item, and queue counts.
+   backend/routes/admin.js:688-724
+   Provides the authenticated GET/PUT Portfolio editor API and persists sanitized overrides.
+
+3. Merged public config
+   backend/routes/landingPage.js:158-205
+   Merges stored values over defaults, preserves default arrays when overrides are absent, and serves GET /api/landing-page/portfolio.
+
+4. Specialized React renderer
+   frontend/src/pages/PortfolioPage.jsx:161-262
+   Loads the public config, retains built-in fallback content on failure, and renders the guide, work cards, queue, contact details, and contact form.
+
+Admin tooling and routes
+
+- frontend/src/components/admin/PortfolioPageEditor.jsx:12-32 and 192-211: loads and saves the Portfolio configuration through the credentialed Admin API.
+- frontend/src/components/admin/PortfolioPageEditor.jsx:232-526: exposes editable hero, guide, work-section, queue, contact, and contact-form fields.
+- frontend/src/components/admin/CampaignPageEditor.jsx:15-33 and 192-217: registers Memorial, Funeral Home Director, and Technical Portfolio as specialized system pages and dispatches to their dedicated editors.
+- frontend/src/App.jsx:320-321: routes /portfolio to PortfolioPage and redirects /work to /portfolio.
+
+Result
+
+defaults in code → sanitized Mongo overrides → merged public config → specialized React renderer
+
+Scope note: The source proves the Mongo-backed override implementation. This artifact does not independently prove whether the observed live API response used stored overrides or code defaults.
