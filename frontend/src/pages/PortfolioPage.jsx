@@ -2,8 +2,10 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import ContactForm from 'components/ContactForm';
 import GuidedHelperWidget from 'components/GuidedHelperWidget';
+import PortfolioProjectCard from 'components/PortfolioProjectCard';
 import { SUPPORT_EMAIL } from '../config';
 import API_BASE_URL from '../utils/apiBase';
+import DEFAULT_PORTFOLIO_PROJECTS from '../data/defaultPortfolioProjects';
 
 const DEFAULT_CONFIG = {
   hero: {
@@ -88,6 +90,8 @@ const DEFAULT_CONFIG = {
     }
   ],
 
+  projects: DEFAULT_PORTFOLIO_PROJECTS,
+
   currentQueue: {
     heading: 'Current Project Queue',
     items: [
@@ -137,6 +141,15 @@ const mergeConfig = (incoming = {}) => ({
     Array.isArray(incoming.sections) && incoming.sections.length
       ? incoming.sections
       : DEFAULT_CONFIG.sections,
+
+  projects: {
+    ...DEFAULT_CONFIG.projects,
+    ...(incoming.projects || {}),
+    items:
+      Array.isArray(incoming.projects?.items) && incoming.projects.items.length
+        ? incoming.projects.items
+        : DEFAULT_CONFIG.projects.items
+  },
 
   currentQueue: {
     ...DEFAULT_CONFIG.currentQueue,
@@ -219,6 +232,22 @@ function PortfolioPage() {
             </ul>
           </article>
         ))}
+      </section>
+
+      <section className="portfolio-projects" aria-labelledby="portfolio-projects-heading">
+        <div className="portfolio-projects-heading">
+          <p className="public-info-eyebrow">Proof-backed work</p>
+          <h2 id="portfolio-projects-heading">{config.projects.heading}</h2>
+          <p>{config.projects.intro}</p>
+        </div>
+        <div className="portfolio-projects-list">
+          {config.projects.items.map((project, index) => (
+            <PortfolioProjectCard
+              key={project.slug || `${project.title}-${index}`}
+              project={project}
+            />
+          ))}
+        </div>
       </section>
 
       <section className="public-info-split">

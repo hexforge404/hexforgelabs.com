@@ -81,6 +81,62 @@ const getDefaultPortfolioPageConfig = () => ({
     }
   ],
 
+  projects: {
+    heading: 'Featured Projects / Proof of Work',
+    intro: 'Completed projects backed by reviewed implementation, runtime, and verification evidence.',
+    items: [
+      {
+        slug: 'website-platform',
+        category: 'Software / Web Platform',
+        title: 'Website Platform',
+        summary: 'A React, Express, and MongoDB website platform with specialized public pages, authenticated administrative editing, sanitized configuration APIs, code defaults, and a Dockerized deployed stack.',
+        challenge: 'Provide specialized public experiences whose structured content can be maintained through authenticated Admin tooling while retaining safe code defaults and predictable rendering.',
+        workPerformed: [
+          'Built specialized Portfolio, Memorial / Family, and Funeral Home Director page support',
+          'Added Mongoose-backed structured page configuration',
+          'Added authenticated Admin editing APIs and dedicated editors',
+          'Sanitized and bounded editable configuration',
+          'Merged stored configuration over code defaults',
+          'Added Portfolio routing and /work redirect',
+          'Added specialized React rendering with fallback content',
+          'Verified the deployed stack and produced a proof-of-work package'
+        ],
+        technologies: ['React', 'React Router', 'Express', 'MongoDB', 'Mongoose', 'Nginx', 'Docker', 'Git'],
+        verification: [
+          'Portfolio route returned HTTP 200 through the locally exposed deployed endpoint',
+          'Public Portfolio configuration API returned HTTP 200',
+          'Nginx, backend, and MongoDB containers were running and healthy at capture time',
+          'Existing general frontend suite passed 7 of 7 tests',
+          'Existing tests were general frontend tests, not Portfolio-specific',
+          'Fresh optimized frontend build completed successfully with exit status 0 and no reported warnings'
+        ],
+        screenshots: [
+          {
+            src: '/images/portfolio/website-platform/public-portfolio.png',
+            alt: 'Full Technical Portfolio page showing the hero, skill sections, project queue, contact details, and contact form',
+            caption: 'Public Technical Portfolio rendered by the deployed website stack.'
+          },
+          {
+            src: '/images/portfolio/website-platform/admin-landing-pages.png',
+            alt: 'Landing Pages manager with Memorial, Funeral Home Director, and Technical Portfolio system pages listed',
+            caption: 'Landing Pages manager showing the three specialized system pages.'
+          },
+          {
+            src: '/images/portfolio/website-platform/portfolio-editor.png',
+            alt: 'Technical Portfolio editor showing editable Hero and Portfolio Guide fields',
+            caption: 'Technical Portfolio editor with representative Hero and Portfolio Guide fields; lower editor controls are outside the captured viewport.'
+          }
+        ],
+        provenance: {
+          label: 'Reviewed proof-of-work package',
+          baselineCommit: '92ba889',
+          evidenceCommit: '4924ae0'
+        },
+        caseStudyPath: ''
+      }
+    ]
+  },
+
   currentQueue: {
     heading: 'Current Project Queue',
     items: [
