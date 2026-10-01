@@ -1,0 +1,20 @@
+HEXFORGE HOMELAB — PUBLIC PRODUCTION VERIFICATION
+Capture: 2026-09-30T17:40:14-04:00
+Evidence type: current, point-in-time unauthenticated HTTPS GET requests
+
+Route                                      Result   Purpose
+https://hexforgelabs.com/                  HTTP 200 Public frontend entry point
+https://hexforgelabs.com/portfolio         HTTP 200 React SPA route through Nginx
+https://hexforgelabs.com/api/products      HTTP 200 Public Express API routing
+https://hexforgelabs.com/api/landing-page/portfolio
+                                           HTTP 200 Public configuration API routing
+https://hexforgelabs.com/memorial          HTTP 200 Additional public SPA route
+
+Method
+Requests followed redirects and recorded only the final HTTP status. Response
+bodies, cookies, authentication data, and headers were not retained.
+
+Limitations
+These successful responses establish point-in-time public route availability
+and frontend/API routing. They are not an uptime test, performance measurement,
+traffic measurement, or availability guarantee.

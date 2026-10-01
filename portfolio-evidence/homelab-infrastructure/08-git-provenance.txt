@@ -1,0 +1,38 @@
+HEXFORGE HOMELAB — CURATED GIT PROVENANCE
+Capture: 2026-09-30T17:40:14-04:00
+Evidence baseline: main at 0daa44b115eeb09da8300883bb12fc932e5be5a1
+Starting state: clean and synchronized with origin/main
+
+Curated infrastructure and operations history
+- d09e8cf (2026-01-17) Engines online hardening: remove privileged assistant,
+  gate Docker tools, secure APIs, and add audit/verification documentation
+- 0d7ad47 (2026-01-18) Unify surface assets, add stack smoke testing, and
+  improve upstream-failure diagnostics
+- 1096895 (2026-01-19) Harden surface smoke/e2e scripts and JSON safety
+- 93e66ac (2026-01-24) Extract the heightmap engine as a first-class service
+  with gateway enforcement
+- 0613c71 (2026-02-04) Use the upstream Ollama image and stable health check
+- 7075bf6 (2026-04-14) Add deployment tooling for the updated store platform
+- c1ebae9 (2026-04-18) Add monitoring summary UI and backend monitoring endpoints
+
+Curated privacy and data-boundary history
+- 57af826 (2026-06-01) Protect customer media and product write operations
+- be7ee8f (2026-06-03) Separate private customer intake from public uploads
+- b41e3b7 (2026-06-05) Preserve the production handoff storage boundary
+- 1ac58af (2026-07-18) Remove unsafe editor-route mounts
+
+Current production/portfolio context
+- 92ba889 (2026-09-27) Add editable technical Portfolio page
+- 4924ae0 (2026-09-30) Add Website Platform proof-of-work evidence
+- 0daa44b (2026-09-30) Add proof-backed Featured Projects to Portfolio
+
+Method and sanitization
+Curated read-only Git history was limited to relevant committed infrastructure,
+verification, privacy, and production-context changes. Remote URLs, patches,
+authors, unrelated history, credentials, and repository-internal operational
+details are omitted.
+
+Limitations
+Commit subjects establish recorded implementation history, not runtime success
+by themselves. Runtime and verification claims are supported by separate
+point-in-time artifacts in this package.

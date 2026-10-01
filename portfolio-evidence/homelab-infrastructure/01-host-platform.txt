@@ -1,0 +1,30 @@
+HEXFORGE HOMELAB — HOST PLATFORM
+Capture: 2026-09-30T17:40:14-04:00
+Evidence type: current, point-in-time read-only inventory
+
+Platform
+- Proxmox VE manager 8.3.5 on Debian GNU/Linux 12
+- Running kernel: 6.8.12-8-pve
+- Host platform: HP Z840 workstation
+
+Compute
+- Two Intel Xeon E5-2640 v3 processors
+- 8 physical cores per processor, 2 threads per core
+- 16 physical cores / 32 logical CPUs total
+- Approximately 62 GiB RAM
+
+Storage roles
+- System and virtual-machine storage
+- Dedicated application storage
+- Dedicated backup storage
+
+Point-in-time state
+- Host uptime at capture: 2 weeks, 4 hours, 40 minutes
+
+Sanitization
+Exact addresses, device names, identifiers, guest IDs, mount paths, serials,
+capacity utilization, and network topology are intentionally omitted.
+
+Limitations
+This is a point-in-time host summary. It does not establish high availability,
+failover, performance, capacity guarantees, or any uptime percentage.

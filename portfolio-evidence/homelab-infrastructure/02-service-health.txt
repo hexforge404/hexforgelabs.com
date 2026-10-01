@@ -1,0 +1,35 @@
+HEXFORGE HOMELAB — SELECTED SERVICE HEALTH
+Capture: 2026-09-30T17:40:14-04:00
+Evidence type: current, point-in-time read-only Docker inspection
+
+Core production stack
+- Nginx frontend / reverse proxy: running; healthy
+- Express backend: running; healthy
+- MongoDB database service: running; healthy
+
+AI and production tools
+- Assistant service: running; healthy
+- Ollama model service: running; healthy
+- Heightmap engine: running; healthy
+- Surface engine: running; healthy
+- Content media API: running; no container health check configured
+
+Collaboration stack
+- Nextcloud: running; no container health check configured
+- MariaDB service for Nextcloud: running; no container health check configured
+- OnlyOffice: running; no container health check configured
+
+Operations services
+- Uptime Kuma: running; healthy
+- File Browser: running; healthy
+- Portainer: running; no container health check configured
+
+Sanitization
+Container IDs, ports, addresses, hostnames, labels, environments, networks,
+mounts, volume identifiers, and unrelated or stopped containers are omitted.
+
+Limitations
+"Running" is the observed process state. "Healthy" is reported only where the
+container has a configured Docker health check. A running service without a
+configured health check is not represented as independently health-verified.
+This capture is not an uptime measurement or comprehensive monitoring claim.

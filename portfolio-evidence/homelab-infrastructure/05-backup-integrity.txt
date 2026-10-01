@@ -1,0 +1,34 @@
+HEXFORGE HOMELAB — EXISTING BACKUP INTEGRITY
+Backup set date: 2026-09-26
+Verification: 2026-09-30
+Evidence type: existing artifacts; read-only verification against existing manifest
+
+Generalized backup categories and point-in-time sizes
+- Nextcloud database backup: approximately 1.7 MiB
+- Nextcloud file backup: approximately 877 MiB
+- Authenticated application MongoDB archive: approximately 45 KiB
+- Application uploads backup: approximately 434 MiB
+- Nginx configuration backup: approximately 3.5 KiB
+
+Verification result
+- Command: sha256sum -c against the existing SHA256SUMS.txt manifest
+- Exit status: 0
+- Every manifest entry reported OK
+- Unique verified artifacts: 5
+
+Manifest qualification
+The existing manifest lists the Nextcloud file backup twice. Both entries
+reported OK, but they refer to the same artifact; the unique-artifact count is
+therefore five rather than six.
+
+Sanitization
+Full paths, raw hashes, database names beyond functional service categories,
+archive contents, user data, usernames, credentials, and personal filenames
+are omitted. No archive was opened or extracted.
+
+Limitations
+Checksum verification confirms that the existing artifacts matched their
+existing checksum manifest at verification time. It does not prove successful
+restoration, disaster-recovery testing, off-site or immutable storage, formal
+RPO/RTO, or automated backup scheduling. Existing records describe this as a
+manual backup workflow.
