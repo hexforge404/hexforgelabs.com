@@ -179,11 +179,8 @@ const getDefaultPortfolioPageConfig = () => ({
   currentQueue: {
     heading: 'Current Project Queue',
     items: [
-      'Phone charger module repair documentation',
-      'Basic repair photo proof sheet',
-      'Homelab summary write-up',
-      '3D printer calibration notes',
-      'Portfolio photos and screenshots'
+      'Phone charger module repair proof sheet',
+      '3D printer calibration notes'
     ]
   },
 
