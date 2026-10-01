@@ -126,6 +126,28 @@ const sanitizePortfolioPageConfig = (body) => ({
   },
 });
 
+const reconcileProjects = (storedProjects, defaultProjects) => {
+  if (!Array.isArray(storedProjects) || storedProjects.length === 0) return defaultProjects;
+
+  const seenSlugs = new Set();
+  const reconciled = storedProjects.filter((project) => {
+    const slug = typeof project?.slug === 'string' ? project.slug.trim() : '';
+    if (!slug) return true;
+    if (seenSlugs.has(slug)) return false;
+    seenSlugs.add(slug);
+    return true;
+  });
+
+  defaultProjects.forEach((project) => {
+    if (!seenSlugs.has(project.slug)) {
+      reconciled.push(project);
+      seenSlugs.add(project.slug);
+    }
+  });
+
+  return reconciled;
+};
+
 const buildPortfolioPageConfig = (doc) => {
   const defaults = getDefaultPortfolioPageConfig();
   const data = doc || {};
@@ -145,9 +167,7 @@ const buildPortfolioPageConfig = (doc) => {
     projects: {
       ...defaults.projects,
       ...(data.projects || {}),
-      items: Array.isArray(data.projects?.items) && data.projects.items.length
-        ? data.projects.items
-        : defaults.projects.items,
+      items: reconcileProjects(data.projects?.items, defaults.projects.items),
     },
     currentQueue: {
       ...defaults.currentQueue,
