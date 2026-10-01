@@ -11,27 +11,27 @@ const DEFAULT_CONFIG = {
   hero: {
     eyebrow: 'HexForge Labs Portfolio',
     headline: 'Robert Duff — Technical Portfolio',
-    subtitle: 'Hands-on troubleshooting, repair, homelab, documentation, and hardware support projects.',
-    body: 'I am a hands-on technician in Eaton, Indiana focused on computer troubleshooting, device repair, Linux basics, self-hosted tools, documentation, 3D printing, and practical problem solving. This page collects current and in-progress work examples for employers and local clients.'
+    subtitle: 'Hands-on technical support, troubleshooting, Linux, repair, documentation, and infrastructure projects.',
+    body: 'I am a hands-on technician in Eaton, Indiana building evidence-backed work for IT support and technical operations roles across troubleshooting, Linux, self-hosted systems, documentation, repair, and hardware workflows. Local computer and device support information is available below.'
   },
 
   guide: {
-    title: 'Portfolio Guide',
-    intro: "Looking for the quick version? Pick a topic and I'll point you to the right section.",
+    title: 'Portfolio at a glance',
+    intro: 'Completed proof-backed projects appear first. The capability sections below include broader hands-on experience and proof still in progress.',
     prompts: [
       {
-        label: 'What kind of work do you do?',
-        response: 'Robert focuses on hands-on troubleshooting, device repair, Linux basics, self-hosted systems, documentation, 3D printing, and practical technical support.',
+        label: 'Demonstrated work',
+        response: 'Website Platform and Homelab & Production Infrastructure are completed projects backed by reviewed evidence.',
         includeEmail: false
       },
       {
-        label: 'Show repair work',
-        response: 'The repair section covers phone/device projects, parts replacement, diagnostics, and bench workflow. More photo proof is being added as projects are documented.',
+        label: 'Hands-on experience',
+        response: 'Broader work includes computer and device troubleshooting, Linux, documentation, 3D printing, hardware workflows, and practical technical support.',
         includeEmail: false
       },
       {
-        label: 'Show homelab skills',
-        response: 'The homelab section covers Proxmox, Docker/Docker Compose, Linux server basics, self-hosted tools, and support workflow experiments.',
+        label: 'Proof in progress',
+        response: 'Repair documentation and 3D-printer calibration proof are still being developed and are not presented as completed Featured Projects.',
         includeEmail: false
       },
       {
@@ -95,11 +95,8 @@ const DEFAULT_CONFIG = {
   currentQueue: {
     heading: 'Current Project Queue',
     items: [
-      'Phone charger module repair documentation',
-      'Basic repair photo proof sheet',
-      'Homelab summary write-up',
-      '3D printer calibration notes',
-      'Portfolio photos and screenshots'
+      'Phone charger module repair proof sheet',
+      '3D printer calibration notes'
     ]
   },
 
@@ -107,11 +104,16 @@ const DEFAULT_CONFIG = {
     heading: 'Contact',
     name: 'Robert Duff',
     location: 'Eaton, Indiana',
-    helpButtonText: 'View Help Page'
+    helpButtonText: 'View support options'
   },
 
   contactForm: {
     heading: 'Contact Robert'
+  },
+
+  seo: {
+    title: 'Technical Portfolio | HexForge Labs',
+    description: 'Technical troubleshooting, repair, homelab, documentation, 3D printing, and hardware support work from HexForge Labs.'
   }
 };
 
@@ -187,6 +189,11 @@ const mergeConfig = (incoming = {}) => ({
   contactForm: {
     ...DEFAULT_CONFIG.contactForm,
     ...(incoming.contactForm || {})
+  },
+
+  seo: {
+    ...DEFAULT_CONFIG.seo,
+    ...(incoming.seo || {})
   }
 });
 
@@ -221,6 +228,22 @@ function PortfolioPage() {
     };
   }, []);
 
+  useEffect(() => {
+    const originalTitle = document.title;
+    const descriptionMeta = document.querySelector('meta[name="description"]');
+    const originalDescription = descriptionMeta?.getAttribute('content');
+
+    document.title = config.seo.title;
+    if (descriptionMeta) descriptionMeta.setAttribute('content', config.seo.description);
+
+    return () => {
+      document.title = originalTitle;
+      if (descriptionMeta && originalDescription !== null) {
+        descriptionMeta.setAttribute('content', originalDescription);
+      }
+    };
+  }, [config.seo.title, config.seo.description]);
+
   return (
     <main className="public-info-page">
       <section className="public-info-hero">
@@ -237,22 +260,6 @@ function PortfolioPage() {
         prompts={config.guide.prompts}
       />
 
-      <section className="public-info-grid" aria-label="Portfolio work examples">
-        {config.sections.map((section, sectionIndex) => (
-          <article
-            className="public-info-card"
-            key={`${section.title}-${sectionIndex}`}
-          >
-            <h2>{section.title}</h2>
-            <ul>
-              {section.items.map((item, itemIndex) => (
-                <li key={`${item}-${itemIndex}`}>{item}</li>
-              ))}
-            </ul>
-          </article>
-        ))}
-      </section>
-
       <section className="portfolio-projects" aria-labelledby="portfolio-projects-heading">
         <div className="portfolio-projects-heading">
           <p className="public-info-eyebrow">Proof-backed work</p>
@@ -267,6 +274,22 @@ function PortfolioPage() {
             />
           ))}
         </div>
+      </section>
+
+      <section className="public-info-grid" aria-label="Portfolio work examples">
+        {config.sections.map((section, sectionIndex) => (
+          <article
+            className="public-info-card"
+            key={`${section.title}-${sectionIndex}`}
+          >
+            <h2>{section.title}</h2>
+            <ul>
+              {section.items.map((item, itemIndex) => (
+                <li key={`${item}-${itemIndex}`}>{item}</li>
+              ))}
+            </ul>
+          </article>
+        ))}
       </section>
 
       <section className="public-info-split">
