@@ -122,6 +122,28 @@ const portfolioTopics = [
   'Other'
 ];
 
+const reconcileProjects = (incomingProjects, defaultProjects) => {
+  if (!Array.isArray(incomingProjects) || incomingProjects.length === 0) return defaultProjects;
+
+  const seenSlugs = new Set();
+  const reconciled = incomingProjects.filter((project) => {
+    const slug = typeof project?.slug === 'string' ? project.slug.trim() : '';
+    if (!slug) return true;
+    if (seenSlugs.has(slug)) return false;
+    seenSlugs.add(slug);
+    return true;
+  });
+
+  defaultProjects.forEach((project) => {
+    if (!seenSlugs.has(project.slug)) {
+      reconciled.push(project);
+      seenSlugs.add(project.slug);
+    }
+  });
+
+  return reconciled;
+};
+
 const mergeConfig = (incoming = {}) => ({
   hero: {
     ...DEFAULT_CONFIG.hero,
@@ -145,10 +167,7 @@ const mergeConfig = (incoming = {}) => ({
   projects: {
     ...DEFAULT_CONFIG.projects,
     ...(incoming.projects || {}),
-    items:
-      Array.isArray(incoming.projects?.items) && incoming.projects.items.length
-        ? incoming.projects.items
-        : DEFAULT_CONFIG.projects.items
+    items: reconcileProjects(incoming.projects?.items, DEFAULT_CONFIG.projects.items)
   },
 
   currentQueue: {

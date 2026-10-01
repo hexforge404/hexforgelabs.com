@@ -6,6 +6,7 @@ const {
   sanitizePublicAssetPath,
   sanitizeSlug,
 } = require('../utils/portfolioPageConfig');
+const { getDefaultPortfolioPageConfig } = require('../utils/defaultPortfolioPageConfig');
 
 const project = (overrides = {}) => ({
   slug: 'Sample Project',
@@ -23,6 +24,13 @@ const project = (overrides = {}) => ({
 });
 
 describe('Portfolio project configuration', () => {
+  test('defines Website Platform then Homelab as the canonical defaults', () => {
+    expect(getDefaultPortfolioPageConfig().projects.items.map(({ slug }) => slug)).toEqual([
+      'website-platform',
+      'homelab-infrastructure',
+    ]);
+  });
+
   test('sanitizes every nested project field and normalizes slugs', () => {
     const config = sanitizePortfolioPageConfig({
       projects: { heading: ' Projects ', intro: ' Intro ', items: [project()] },
@@ -40,6 +48,25 @@ describe('Portfolio project configuration', () => {
       alt: 'Sample screen',
       caption: 'Caption',
     });
+  });
+
+  test('preserves both canonical projects through sanitization', () => {
+    const defaults = getDefaultPortfolioPageConfig();
+    const config = sanitizePortfolioPageConfig({ projects: defaults.projects });
+
+    expect(config.projects.items.map(({ slug }) => slug)).toEqual([
+      'website-platform',
+      'homelab-infrastructure',
+    ]);
+  });
+
+  test('safely discards malformed project entries during sanitization', () => {
+    const config = sanitizePortfolioPageConfig({
+      projects: { items: [null, {}, project({ slug: '', title: 'Missing slug' }), project()] },
+    });
+
+    expect(config.projects.items).toHaveLength(1);
+    expect(config.projects.items[0].slug).toBe('sample-project');
   });
 
   test('enforces project and nested array bounds', () => {
@@ -91,21 +118,40 @@ describe('Portfolio project configuration', () => {
     expect(config.projects.items[0].caseStudyPath).toBe('');
   });
 
-  test('uses Website Platform defaults for older configs without projects', () => {
+  test('uses complete project defaults for older configs without projects', () => {
     const merged = buildPortfolioPageConfig({ hero: { headline: 'Older Portfolio' } });
     expect(merged.hero.headline).toBe('Older Portfolio');
     expect(merged.projects.heading).toBe('Featured Projects / Proof of Work');
-    expect(merged.projects.items[0].slug).toBe('website-platform');
+    expect(merged.projects.items.map(({ slug }) => slug)).toEqual([
+      'website-platform',
+      'homelab-infrastructure',
+    ]);
   });
 
-  test('uses defaults when a stored projects array is empty and stored projects when populated', () => {
-    expect(buildPortfolioPageConfig({ projects: { items: [] } }).projects.items[0].slug)
-      .toBe('website-platform');
+  test('uses complete defaults when a stored projects array is empty', () => {
+    expect(buildPortfolioPageConfig({ projects: { items: [] } }).projects.items.map(({ slug }) => slug))
+      .toEqual(['website-platform', 'homelab-infrastructure']);
+  });
+
+  test('preserves stored edits and order, retains custom projects, and appends missing defaults once', () => {
+    const custom = project({ slug: 'custom-project', title: 'Custom Project' });
+    const storedWebsite = project({ slug: 'website-platform', title: 'Stored Website Platform' });
 
     const merged = buildPortfolioPageConfig({
-      projects: { heading: 'Project Archive', items: [project({ slug: 'custom-project' })] },
+      projects: {
+        heading: 'Project Archive',
+        items: [custom, storedWebsite, project({ slug: 'website-platform', title: 'Duplicate' })],
+      },
     });
+
     expect(merged.projects.heading).toBe('Project Archive');
-    expect(merged.projects.items[0].slug).toBe('custom-project');
+    expect(merged.projects.items.map(({ slug }) => slug)).toEqual([
+      'custom-project',
+      'website-platform',
+      'homelab-infrastructure',
+    ]);
+    expect(merged.projects.items[1].title).toBe('Stored Website Platform');
+    expect(merged.projects.items.filter(({ slug }) => slug === 'website-platform')).toHaveLength(1);
+    expect(merged.projects.items.filter(({ slug }) => slug === 'homelab-infrastructure')).toHaveLength(1);
   });
 });
