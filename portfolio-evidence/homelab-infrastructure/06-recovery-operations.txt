@@ -1,0 +1,37 @@
+HEXFORGE HOMELAB — RECOVERY AND STABILIZATION OPERATIONS
+Historical event: July 2026
+Evidence type: sanitized summary of existing internal recovery records
+
+Historical operations timeline
+1. Assessed current container and service state before making cleanup choices.
+2. Recovered and validated monitoring, administration, file-management, and
+   collaboration services, including Uptime Kuma, Portainer, File Browser,
+   Nextcloud, and OnlyOffice.
+3. Confirmed the core HexForge application, database, model, assistant,
+   heightmap, and surface services.
+4. Classified stopped and legacy services before considering removal.
+5. Identified persistent data that required protection and preservation.
+6. Completed a critical-service backup set before destructive maintenance.
+7. Verified that the existing backup artifacts matched their SHA-256 manifest.
+8. Recorded a stabilization decision: no destructive cleanup during the pass.
+
+Operational decision pattern
+ASSESS -> STABILIZE -> CLASSIFY -> PROTECT DATA -> VERIFY -> CONSIDER CLEANUP
+
+What this demonstrates
+- Dependency-aware service recovery and validation
+- Data-protection decisions before cleanup
+- Classification of ambiguous or legacy resources instead of blind deletion
+- Use of service state, health checks, and documented verification
+- A cautious, reviewable recovery workflow
+
+Sanitization
+This artifact paraphrases internal records. Raw recovery files, inspection
+JSON, addresses, topology, protected volume names, unrelated project names,
+management endpoints, credentials, and personal data are omitted.
+
+Limitations
+This is historical evidence, not current runtime state. It does not establish
+that every backup has been restored, that every service was continuously
+available, or that a formal disaster-recovery drill was completed. The backup
+workflow was documented as manual at the time.

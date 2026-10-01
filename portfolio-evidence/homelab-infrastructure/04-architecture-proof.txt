@@ -1,0 +1,50 @@
+HEXFORGE HOMELAB — ARCHITECTURE SOURCE PROOF
+Baseline: main at 0daa44b115eeb09da8300883bb12fc932e5be5a1
+Capture: 2026-09-30T17:40:14-04:00
+Evidence type: current committed-source inspection
+
+Source: docker-compose.yml
+- Service definitions beginning at lines 1, 23, 66, 112, 130, 168, 190,
+  248, and 291 demonstrate Compose orchestration of the database, frontend
+  gateway, backend, model, assistant, media, and production-tool services.
+- Health-check sections beginning at lines 15, 55, 101, 122, 161, 183, 232,
+  283, and 311 demonstrate explicit service-health probes.
+- Volume declarations beginning at line 325 demonstrate persistent service
+  data managed separately from container lifecycle.
+- The network declaration beginning at line 334 demonstrates a dedicated
+  internal service network.
+
+Source: nginx/default.conf
+- The HTTPS server section at lines 189–196 demonstrates TLS termination at
+  the Nginx gateway.
+- Static-asset and SPA locations at lines 229–273 and 430–440 demonstrate
+  delivery of the compiled frontend and client-side route fallback.
+- API and service proxy locations at lines 283–418 demonstrate Nginx routing
+  to the backend and purpose-specific internal services.
+- Upload protection locations at lines 246–266 demonstrate that private
+  customer-media namespaces are not exposed as ordinary public files.
+- The health location at line 440 supplies a narrow gateway health target.
+
+Source: backend/main.js
+- Route registration at lines 187–219 demonstrates separation of public API,
+  assistant, media, heightmap, surface, and landing-page responsibilities.
+- Health endpoints at lines 229–238 demonstrate application and database-state
+  reporting.
+- Database connection handling at lines 264–293 demonstrates the Express and
+  MongoDB service boundary.
+
+Runtime-supported adjacent stack
+- Current allowlisted runtime inspection separately confirms running
+  Nextcloud, MariaDB, OnlyOffice, Uptime Kuma, Portainer, and File Browser
+  services. Their raw deployment configuration is intentionally not included.
+
+Sanitization
+This artifact records narrow source references and functional relationships,
+not configuration blocks. Environment values, credentials, addresses, ports,
+host paths, SSH details, certificate material, mounts, volume identifiers, and
+security-sensitive routing details are omitted.
+
+Limitations
+Committed source establishes intended architecture; point-in-time runtime
+evidence establishes observed service state. Neither proves complete isolation,
+high availability, failover, performance, or exhaustive security coverage.
