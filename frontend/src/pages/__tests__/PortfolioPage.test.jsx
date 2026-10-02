@@ -29,7 +29,7 @@ describe('PortfolioPage featured projects', () => {
     jest.restoreAllMocks();
   });
 
-  test('renders both default projects, evidence qualifications, images, and general content', async () => {
+  test('renders all default projects, evidence qualifications, images, and general content', async () => {
     global.fetch.mockRejectedValueOnce(new Error('offline'));
     renderPage();
 
@@ -37,9 +37,11 @@ describe('PortfolioPage featured projects', () => {
 
     expect(screen.getByRole('heading', { name: 'Website Platform' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Homelab & Production Infrastructure' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Evidence-Driven Capture & Content Pipeline' })).toBeInTheDocument();
     expect(screen.getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent)).toEqual([
       'Website Platform',
       'Homelab & Production Infrastructure',
+      'Evidence-Driven Capture & Content Pipeline',
     ]);
     expect(screen.getByText('Existing tests were general frontend tests, not Portfolio-specific')).toBeInTheDocument();
     expect(screen.getByText(/running at capture time/i)).toBeInTheDocument();
@@ -49,6 +51,24 @@ describe('PortfolioPage featured projects', () => {
       'src',
       '/images/portfolio/homelab-infrastructure/infrastructure-overview.png'
     );
+    expect(screen.getByAltText(/Evidence-driven capture-to-review architecture/i)).toHaveAttribute(
+      'src',
+      '/images/portfolio/content-pipeline/system-architecture.png'
+    );
+    expect(screen.getByAltText(/Ten-stage evidence and execution-control lifecycle/i)).toHaveAttribute(
+      'src',
+      '/images/portfolio/content-pipeline/evidence-control-lifecycle.png'
+    );
+    expect(screen.getByAltText(/Real charger-board repair workshop footage/i)).toHaveAttribute(
+      'src',
+      '/images/portfolio/content-pipeline/real-workload-proof.png'
+    );
+    expect(screen.getByAltText(/Verified V3.3 private-review result/i)).toHaveAttribute(
+      'src',
+      '/images/portfolio/content-pipeline/verified-private-review-result.png'
+    );
+    expect(screen.getByText(/V3.2 narration placement failed human review/i)).toBeInTheDocument();
+    expect(screen.getByText(/Publication and deployment remained unauthorized/i)).toBeInTheDocument();
     expect(screen.queryByLabelText('Homelab & Production Infrastructure screenshots')).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Computer & Device Troubleshooting' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Current Project Queue' })).toBeInTheDocument();
@@ -130,7 +150,7 @@ describe('PortfolioPage featured projects', () => {
     expect(secondDetails).not.toHaveAttribute('open');
   });
 
-  test('appends Homelab after an older stored Website Platform project', async () => {
+  test('appends missing canonical projects after an older stored Website Platform project', async () => {
     global.fetch.mockResolvedValueOnce({
       ok: true,
       json: async () => ({
@@ -156,6 +176,7 @@ describe('PortfolioPage featured projects', () => {
     expect(projectHeadings.map((heading) => heading.textContent)).toEqual([
       'Stored Website Platform',
       'Homelab & Production Infrastructure',
+      'Evidence-Driven Capture & Content Pipeline',
     ]);
     expect(screen.getByText('Stored Website content wins.')).toBeInTheDocument();
   });
@@ -193,7 +214,7 @@ describe('PortfolioPage featured projects', () => {
     expect(screen.getByAltText('Homelab overview')).toBeInTheDocument();
   });
 
-  test('falls back to both default projects when an older API config omits projects', async () => {
+  test('falls back to all default projects when an older API config omits projects', async () => {
     global.fetch.mockResolvedValueOnce({
       ok: true,
       json: async () => ({ success: true, config: { hero: { headline: 'Existing Portfolio' } } }),
@@ -203,5 +224,56 @@ describe('PortfolioPage featured projects', () => {
     expect(await screen.findByRole('heading', { name: 'Existing Portfolio' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Website Platform' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Homelab & Production Infrastructure' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Evidence-Driven Capture & Content Pipeline' })).toBeInTheDocument();
+  });
+
+  test('preserves a stored Project #3 edit, custom projects, and first duplicate while appending missing defaults', async () => {
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        success: true,
+        config: {
+          projects: {
+            items: [
+              {
+                slug: 'custom-project',
+                category: 'Custom',
+                title: 'Stored Custom Project',
+                summary: 'Custom content is preserved.',
+                screenshots: [],
+                technologies: [],
+              },
+              {
+                slug: 'evidence-driven-content-pipeline',
+                category: 'Stored category',
+                title: 'Stored Content Pipeline',
+                summary: 'Stored pipeline content wins.',
+                screenshots: [],
+                technologies: [],
+              },
+              {
+                slug: 'evidence-driven-content-pipeline',
+                category: 'Duplicate',
+                title: 'Duplicate Content Pipeline',
+                summary: 'This duplicate must be dropped.',
+                screenshots: [],
+                technologies: [],
+              },
+            ],
+          },
+        },
+      }),
+    });
+
+    renderPage();
+    expect(await screen.findByRole('heading', { name: 'Stored Content Pipeline' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Duplicate Content Pipeline' })).not.toBeInTheDocument();
+    expect(screen.getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent)).toEqual([
+      'Stored Custom Project',
+      'Stored Content Pipeline',
+      'Website Platform',
+      'Homelab & Production Infrastructure',
+    ]);
+    expect(screen.getByText('Stored pipeline content wins.')).toBeInTheDocument();
   });
 });
