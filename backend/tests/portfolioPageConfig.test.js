@@ -24,11 +24,17 @@ const project = (overrides = {}) => ({
 });
 
 describe('Portfolio project configuration', () => {
-  test('defines Website Platform then Homelab as the canonical defaults', () => {
-    expect(getDefaultPortfolioPageConfig().projects.items.map(({ slug }) => slug)).toEqual([
+  test('defines all three projects as the canonical defaults', () => {
+    const defaults = getDefaultPortfolioPageConfig().projects.items;
+
+    expect(defaults.map(({ slug }) => slug)).toEqual([
       'website-platform',
       'homelab-infrastructure',
+      'evidence-driven-content-pipeline',
     ]);
+    const pipeline = defaults.find(({ slug }) => slug === 'evidence-driven-content-pipeline');
+    expect(pipeline.screenshots).toHaveLength(4);
+    expect(pipeline.screenshots.every(({ src }) => src.startsWith('/images/'))).toBe(true);
   });
 
   test('sanitizes every nested project field and normalizes slugs', () => {
@@ -50,13 +56,14 @@ describe('Portfolio project configuration', () => {
     });
   });
 
-  test('preserves both canonical projects through sanitization', () => {
+  test('preserves all canonical projects through sanitization', () => {
     const defaults = getDefaultPortfolioPageConfig();
     const config = sanitizePortfolioPageConfig({ projects: defaults.projects });
 
     expect(config.projects.items.map(({ slug }) => slug)).toEqual([
       'website-platform',
       'homelab-infrastructure',
+      'evidence-driven-content-pipeline',
     ]);
   });
 
@@ -125,12 +132,13 @@ describe('Portfolio project configuration', () => {
     expect(merged.projects.items.map(({ slug }) => slug)).toEqual([
       'website-platform',
       'homelab-infrastructure',
+      'evidence-driven-content-pipeline',
     ]);
   });
 
   test('uses complete defaults when a stored projects array is empty', () => {
     expect(buildPortfolioPageConfig({ projects: { items: [] } }).projects.items.map(({ slug }) => slug))
-      .toEqual(['website-platform', 'homelab-infrastructure']);
+      .toEqual(['website-platform', 'homelab-infrastructure', 'evidence-driven-content-pipeline']);
   });
 
   test('preserves stored edits and order, retains custom projects, and appends missing defaults once', () => {
@@ -149,9 +157,37 @@ describe('Portfolio project configuration', () => {
       'custom-project',
       'website-platform',
       'homelab-infrastructure',
+      'evidence-driven-content-pipeline',
     ]);
     expect(merged.projects.items[1].title).toBe('Stored Website Platform');
     expect(merged.projects.items.filter(({ slug }) => slug === 'website-platform')).toHaveLength(1);
     expect(merged.projects.items.filter(({ slug }) => slug === 'homelab-infrastructure')).toHaveLength(1);
+    expect(merged.projects.items.filter(({ slug }) => slug === 'evidence-driven-content-pipeline')).toHaveLength(1);
+  });
+
+  test('preserves a stored Project #3 edit and does not introduce a duplicate', () => {
+    const merged = buildPortfolioPageConfig({
+      projects: {
+        items: [
+          project({
+            slug: 'evidence-driven-content-pipeline',
+            title: 'Stored Content Pipeline',
+          }),
+          project({
+            slug: 'evidence-driven-content-pipeline',
+            title: 'Duplicate Content Pipeline',
+          }),
+        ],
+      },
+    });
+
+    expect(merged.projects.items.map(({ slug }) => slug)).toEqual([
+      'evidence-driven-content-pipeline',
+      'website-platform',
+      'homelab-infrastructure',
+    ]);
+    expect(merged.projects.items[0].title).toBe('Stored Content Pipeline');
+    expect(merged.projects.items.filter(({ slug }) => slug === 'evidence-driven-content-pipeline'))
+      .toHaveLength(1);
   });
 });

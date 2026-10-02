@@ -172,6 +172,62 @@ const getDefaultPortfolioPageConfig = () => ({
           evidenceCommit: '00e613e'
         },
         caseStudyPath: ''
+      },
+      {
+        slug: 'evidence-driven-content-pipeline',
+        category: 'AI / Content Pipeline',
+        title: 'Evidence-Driven Capture & Content Pipeline',
+        summary: 'A cross-platform, provenance-aware workflow that turns real technical-work capture into evidence-bound private-review media while preserving human correction, controlled execution, and a separate publication boundary.',
+        challenge: 'Turn long-form workshop capture into traceable, reviewable media without losing source provenance, human correction, execution controls, or the boundary between private approval and publication authority.',
+        workPerformed: [
+          'Built a Windows Runner and OBS capture workflow with session manifests, package provenance, and SHA-256 hashes',
+          'Connected capture packages to Proxmox and AI-Ops ingest and evidence processing',
+          'Added evidence resolution with explicit human-correction handling and preserved uncertainty',
+          'Built deterministic edit, transition, narration, and FFmpeg render stages',
+          'Integrated local Piper narration with timing and postprocessing checks',
+          'Enforced private-render authorization, single-use execution, verification receipts, and human review',
+          'Diagnosed the V3.2 narration-placement defect and corrected FFmpeg adelay timing for V3.3',
+          'Preserved a hard boundary between private-review approval and publication or deployment authority'
+        ],
+        technologies: ['Windows', 'OBS', 'Linux', 'Proxmox', 'Python', 'FFmpeg', 'JSON', 'SHA-256', 'Ollama', 'Piper'],
+        verification: [
+          'Original workshop capture was preserved through manifest, package, and SHA-256 provenance',
+          'Evidence resolution retained human corrections and explicit uncertainty boundaries',
+          'V3.2 narration placement failed human review rather than being accepted as a successful result',
+          'V3.3 replaced decimal-second FFmpeg adelay values with exact integer-millisecond timing and used a fresh controlled lifecycle',
+          'Final V3.3 output was 216.25 seconds: H.264 1920×1080 at 60 fps with AAC 48 kHz stereo audio',
+          'Final V3.3 SHA-256: 40eb562d40349eeb4bba2d38351891a0ca9f20ef3d13fc3a956fbfba05bb1214',
+          'Human review approved the corrected V3.3 output for private review',
+          'Publication and deployment remained unauthorized'
+        ],
+        screenshots: [
+          {
+            src: '/images/portfolio/content-pipeline/system-architecture.png',
+            alt: 'Evidence-driven capture-to-review architecture showing primary Runner and OBS capture, provenance, AI-Ops processing, deterministic rendering, human review, and a locked publication boundary',
+            caption: 'Cross-platform capture-to-review architecture with provenance tracking, deterministic rendering, and explicit human control gates.'
+          },
+          {
+            src: '/images/portfolio/content-pipeline/evidence-control-lifecycle.png',
+            alt: 'Ten-stage evidence and execution-control lifecycle with the failed V3.2 review, corrected V3.3 timing, private approval, and publication remaining unauthorized',
+            caption: 'Authorization, single-use execution, verification, and human review remain separate from publication authority.'
+          },
+          {
+            src: '/images/portfolio/content-pipeline/real-workload-proof.png',
+            alt: 'Real charger-board repair workshop footage with a phone charging indication used as evidence for the capture and content pipeline',
+            caption: 'A real charger-board repair supplied genuine workshop evidence for exercising the pipeline; no carrier-service result is claimed.'
+          },
+          {
+            src: '/images/portfolio/content-pipeline/verified-private-review-result.png',
+            alt: 'Verified V3.3 private-review result showing media properties, human-review checks, output hash, and publication and deployment not authorized',
+            caption: 'Corrected V3.3 output passed verification and full private review while remaining unpublished and undeployed.'
+          }
+        ],
+        provenance: {
+          label: 'Reviewed proof-of-work package',
+          baselineCommit: '',
+          evidenceCommit: ''
+        },
+        caseStudyPath: ''
       }
     ]
   },
