@@ -574,18 +574,18 @@ function ProductList() {
       }}>
         {activeFilter === 'all' ? (
           <div>
-            {/* Tools & Devices Section */}
-            <ProductSection
-              title="Tools & Devices"
-              subtitle="Security tools, devices, and lab gear from HexForge Labs."
-              products={getTechProducts()}
-            />
-
             {/* Custom Lamps & Prints Section */}
             <ProductSection
               title="Custom Lamps & Prints"
               subtitle="Turn your photos into custom illuminated prints and keepsakes."
               products={getLampProducts()}
+            />
+
+            {/* Tools & Devices Section */}
+            <ProductSection
+              title="Tools & Devices"
+              subtitle="Security tools, devices, and lab gear from HexForge Labs."
+              products={getTechProducts()}
             />
           </div>
         ) : (
