@@ -136,40 +136,63 @@ const getDefaultPortfolioPageConfig = () => ({
       },
       {
         slug: 'homelab-infrastructure',
-        category: 'Infrastructure / Operations',
+        category: 'Infrastructure / DevOps / Systems Operations',
         title: 'Homelab & Production Infrastructure',
-        summary: 'Operated and recovered a Proxmox-based self-hosted environment running Docker Compose services behind Nginx, with persistent application data, health checks, administration tools, and documented backup-integrity and stabilization workflows.',
-        challenge: 'Keep public and internal services maintainable and recoverable on shared self-hosted infrastructure while protecting persistent data, verifying service state, and avoiding destructive maintenance before dependencies and backups were understood.',
+        summary: 'A self-hosted production environment built and operated on owned hardware, combining Proxmox virtualization, containerized application services, Nginx reverse-proxy routing, persistent data, collaboration tooling, monitoring, backup verification, and dependency-aware recovery.',
+        challenge: 'Operate the infrastructure supporting real HexForge public and internal workloads on shared self-hosted hardware while keeping services observable, persistent data protected, backups independently verifiable, and recovery work controlled enough to avoid destructive maintenance before dependencies were understood.',
         workPerformed: [
-          'Operated a Proxmox VE host running Debian Linux and Docker Compose services',
-          'Configured Nginx for TLS, static frontend delivery, and reverse proxy routing',
-          'Maintained separated frontend, backend, database, assistant, and production-tool services',
-          'Used persistent storage and health checks for core services',
-          'Recovered and validated Nextcloud, OnlyOffice, Uptime Kuma, Portainer, and File Browser during a documented historical stabilization event',
-          'Classified stopped services and protected persistent data before considering cleanup',
-          'Maintained documented manual backup sets for collaboration and application services',
-          'Verified existing backup artifacts against their SHA-256 manifest'
+          'Operated a Proxmox VE production host on an HP Z840 with Debian Linux and dedicated system, application, and backup storage roles',
+          'Ran containerized application, database, AI, production-tool, collaboration, and operations workloads with Docker Compose',
+          'Configured Nginx for TLS termination, static frontend delivery, SPA routing, reverse proxying, and protected application boundaries',
+          'Maintained separated frontend, Express backend, MongoDB, assistant, media, and production-tool services',
+          'Operated Nextcloud, MariaDB, and OnlyOffice as a self-hosted collaboration stack alongside production application workloads',
+          'Used Uptime Kuma, Portainer, File Browser, and configured Docker health checks for operational visibility and administration',
+          'Maintained persistent application data and separate backup storage rather than treating containers as the system of record',
+          'Recovered and validated affected services during a documented historical stabilization event using an assess → stabilize → classify → protect data → verify → consider cleanup workflow',
+          'Classified stopped and legacy resources before cleanup and protected persistent data before destructive maintenance',
+          'Maintained manual backup generations and independently reverified preserved backup artifacts against their SHA-256 manifest'
         ],
         technologies: ['Proxmox VE', 'Debian Linux', 'Docker', 'Docker Compose', 'Nginx', 'MongoDB', 'MariaDB', 'Nextcloud', 'OnlyOffice', 'Uptime Kuma', 'Portainer', 'Bash'],
         verification: [
-          'Selected production containers were running at capture time; configured health checks reported healthy where available',
-          'Five curated public production routes returned HTTP 200 during point-in-time verification',
-          'Five unique existing backup artifacts matched their existing SHA-256 manifest',
-          'Checksum verification confirms archive integrity against the manifest, not successful restoration',
-          'Historical July 2026 records document service recovery, classification, data protection, and stabilization before cleanup',
-          'No high-availability, uptime-percentage, automated-backup, off-site or immutable-backup, or RPO/RTO claim is made'
+          'Current production observations confirmed the Proxmox host and active containerized application, AI/production, collaboration, and operations workloads at capture time',
+          'Configured Docker health checks reported healthy for selected core services; running services without configured health checks are represented only as running',
+          'Five selected public production routes returned HTTP 200 during the current point-in-time verification',
+          'Historical July 2026 records document dependency-aware service recovery, resource classification, data protection, and stabilization before cleanup',
+          'A preserved September 2026 backup generation contained five unique collaboration, application, upload, and Nginx configuration artifacts',
+          'Live re-verification of that backup manifest completed with exit status 0; all six manifest entries matched, representing five unique artifacts because one Nextcloud files entry appears twice',
+          'Backup integrity was independently reverified against the preserved SHA-256 manifest. Restoration testing, automated/off-site backup, and formal disaster-recovery objectives remain separate future validation work.'
         ],
         screenshots: [
           {
-            src: '/images/portfolio/homelab-infrastructure/infrastructure-overview.png',
-            alt: 'Sanitized HexForge production homelab architecture showing the Nginx gateway, application services, collaboration and operations tools, Proxmox platform, and persistent and backup storage',
-            caption: 'Sanitized functional overview of the self-hosted production, collaboration, operations, and storage layers.'
+            src: '/images/portfolio/homelab-infrastructure/01-infrastructure-architecture.png',
+            alt: 'Sanitized HexForge production infrastructure architecture showing the gateway, application services, collaboration and operations tooling, Proxmox platform, and persistent and backup storage',
+            caption: 'Functional architecture of the self-hosted production, collaboration, operations, and storage layers.'
+          },
+          {
+            src: '/images/portfolio/homelab-infrastructure/02-production-host.png',
+            alt: 'Sanitized HexForge production host evidence showing the HP Z840 Proxmox platform, compute resources, and separated storage roles',
+            caption: 'Owned HP Z840 hardware operating as the Proxmox production host with distinct system, application, and backup storage roles.'
+          },
+          {
+            src: '/images/portfolio/homelab-infrastructure/03-service-operations.png',
+            alt: 'Sanitized HexForge service operations evidence showing application, AI and production, collaboration, and operations workloads with healthy and running state distinctions',
+            caption: 'Observed workload groups with configured Docker health results distinguished from running-only service state.'
+          },
+          {
+            src: '/images/portfolio/homelab-infrastructure/04-recovery-stabilization.png',
+            alt: 'Historical HexForge recovery and stabilization workflow showing assess, stabilize, classify, protect data, verify, and consider cleanup stages',
+            caption: 'Documented dependency-aware recovery workflow used during the July 2026 stabilization event.'
+          },
+          {
+            src: '/images/portfolio/homelab-infrastructure/05-backup-integrity.png',
+            alt: 'HexForge backup integrity evidence showing five unique backup artifacts verified against a SHA-256 manifest with restoration testing explicitly separated',
+            caption: 'Preserved backup generation independently reverified against its SHA-256 manifest; integrity verification is not represented as restoration testing.'
           }
         ],
         provenance: {
-          label: 'Reviewed proof-of-work package',
-          baselineCommit: '0daa44b',
-          evidenceCommit: '00e613e'
+          label: 'Reviewed production proof-of-work',
+          baselineCommit: '',
+          evidenceCommit: ''
         },
         caseStudyPath: ''
       },
