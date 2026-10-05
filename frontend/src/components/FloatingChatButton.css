@@ -14,9 +14,13 @@
     z-index: 9999;
     transition: transform 0.2s ease, box-shadow 0.2s ease;
   }
-  
+
   .floating-chat-btn:hover {
     transform: scale(1.1);
     box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5);
   }
-  
+
+.floating-chat-icon {
+  display: block;
+  margin: auto;
+}

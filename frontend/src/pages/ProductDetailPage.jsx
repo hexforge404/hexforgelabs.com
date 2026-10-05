@@ -6,6 +6,7 @@ import { getProductContent } from '../data/productOverrides';
 import { SUPPORT_EMAIL } from '../config';
 import { resolveImageUrl, DEFAULT_PLACEHOLDER } from '../utils/resolveImageUrl';
 import { calculatePrice, formatPrice, getProductStartingPrice } from '../utils/pricing';
+import { getProductTrustIndicators, getProductNotice } from '../utils/productDetailContent';
 import {
   getMemorialFallbackProduct,
   getMemorialProductContent
@@ -993,14 +994,6 @@ const activeAddons = getActiveAddons();
     return categoryDescriptions[prod.category] || defaultDesc;
   };
 
-  const getTrustIndicators = () => {
-    return [
-      { icon: '🔨', text: 'Built in-house by cybersecurity experts' },
-      { icon: '💬', text: 'Direct support from the HexForge team' },
-      { icon: '✓', text: 'Quality assured & tested' },
-    ];
-  };
-
   const activeAddons = getActiveAddons() || {};
   const nightlightAddon = customOrder.nightlightAddon || {};
   const mainUploadedImages = customOrder.images.filter(Boolean);
@@ -1435,6 +1428,7 @@ const activeAddons = getActiveAddons();
     whatsIncluded: getWhatsIncludedGenerated,
     description: generateProductDescription,
   });
+  const productNotice = getProductNotice(product);
 
   return (
     <div className={`product-detail-container${isLamp ? ' is-lamp' : ''}`}>
@@ -2252,7 +2246,7 @@ const activeAddons = getActiveAddons();
 
           {/* Trust Indicators */}
           <div className="product-detail-trust-indicators">
-            {getTrustIndicators().map((indicator, idx) => (
+            {getProductTrustIndicators(product).map((indicator, idx) => (
               <div key={`${indicator.text}-${idx}`} className="product-detail-trust-item">
                 <div className="product-detail-trust-icon">{indicator.icon}</div>
                 <div>{indicator.text}</div>
@@ -2387,12 +2381,10 @@ const activeAddons = getActiveAddons();
       {/* Important Notice Section */}
       <div className="product-detail-notice">
         <div className="product-detail-notice-title">
-          ⚠️ Important Notice
+          {productNotice.title}
         </div>
         <div className="product-detail-section-content">
-          {product.category === 'security' || product.category === 'hardware'
-            ? 'This product is intended for authorized security research, testing, and professional use only. Users are responsible for ensuring legal compliance with all applicable laws and regulations in their jurisdiction. Misuse or unauthorized access to systems is illegal.'
-            : 'Please ensure this product is used in accordance with applicable laws and regulations. We provide this product as-is and recommend thorough testing before production use.'}
+          {productNotice.text}
         </div>
       </div>
 

@@ -275,6 +275,20 @@ const MemorialPage = () => {
     event.currentTarget.src = DEFAULT_PLACEHOLDER;
   };
 
+  const handleHeroImageError = (event) => {
+    const fallback = resolveImageUrl(DEFAULT_CONFIG.hero.imageUrl);
+
+    if (
+      fallback &&
+      event.currentTarget.src !== new URL(fallback, window.location.origin).href
+    ) {
+      event.currentTarget.src = fallback;
+      return;
+    }
+
+    event.currentTarget.src = DEFAULT_PLACEHOLDER;
+  };
+
   return (
     <div className="memorial-page">
       <section className="memorial-hero">
@@ -304,7 +318,11 @@ const MemorialPage = () => {
         </div>
 
         <figure className="memorial-hero-visual">
-          <img src={config.hero.imageUrl} alt={config.hero.imageAlt} />
+          <img
+            src={resolveImageUrl(config.hero.imageUrl)}
+            alt={config.hero.imageAlt}
+            onError={handleHeroImageError}
+          />
           <figcaption>{config.hero.imageCaption}</figcaption>
         </figure>
       </section>
