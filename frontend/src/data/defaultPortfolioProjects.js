@@ -4,50 +4,69 @@ const DEFAULT_PORTFOLIO_PROJECTS = {
   items: [
     {
       slug: 'website-platform',
-      category: 'Software / Web Platform',
+      category: 'Software / Business Operations Platform',
       title: 'Website Platform',
-      summary: 'A React, Express, and MongoDB website platform with specialized public pages, authenticated administrative editing, sanitized configuration APIs, code defaults, and a Dockerized deployed stack.',
-      challenge: 'Provide specialized public experiences whose structured content can be maintained through authenticated Admin tooling while retaining safe code defaults and predictable rendering.',
+      summary: 'A full-stack business and production operations platform connecting the public HexForge storefront with authenticated administration, custom-order intake, commerce monitoring, production print-job workflows, specialized content management, and Notion-backed inventory.',
+      challenge: 'Build one maintainable platform that can serve customer-facing product and campaign experiences while giving HexForge authenticated operational tools for managing structured content, orders, production work, monitoring, promotions, and inventory without collapsing those concerns into the public storefront.',
       workPerformed: [
-        'Built specialized Portfolio, Memorial / Family, and Funeral Home Director page support',
-        'Added Mongoose-backed structured page configuration',
-        'Added authenticated Admin editing APIs and dedicated editors',
-        'Sanitized and bounded editable configuration',
-        'Merged stored configuration over code defaults',
-        'Added Portfolio routing and /work redirect',
-        'Added specialized React rendering with fallback content',
-        'Verified the deployed stack and produced a proof-of-work package'
+        'Built the React storefront and custom lithophane product and intake experience',
+        'Built specialized Portfolio, Memorial / Family, and Funeral Home Director experiences',
+        'Added authenticated Admin tooling for operational and structured-content workflows',
+        'Connected order records to production-queue and print-job workflows',
+        'Added payment and webhook monitoring with reconciliation visibility',
+        'Integrated Notion-backed inventory visibility into Admin',
+        'Added protected promotion management and audit tooling',
+        'Added a deployment- and runtime-gated internal test pipeline separated from normal production records',
+        'Added Mongoose-backed structured page configuration with sanitization, bounded inputs, code defaults, and stored overrides',
+        'Deployed the React, Express, and MongoDB platform behind Nginx in Docker and verified public and administrative workflows against production'
       ],
-      technologies: ['React', 'React Router', 'Express', 'MongoDB', 'Mongoose', 'Nginx', 'Docker', 'Git'],
+      technologies: ['React', 'React Router', 'Express', 'MongoDB', 'Mongoose', 'Nginx', 'Docker', 'Stripe', 'Notion', 'Git'],
       verification: [
-        'Portfolio route returned HTTP 200 through the locally exposed deployed endpoint',
-        'Public Portfolio configuration API returned HTTP 200',
-        'Nginx, backend, and MongoDB containers were running and healthy at capture time',
-        'Existing general frontend suite passed 7 of 7 tests',
-        'Existing tests were general frontend tests, not Portfolio-specific',
-        'Fresh optimized frontend build completed successfully with exit status 0 and no reported warnings'
+        'Public storefront, custom lithophane product intake, Memorial, Funeral Home Director, and Technical Portfolio routes returned HTTP 200 during production verification',
+        'Authenticated Admin evidence captured order, production-queue, print-job, monitoring, inventory, and structured-content interfaces',
+        'Production Queue showed records distributed across operational workflow stages at capture time',
+        'Print Jobs exposed production records and technical handoff controls; the evidence does not establish automated physical printing or fulfillment',
+        'Monitoring exposed webhook and payment-reconciliation state, including records requiring attention; the evidence does not establish complete payment reconciliation',
+        'Admin inventory displayed Notion-backed inventory records at capture time',
+        'Internal Test Pipeline was visibly disabled at the deployment level during the production audit',
+        'Customer and transaction identifiers were redacted from portfolio derivatives while the source evidence was preserved separately'
       ],
       screenshots: [
         {
-          src: '/images/portfolio/website-platform/public-portfolio.png',
-          alt: 'Full Technical Portfolio page showing the hero, skill sections, project queue, contact details, and contact form',
-          caption: 'Public Technical Portfolio rendered by the deployed website stack.'
+          src: '/images/portfolio/website-platform/01-custom-product-intake.png',
+          alt: 'HexForge custom lithophane product page showing product imagery, pricing, photo guidance, and customer configuration controls',
+          caption: 'Customer-facing custom lithophane product and intake experience.'
         },
         {
-          src: '/images/portfolio/website-platform/admin-landing-pages.png',
-          alt: 'Landing Pages manager with Memorial, Funeral Home Director, and Technical Portfolio system pages listed',
-          caption: 'Landing Pages manager showing the three specialized system pages.'
+          src: '/images/portfolio/website-platform/02-production-queue.png',
+          alt: 'HexForge Admin Production Queue showing orders distributed across production workflow stages',
+          caption: 'Authenticated Production Queue providing operational visibility across staged production work.'
         },
         {
-          src: '/images/portfolio/website-platform/portfolio-editor.png',
-          alt: 'Technical Portfolio editor showing editable Hero and Portfolio Guide fields',
-          caption: 'Technical Portfolio editor with representative Hero and Portfolio Guide fields; lower editor controls are outside the captured viewport.'
+          src: '/images/portfolio/website-platform/03-print-jobs.png',
+          alt: 'HexForge Admin Print Jobs view showing production records, technical fields, and job controls',
+          caption: 'Print-job management and technical handoff controls inside the authenticated Admin platform.'
+        },
+        {
+          src: '/images/portfolio/website-platform/04-monitoring-redacted.png',
+          alt: 'HexForge Admin Monitoring view showing summary counts, webhook audit status, and redacted payment reconciliation records',
+          caption: 'Operational monitoring and reconciliation visibility; transaction identifiers are redacted in the portfolio derivative.'
+        },
+        {
+          src: '/images/portfolio/website-platform/05-notion-inventory.png',
+          alt: 'HexForge Admin Inventory view showing Notion-backed inventory records and quantities',
+          caption: 'Notion-backed inventory visibility integrated into the authenticated Admin interface.'
+        },
+        {
+          src: '/images/portfolio/website-platform/06-portfolio-editor.png',
+          alt: 'HexForge Technical Portfolio Admin editor showing structured Hero and Portfolio Guide controls',
+          caption: 'Authenticated structured-content editor used to maintain the Technical Portfolio experience.'
         }
       ],
       provenance: {
-        label: 'Reviewed proof-of-work package',
-        baselineCommit: '92ba889',
-        evidenceCommit: '4924ae0'
+        label: 'Reviewed production proof-of-work',
+        baselineCommit: '',
+        evidenceCommit: ''
       },
       caseStudyPath: ''
     },

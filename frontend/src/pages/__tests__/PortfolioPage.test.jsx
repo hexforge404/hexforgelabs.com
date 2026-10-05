@@ -43,10 +43,41 @@ describe('PortfolioPage featured projects', () => {
       'Homelab & Production Infrastructure',
       'Evidence-Driven Capture & Content Pipeline',
     ]);
-    expect(screen.getByText('Existing tests were general frontend tests, not Portfolio-specific')).toBeInTheDocument();
+    expect(screen.getByText(
+      'Monitoring exposed webhook and payment-reconciliation state, including records requiring attention; the evidence does not establish complete payment reconciliation'
+    )).toBeInTheDocument();
     expect(screen.getByText(/running at capture time/i)).toBeInTheDocument();
     expect(screen.getByText(/not successful restoration/i)).toBeInTheDocument();
-    expect(screen.getByAltText(/Full Technical Portfolio page/i)).toBeInTheDocument();
+    const websitePlatformScreenshots = [
+      [
+        'HexForge custom lithophane product page showing product imagery, pricing, photo guidance, and customer configuration controls',
+        '/images/portfolio/website-platform/01-custom-product-intake.png',
+      ],
+      [
+        'HexForge Admin Production Queue showing orders distributed across production workflow stages',
+        '/images/portfolio/website-platform/02-production-queue.png',
+      ],
+      [
+        'HexForge Admin Print Jobs view showing production records, technical fields, and job controls',
+        '/images/portfolio/website-platform/03-print-jobs.png',
+      ],
+      [
+        'HexForge Admin Monitoring view showing summary counts, webhook audit status, and redacted payment reconciliation records',
+        '/images/portfolio/website-platform/04-monitoring-redacted.png',
+      ],
+      [
+        'HexForge Admin Inventory view showing Notion-backed inventory records and quantities',
+        '/images/portfolio/website-platform/05-notion-inventory.png',
+      ],
+      [
+        'HexForge Technical Portfolio Admin editor showing structured Hero and Portfolio Guide controls',
+        '/images/portfolio/website-platform/06-portfolio-editor.png',
+      ],
+    ];
+
+    websitePlatformScreenshots.forEach(([alt, src]) => {
+      expect(screen.getByAltText(alt)).toHaveAttribute('src', src);
+    });
     expect(screen.getByAltText(/Sanitized HexForge production homelab architecture/i)).toHaveAttribute(
       'src',
       '/images/portfolio/homelab-infrastructure/infrastructure-overview.png'
