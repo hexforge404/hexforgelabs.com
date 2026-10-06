@@ -151,6 +151,57 @@ const DEFAULT_PORTFOLIO_PROJECTS = {
         evidenceCommit: ''
       },
       caseStudyPath: ''
+    },
+    {
+        slug: 'controlled-ai-content-production-pipeline',
+        category: 'AI Automation / Media Systems',
+        title: 'Controlled AI Content Production Pipeline',
+        summary: 'A provenance-aware media automation system that converts structured technical-work evidence into planned, narrated private-review video through explicit authorization, execution, verification, and human-review gates.',
+        challenge: 'Automate increasingly complex media-production work without allowing generated plans, narration, or rendered outputs to silently become approved or publishable content.',
+        workPerformed: [
+          'Built deterministic planning and validation stages for source evidence, clip selection, narration, transitions, and render preparation.',
+          'Designed explicit authorization, execution-claim, execution-attempt, and immutable receipt contracts around controlled media operations.',
+          'Integrated FFmpeg-based video rendering with output staging and post-render verification.',
+          'Implemented and exercised a gated Piper TTS workflow using canary generation before authorizing full narration.',
+          'Added full-narration timing review and controlled audio post-processing before narrated rendering.',
+          'Required separate human decisions between sensitive pipeline stages and retained human review after final private-review rendering.',
+          'Bound source and derived artifacts through IDs, paths, hashes, manifests, and execution receipts to preserve provenance.',
+          'Kept publication authority explicitly outside the automated execution chain.'
+        ],
+        technologies: ['Python', 'FFmpeg', 'FFprobe', 'Piper TTS', 'JSON Schema', 'SHA-256', 'Pytest', 'Linux', 'Proxmox'],
+        verification: [
+          'A real charger-mod-repair / 001_next workload progressed from structured capture evidence through planning, narration, audio processing, and private-review rendering.',
+          'V3 TTS canary execution completed successfully and required human approval before full narration authorization.',
+          'Full narration produced 27 WAV segments followed by 27 post-processed narration segments.',
+          'Audio post-processing completed under its own authorization, attempt, and receipt chain before approval for narrated rendering.',
+          'Narrated V3.3 rendering completed through authorization, execution claim, execution attempt, successful receipt, and human review.',
+          'Final narrated output received approved_private_review_output while publication_authorized remained false.',
+          'Current development testing produced 724 passing tests with one root-environment permission-test exception investigated and reproduced.',
+          'Runtime verification confirmed Python 3.11.2, FFmpeg/FFprobe 5.1.8, and the exact executable bound by the exercised Piper authorization.'
+        ],
+        screenshots: [
+          {
+            src: '/images/portfolio/ai-content-pipeline/controlled-pipeline-architecture-v1.png',
+            alt: 'Controlled AI Content Production Pipeline architecture showing structured evidence moving through planning, human authorization, narrated media processing, controlled private rendering, verification, and human review',
+            caption: 'Audited architecture separating the committed render-control core, the exercised narrated-media extension, human authority, provenance, and the publication boundary.'
+          },
+          {
+            src: '/images/portfolio/ai-content-pipeline/real-workload-execution-proof-v1.png',
+            alt: 'Execution evidence from the charger-mod-repair workload showing narration processing, private-review render artifacts, and human-reviewed output',
+            caption: 'The charger-mod-repair / 001_next workload exercised the downstream pipeline through narration, audio processing, private rendering, verification, and human review.'
+          },
+          {
+            src: '/images/portfolio/ai-content-pipeline/control-provenance-lifecycle-v1.png',
+            alt: 'Control and provenance lifecycle showing authorization, execution claim, execution attempt, execution receipt, human review, and publication authority separation',
+            caption: 'Execution authority is explicitly bound through authorization, claim, attempt, receipt, and human review while publication authority remains separate.'
+          }
+        ],
+        provenance: {
+          label: 'Audited controlled-execution evidence',
+          baselineCommit: '',
+          evidenceCommit: ''
+        },
+        caseStudyPath: ''
     }
   ]
 };

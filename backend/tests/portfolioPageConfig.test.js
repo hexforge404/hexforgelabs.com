@@ -24,13 +24,14 @@ const project = (overrides = {}) => ({
 });
 
 describe('Portfolio project configuration', () => {
-  test('defines all three projects as the canonical defaults', () => {
+  test('defines all four projects as the canonical defaults', () => {
     const defaults = getDefaultPortfolioPageConfig().projects.items;
 
     expect(defaults.map(({ slug }) => slug)).toEqual([
       'website-platform',
       'homelab-infrastructure',
       'evidence-driven-content-pipeline',
+      'controlled-ai-content-production-pipeline',
     ]);
     const pipeline = defaults.find(({ slug }) => slug === 'evidence-driven-content-pipeline');
     expect(pipeline.screenshots).toHaveLength(2);
@@ -39,6 +40,18 @@ describe('Portfolio project configuration', () => {
       '/images/portfolio/content-pipeline/real-workload-proof.png',
     ]);
     expect(pipeline.screenshots.every(({ src }) => src.startsWith('/images/'))).toBe(true);
+    const controlledPipeline = defaults.find(({ slug }) => slug === 'controlled-ai-content-production-pipeline');
+    expect(controlledPipeline.workPerformed).toHaveLength(8);
+    expect(controlledPipeline.technologies).toHaveLength(9);
+    expect(controlledPipeline.verification).toHaveLength(8);
+    expect(controlledPipeline.screenshots.map(({ src }) => src)).toEqual([
+      '/images/portfolio/ai-content-pipeline/controlled-pipeline-architecture-v1.png',
+      '/images/portfolio/ai-content-pipeline/real-workload-execution-proof-v1.png',
+      '/images/portfolio/ai-content-pipeline/control-provenance-lifecycle-v1.png',
+    ]);
+    expect(controlledPipeline.verification).toContain(
+      'Final narrated output received approved_private_review_output while publication_authorized remained false.'
+    );
   });
 
   test('sanitizes every nested project field and normalizes slugs', () => {
@@ -68,6 +81,7 @@ describe('Portfolio project configuration', () => {
       'website-platform',
       'homelab-infrastructure',
       'evidence-driven-content-pipeline',
+      'controlled-ai-content-production-pipeline',
     ]);
   });
 
@@ -137,12 +151,13 @@ describe('Portfolio project configuration', () => {
       'website-platform',
       'homelab-infrastructure',
       'evidence-driven-content-pipeline',
+      'controlled-ai-content-production-pipeline',
     ]);
   });
 
   test('uses complete defaults when a stored projects array is empty', () => {
     expect(buildPortfolioPageConfig({ projects: { items: [] } }).projects.items.map(({ slug }) => slug))
-      .toEqual(['website-platform', 'homelab-infrastructure', 'evidence-driven-content-pipeline']);
+      .toEqual(['website-platform', 'homelab-infrastructure', 'evidence-driven-content-pipeline', 'controlled-ai-content-production-pipeline']);
   });
 
   test('preserves stored edits and order, retains custom projects, and appends missing defaults once', () => {
@@ -162,11 +177,13 @@ describe('Portfolio project configuration', () => {
       'website-platform',
       'homelab-infrastructure',
       'evidence-driven-content-pipeline',
+      'controlled-ai-content-production-pipeline',
     ]);
     expect(merged.projects.items[1].title).toBe('Stored Website Platform');
     expect(merged.projects.items.filter(({ slug }) => slug === 'website-platform')).toHaveLength(1);
     expect(merged.projects.items.filter(({ slug }) => slug === 'homelab-infrastructure')).toHaveLength(1);
     expect(merged.projects.items.filter(({ slug }) => slug === 'evidence-driven-content-pipeline')).toHaveLength(1);
+    expect(merged.projects.items.filter(({ slug }) => slug === 'controlled-ai-content-production-pipeline')).toHaveLength(1);
   });
 
   test('preserves a stored Project #3 edit and does not introduce a duplicate', () => {
@@ -189,6 +206,7 @@ describe('Portfolio project configuration', () => {
       'evidence-driven-content-pipeline',
       'website-platform',
       'homelab-infrastructure',
+      'controlled-ai-content-production-pipeline',
     ]);
     expect(merged.projects.items[0].title).toBe('Stored Content Pipeline');
     expect(merged.projects.items.filter(({ slug }) => slug === 'evidence-driven-content-pipeline'))

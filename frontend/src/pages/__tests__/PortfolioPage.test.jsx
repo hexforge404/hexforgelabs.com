@@ -38,10 +38,12 @@ describe('PortfolioPage featured projects', () => {
     expect(screen.getByRole('heading', { name: 'Website Platform' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Homelab & Production Infrastructure' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'HexForge Capture & Evidence Pipeline' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Controlled AI Content Production Pipeline' })).toBeInTheDocument();
     expect(screen.getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent)).toEqual([
       'Website Platform',
       'Homelab & Production Infrastructure',
       'HexForge Capture & Evidence Pipeline',
+      'Controlled AI Content Production Pipeline',
     ]);
     expect(screen.getByText(
       'Monitoring exposed webhook and payment-reconciliation state, including records requiring attention; the evidence does not establish complete payment reconciliation'
@@ -90,6 +92,19 @@ describe('PortfolioPage featured projects', () => {
       'src',
       '/images/portfolio/content-pipeline/real-workload-proof.png'
     );
+    expect(screen.getByAltText(/Controlled AI Content Production Pipeline architecture/i)).toHaveAttribute(
+      'src',
+      '/images/portfolio/ai-content-pipeline/controlled-pipeline-architecture-v1.png'
+    );
+    expect(screen.getByAltText(/Execution evidence from the charger-mod-repair workload/i)).toHaveAttribute(
+      'src',
+      '/images/portfolio/ai-content-pipeline/real-workload-execution-proof-v1.png'
+    );
+    expect(screen.getByAltText(/Control and provenance lifecycle/i)).toHaveAttribute(
+      'src',
+      '/images/portfolio/ai-content-pipeline/control-provenance-lifecycle-v1.png'
+    );
+    expect(screen.getByText(/publication_authorized remained false/i)).toBeInTheDocument();
     expect(screen.queryByLabelText('Homelab & Production Infrastructure screenshots')).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Computer & Device Troubleshooting' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Current Project Queue' })).toBeInTheDocument();
@@ -198,6 +213,7 @@ describe('PortfolioPage featured projects', () => {
       'Stored Website Platform',
       'Homelab & Production Infrastructure',
       'HexForge Capture & Evidence Pipeline',
+      'Controlled AI Content Production Pipeline',
     ]);
     expect(screen.getByText('Stored Website content wins.')).toBeInTheDocument();
   });
@@ -294,6 +310,7 @@ describe('PortfolioPage featured projects', () => {
       'Stored Content Pipeline',
       'Website Platform',
       'Homelab & Production Infrastructure',
+      'Controlled AI Content Production Pipeline',
     ]);
     expect(screen.getByText('Stored pipeline content wins.')).toBeInTheDocument();
   });
