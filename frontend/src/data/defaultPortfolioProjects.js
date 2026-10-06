@@ -111,51 +111,38 @@ const DEFAULT_PORTFOLIO_PROJECTS = {
     },
     {
       slug: 'evidence-driven-content-pipeline',
-      category: 'AI / Content Pipeline',
-      title: 'Evidence-Driven Capture & Content Pipeline',
-      summary: 'A cross-platform, provenance-aware workflow that turns real technical-work capture into evidence-bound private-review media while preserving human correction, controlled execution, and a separate publication boundary.',
-      challenge: 'Turn long-form workshop capture into traceable, reviewable media without losing source provenance, human correction, execution controls, or the boundary between private approval and publication authority.',
+      category: 'Systems Automation / Evidence Pipeline',
+      title: 'HexForge Capture & Evidence Pipeline',
+      summary: 'A cross-platform capture and evidence pipeline that turns real technical work into structured, provenance-aware session packages for controlled downstream processing.',
+      challenge: 'Preserve the context of real workshop and technical work across video, terminal activity, transcripts, markers, and supporting notes while creating a reliable boundary between raw capture and downstream automation.',
       workPerformed: [
-        'Built a Windows Runner and OBS capture workflow with session manifests, package provenance, and SHA-256 hashes',
-        'Connected capture packages to Proxmox and AI-Ops ingest and evidence processing',
-        'Added evidence resolution with explicit human-correction handling and preserved uncertainty',
-        'Built deterministic edit, transition, narration, and FFmpeg render stages',
-        'Integrated local Piper narration with timing and postprocessing checks',
-        'Enforced private-render authorization, single-use execution, verification receipts, and human review',
-        'Diagnosed the V3.2 narration-placement defect and corrected FFmpeg adelay timing for V3.3',
-        'Preserved a hard boundary between private-review approval and publication or deployment authority'
+        'Built a PowerShell-based Windows Runner for project and session management with OBS-assisted technical-work capture',
+        'Collected video, terminal logs, transcripts, screenshots, and session metadata under structured project and session directories',
+        'Integrated marker and HexScribe-derived evidence for identifying important moments within long-form technical recordings',
+        'Generated structured manifests and content-preparation artifacts including script outlines, clip lists, narration drafts, short-form drafts, and video-workup notes',
+        'Preserved source identity and artifact relationships through explicit project and part metadata with per-file SHA-256 provenance',
+        'Packaged finalized sessions behind a defined ingest boundary for downstream HexForge AI-Ops processing',
+        'Kept capture and packaging responsibility separate from downstream interpretation, rendering, review, and publication authority'
       ],
-      technologies: ['Windows', 'OBS', 'Linux', 'Proxmox', 'Python', 'FFmpeg', 'JSON', 'SHA-256', 'Ollama', 'Piper'],
+      technologies: ['PowerShell', 'Windows', 'OBS Studio', 'JSON', 'SHA-256', 'HexScribe', 'Python', 'Linux', 'Proxmox'],
       verification: [
-        'Original workshop capture was preserved through manifest, package, and SHA-256 provenance',
-        'Evidence resolution retained human corrections and explicit uncertainty boundaries',
-        'V3.2 narration placement failed human review rather than being accepted as a successful result',
-        'V3.3 replaced decimal-second FFmpeg adelay values with exact integer-millisecond timing and used a fresh controlled lifecycle',
-        'Final V3.3 output was 216.25 seconds: H.264 1920×1080 at 60 fps with AAC 48 kHz stereo audio',
-        'Final V3.3 SHA-256: 40eb562d40349eeb4bba2d38351891a0ca9f20ef3d13fc3a956fbfba05bb1214',
-        'Human review approved the corrected V3.3 output for private review',
-        'Publication and deployment remained unauthorized'
+        'Real charger-mod-repair / 001_next workload recorded a 1,098,575,810-byte source video together with a terminal log and transcript',
+        'Capture finalized under the hexforge.capture_session_manifest v1 contract and was marked ready_for_ingest',
+        'Derived evidence package preserved marker, HexScribe, content-workup, session, and transcript artifacts with individual SHA-256 hashes',
+        'Explicit handoff targeted hexforge-ai-ops through local_manifest ingest',
+        'Original capture manifest kept upload disabled and recorded the archive hash as pending until archive creation rather than claiming premature verification',
+        'Downstream interpretation, rendering, narration, human review, and publication authority remain outside this project boundary'
       ],
       screenshots: [
         {
-          src: '/images/portfolio/content-pipeline/system-architecture.png',
-          alt: 'Evidence-driven capture-to-review architecture showing primary Runner and OBS capture, provenance, AI-Ops processing, deterministic rendering, human review, and a locked publication boundary',
-          caption: 'Cross-platform capture-to-review architecture with provenance tracking, deterministic rendering, and explicit human control gates.'
-        },
-        {
-          src: '/images/portfolio/content-pipeline/evidence-control-lifecycle.png',
-          alt: 'Ten-stage evidence and execution-control lifecycle with the failed V3.2 review, corrected V3.3 timing, private approval, and publication remaining unauthorized',
-          caption: 'Authorization, single-use execution, verification, and human review remain separate from publication authority.'
+          src: '/images/portfolio/content-pipeline/capture-evidence-architecture-v2.png',
+          alt: 'HexForge Capture and Evidence Pipeline architecture showing real technical work flowing through Runner and OBS capture, structured session evidence, provenance, and a controlled AI-Ops handoff boundary',
+          caption: 'Audited capture-to-handoff architecture separating evidence collection and packaging from downstream AI-Ops processing and publication authority.'
         },
         {
           src: '/images/portfolio/content-pipeline/real-workload-proof.png',
-          alt: 'Real charger-board repair workshop footage with a phone charging indication used as evidence for the capture and content pipeline',
-          caption: 'A real charger-board repair supplied genuine workshop evidence for exercising the pipeline; no carrier-service result is claimed.'
-        },
-        {
-          src: '/images/portfolio/content-pipeline/verified-private-review-result.png',
-          alt: 'Verified V3.3 private-review result showing media properties, human-review checks, output hash, and publication and deployment not authorized',
-          caption: 'Corrected V3.3 output passed verification and full private review while remaining unpublished and undeployed.'
+          alt: 'Real charger-board repair workshop footage used as a technical-work capture workload for the HexForge Capture and Evidence Pipeline',
+          caption: 'A real charger-board repair session exercised the capture workflow and supplied source evidence for the structured handoff pipeline.'
         }
       ],
       provenance: {

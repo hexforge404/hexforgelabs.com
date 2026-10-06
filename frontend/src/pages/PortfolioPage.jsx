@@ -21,7 +21,7 @@ const DEFAULT_CONFIG = {
     prompts: [
       {
         label: 'Demonstrated work',
-        response: 'Website Platform, Homelab & Production Infrastructure, and the Evidence-Driven Capture & Content Pipeline are completed projects backed by reviewed evidence.',
+        response: 'Website Platform, Homelab & Production Infrastructure, and the HexForge Capture & Evidence Pipeline are completed projects backed by reviewed evidence.',
         includeEmail: false
       },
       {

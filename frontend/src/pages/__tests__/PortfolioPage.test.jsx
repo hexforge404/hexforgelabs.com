@@ -37,11 +37,11 @@ describe('PortfolioPage featured projects', () => {
 
     expect(screen.getByRole('heading', { name: 'Website Platform' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Homelab & Production Infrastructure' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Evidence-Driven Capture & Content Pipeline' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'HexForge Capture & Evidence Pipeline' })).toBeInTheDocument();
     expect(screen.getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent)).toEqual([
       'Website Platform',
       'Homelab & Production Infrastructure',
-      'Evidence-Driven Capture & Content Pipeline',
+      'HexForge Capture & Evidence Pipeline',
     ]);
     expect(screen.getByText(
       'Monitoring exposed webhook and payment-reconciliation state, including records requiring attention; the evidence does not establish complete payment reconciliation'
@@ -82,24 +82,14 @@ describe('PortfolioPage featured projects', () => {
       'src',
       '/images/portfolio/homelab-infrastructure/infrastructure-overview.png'
     );
-    expect(screen.getByAltText(/Evidence-driven capture-to-review architecture/i)).toHaveAttribute(
+    expect(screen.getByAltText(/HexForge Capture and Evidence Pipeline architecture/i)).toHaveAttribute(
       'src',
-      '/images/portfolio/content-pipeline/system-architecture.png'
+      '/images/portfolio/content-pipeline/capture-evidence-architecture-v2.png'
     );
-    expect(screen.getByAltText(/Ten-stage evidence and execution-control lifecycle/i)).toHaveAttribute(
-      'src',
-      '/images/portfolio/content-pipeline/evidence-control-lifecycle.png'
-    );
-    expect(screen.getByAltText(/Real charger-board repair workshop footage/i)).toHaveAttribute(
+    expect(screen.getByAltText(/Real charger-board repair workshop footage used as a technical-work capture workload/i)).toHaveAttribute(
       'src',
       '/images/portfolio/content-pipeline/real-workload-proof.png'
     );
-    expect(screen.getByAltText(/Verified V3.3 private-review result/i)).toHaveAttribute(
-      'src',
-      '/images/portfolio/content-pipeline/verified-private-review-result.png'
-    );
-    expect(screen.getByText(/V3.2 narration placement failed human review/i)).toBeInTheDocument();
-    expect(screen.getByText(/Publication and deployment remained unauthorized/i)).toBeInTheDocument();
     expect(screen.queryByLabelText('Homelab & Production Infrastructure screenshots')).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Computer & Device Troubleshooting' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Current Project Queue' })).toBeInTheDocument();
@@ -207,7 +197,7 @@ describe('PortfolioPage featured projects', () => {
     expect(projectHeadings.map((heading) => heading.textContent)).toEqual([
       'Stored Website Platform',
       'Homelab & Production Infrastructure',
-      'Evidence-Driven Capture & Content Pipeline',
+      'HexForge Capture & Evidence Pipeline',
     ]);
     expect(screen.getByText('Stored Website content wins.')).toBeInTheDocument();
   });
@@ -255,7 +245,7 @@ describe('PortfolioPage featured projects', () => {
     expect(await screen.findByRole('heading', { name: 'Existing Portfolio' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Website Platform' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Homelab & Production Infrastructure' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Evidence-Driven Capture & Content Pipeline' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'HexForge Capture & Evidence Pipeline' })).toBeInTheDocument();
   });
 
   test('preserves a stored Project #3 edit, custom projects, and first duplicate while appending missing defaults', async () => {

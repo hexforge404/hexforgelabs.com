@@ -33,7 +33,11 @@ describe('Portfolio project configuration', () => {
       'evidence-driven-content-pipeline',
     ]);
     const pipeline = defaults.find(({ slug }) => slug === 'evidence-driven-content-pipeline');
-    expect(pipeline.screenshots).toHaveLength(4);
+    expect(pipeline.screenshots).toHaveLength(2);
+    expect(pipeline.screenshots.map(({ src }) => src)).toEqual([
+      '/images/portfolio/content-pipeline/capture-evidence-architecture-v2.png',
+      '/images/portfolio/content-pipeline/real-workload-proof.png',
+    ]);
     expect(pipeline.screenshots.every(({ src }) => src.startsWith('/images/'))).toBe(true);
   });
 
