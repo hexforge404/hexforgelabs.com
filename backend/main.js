@@ -7,6 +7,7 @@ const cookieParser = require('cookie-parser');
 const mongoSanitize = require('express-mongo-sanitize');
 const cors = require('cors');
 const session = require('express-session');
+const requireSessionSecret = require('./utils/requireSessionSecret');
 const MongoStore = require('connect-mongo');
 const toolRoutes = require('./routes/tools');
 const path = require('path');                   // ⬅️ move up here
@@ -154,7 +155,7 @@ const sessionStore = useMemorySessionStore
     });
 
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'hexforge-test-secret',
+  secret: requireSessionSecret(process.env.SESSION_SECRET),
   name: 'hexforge.sid',
   resave: false,
   saveUninitialized: false,
