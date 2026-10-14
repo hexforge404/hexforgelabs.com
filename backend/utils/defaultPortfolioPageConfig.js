@@ -129,8 +129,8 @@ const getDefaultPortfolioPageConfig = () => ({
         ],
         provenance: {
           label: 'Reviewed proof-of-work package',
-          baselineCommit: '92ba889',
-          evidenceCommit: '4924ae0'
+          baselineCommit: '52a4abf',
+          evidenceCommit: '87928a8'
         },
         caseStudyPath: ''
       },

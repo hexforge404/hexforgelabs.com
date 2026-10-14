@@ -104,8 +104,8 @@ const DEFAULT_PORTFOLIO_PROJECTS = {
       ],
       provenance: {
         label: 'Reviewed proof-of-work package',
-        baselineCommit: '0daa44b',
-        evidenceCommit: '00e613e'
+        baselineCommit: 'c0d1512',
+        evidenceCommit: 'fedb7da'
       },
       caseStudyPath: ''
     },
