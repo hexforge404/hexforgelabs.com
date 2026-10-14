@@ -70,8 +70,8 @@ services:
       - .env
       - ./backend/.env.production
     container_name: hexforge-backend
-    ports:
-      - '8000:8000'
+    expose:
+      - '8000'
     depends_on:
       mongo:
         condition: service_healthy
