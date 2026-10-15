@@ -51,7 +51,9 @@ services:
       - media_api
       - surface-engine
     networks:
-      - hexforge-network
+      hexforge-network: {}
+      hexforge-proxy-network:
+        ipv4_address: 172.30.250.10
     healthcheck:
       test: ["CMD-SHELL", "curl -kfsS -H 'Host: hexforgelabs.com' https://localhost/api/surface/health >/dev/null || exit 1"]
       interval: 30s
@@ -78,7 +80,11 @@ services:
       heightmapengine:
         condition: service_healthy
     networks:
-      - hexforge-network
+      hexforge-network: {}
+      hexforge-proxy-network:
+        ipv4_address: 172.30.250.20
+        aliases:
+          - backend-proxy
     volumes:
       - ./backend:/app:delegated
       - backend_node_modules:/app/node_modules
@@ -89,6 +95,7 @@ services:
       - ./uploads:/app/uploads
       - ${PRIVATE_INTAKE_HOST_DIR:-/mnt/hdd-storage/hexforge-private-intake}:/private-intake
     environment:
+      TRUSTED_PROXY_IP: 172.30.250.10
       MEDIA_API_URL: http://hexforge-media-api:8700
       MEDIA_API_KEY: ${MEDIA_API_KEY}
       SURFACE_API_KEY: ${SURFACE_API_KEY:-}
@@ -334,4 +341,9 @@ volumes:
 networks:
   hexforge-network:
     driver: bridge
+  hexforge-proxy-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.250.0/24
 

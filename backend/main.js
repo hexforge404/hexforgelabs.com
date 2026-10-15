@@ -21,9 +21,12 @@ require('dotenv').config();
 const app = express();
 // Disable ETag generation to prevent 304 responses on sensitive APIs like /api/admin/session
 app.set('etag', false);
-app.set('trust proxy', (ip) => {
-  return ip === '127.0.0.1' || ip.startsWith('172.') || ip.startsWith('10.') || ip.includes('::ffff:'); 
-});
+app.set(
+  'trust proxy',
+  require('./security/trustedProxy').createTrustedProxy(
+    process.env.TRUSTED_PROXY_IP
+  )
+);
 app.disable('x-powered-by');
 
 // Existing static dirs for general assets
