@@ -15,6 +15,7 @@ Welcome to the HexForge PLA documentation hub. This directory contains all techn
 
 ### Operations & Maintenance
 - **[Common Tasks Runbook](./runbooks/COMMON_TASKS.md)** - Everyday development and operations tasks
+- **[Production Proxy-Trust Hardening](./runbooks/PROXY_TRUST_HARDENING.md)** - Production network security, verification, and rollback
 - **[Security Policy](../SECURITY.md)** - Security practices and vulnerability disclosure
 
 ### Change Tracking
